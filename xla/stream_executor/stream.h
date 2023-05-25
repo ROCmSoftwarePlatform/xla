@@ -747,11 +747,13 @@ class Stream {
                            const DeviceMemory<InputType> &a, int lda,
                            const DeviceMemory<InputType> &b, int ldb,
                            DeviceMemory<OutputType> *c, int ldc,
-                           const NumericOptions &numeric_options) {
+                           const NumericOptions &numeric_options,
+                           blas::CallContext context) {
     InputType alpha{1.0};
     InputType beta{0.0};
     return ThenBlasGemm(transa, transb, m, n, k, alpha, a, lda, b, ldb, beta, c,
-                        ldc, numeric_options);
+                        ldc, numeric_options, context);
+
   }
 
   template <typename InputType, typename OutputType, typename ConstantType>
@@ -760,7 +762,9 @@ class Stream {
                            const DeviceMemory<InputType> &a, int lda,
                            const DeviceMemory<InputType> &b, int ldb,
                            ConstantType beta, DeviceMemory<OutputType> *c,
-                           int ldc, const NumericOptions &numeric_options) {
+                           int ldc, const NumericOptions &numeric_options, 
+                           blas::CallContext context) {
+
     static_assert(
         detail::is_any_of<InputType, int8_t, Eigen::half, Eigen::bfloat16,
                           float, double, std::complex<float>,
@@ -791,7 +795,8 @@ class Stream {
 
     return blas->DoBlasGemm(this, transa, transb, m, n, k,
                             blas::ToDataType<InputType>::value, alpha_ptr, a,
-                            lda, b, ldb, beta_ptr, c, ldc, numeric_options);
+                            lda, b, ldb, beta_ptr, c, ldc, numeric_options, context);
+
   }
 
   // TODO(reedwm): Update all callers to pass correct NumericOptions.
@@ -801,9 +806,9 @@ class Stream {
                            const DeviceMemory<InputType> &a, int lda,
                            const DeviceMemory<InputType> &b, int ldb,
                            ConstantType beta, DeviceMemory<OutputType> *c,
-                           int ldc) {
+                           int ldc, blas::CallContext context) {
     return ThenBlasGemm(transa, transb, m, n, k, alpha, a, lda, b, ldb, beta, c,
-                        ldc, NumericOptions{});
+                        ldc, NumericOptions{}, context);
   }
 
   template <typename InputType, typename OutputType>
@@ -813,12 +818,14 @@ class Stream {
       const DeviceMemory<InputType> &b, int ldb, DeviceMemory<OutputType> *c,
       int ldc, blas::ComputationType computation_type,
       blas::AlgorithmType algorithm,
-      blas::ProfileResult *output_profile_result) {
+      blas::ProfileResult *output_profile_result,
+      blas::CallContext context) {
     OutputType alpha{1};
     OutputType beta{0};
     return ThenBlasGemmWithAlgorithm(
         transa, transb, m, n, k, alpha, a, lda, b, ldb, beta, c, ldc,
-        computation_type, algorithm, NumericOptions{}, output_profile_result);
+        computation_type, algorithm, NumericOptions{}, output_profile_result, context);
+
   }
 
   template <typename InputType, typename OutputType, typename ConstantType>
@@ -829,7 +836,9 @@ class Stream {
       DeviceMemory<OutputType> *c, int ldc,
       blas::ComputationType computation_type, blas::AlgorithmType algorithm,
       const NumericOptions &numeric_options,
-      blas::ProfileResult *output_profile_result) {
+      blas::ProfileResult *output_profile_result,
+      blas::CallContext context) {
+
     TF_RETURN_IF_ERROR(
         CheckTypesForExtendedBlas<InputType, OutputType, ConstantType>(
             computation_type));
@@ -852,7 +861,8 @@ class Stream {
         blas::ToDataType<InputType>::value, lda, b,
         blas::ToDataType<InputType>::value, ldb, beta_ptr, c,
         blas::ToDataType<OutputType>::value, ldc, computation_type, algorithm,
-        numeric_options, output_profile_result);
+        numeric_options, output_profile_result, context);
+
     if (output_profile_result) {
       // The error is recorded in the profile.
       return ::tsl::OkStatus();
@@ -868,7 +878,8 @@ class Stream {
       int64_t stride_b, ConstantType beta, DeviceMemory<OutputType> *c, int ldc,
       int64_t stride_c, int batch_count, blas::ComputationType computation_type,
       blas::AlgorithmType algorithm, const NumericOptions &numeric_options,
-      blas::ProfileResult *output_profile_result) {
+      blas::ProfileResult *output_profile_result,
+      blas::CallContext context) {
     TF_RETURN_IF_ERROR(
         CheckTypesForExtendedBlas<InputType, OutputType, ConstantType>(
             computation_type));
@@ -889,7 +900,7 @@ class Stream {
         blas::ToDataType<InputType>::value, lda, stride_a, b,
         blas::ToDataType<InputType>::value, ldb, stride_b, beta_ptr, c,
         blas::ToDataType<OutputType>::value, ldc, stride_c, batch_count,
-        computation_type, algorithm, numeric_options, output_profile_result);
+        computation_type, algorithm, numeric_options, output_profile_result, context);
     if (output_profile_result) {
       // The error is recorded in the profile.
       return ::tsl::OkStatus();
@@ -907,7 +918,9 @@ class Stream {
                               DeviceMemorySlice<float> b, int ldb, float beta,
                               DeviceMemorySlice<float> c, int ldc,
                               int batch_count,
-                              const NumericOptions &numeric_options);
+                              const NumericOptions &numeric_options, 
+                              blas::CallContext context);
+
   Stream &ThenBlasGemmBatched(blas::Transpose transa, blas::Transpose transb,
                               uint64_t m, uint64 n, uint64_t k,
                               std::complex<float> alpha,
@@ -916,21 +929,33 @@ class Stream {
                               std::complex<float> beta,
                               DeviceMemorySlice<std::complex<float>> c, int ldc,
                               int batch_count,
-                              const NumericOptions &numeric_options);
+                              const NumericOptions &numeric_options,
+                              blas::CallContext context);
+  Stream &ThenBlasGemmBatched(
+      blas::Transpose transa, blas::Transpose transb, uint64_t m, uint64 n,
+      uint64_t k, std::complex<double> alpha,
+      DeviceMemorySlice<std::complex<double>> a, int lda,
+      DeviceMemorySlice<std::complex<double>> b, int ldb,
+      std::complex<double> beta, DeviceMemorySlice<std::complex<double>> c,
+      int ldc, int batch_count, const NumericOptions &numeric_options,
+      blas::CallContext context);
+
   Stream &ThenBlasGemmBatchedWithScratch(
       blas::Transpose transa, blas::Transpose transb, uint64_t m, uint64 n,
       uint64_t k, float alpha, DeviceMemorySlice<Eigen::half> a, int lda,
       DeviceMemorySlice<Eigen::half> b, int ldb, float beta,
       DeviceMemorySlice<Eigen::half> c, int ldc, int batch_count,
       const NumericOptions &numeric_options,
-      ScratchAllocator *scratch_allocator);
+      ScratchAllocator *scratch_allocator, blas::CallContext context);
+
   Stream &ThenBlasGemmBatchedWithScratch(
       blas::Transpose transa, blas::Transpose transb, uint64_t m, uint64 n,
       uint64_t k, float alpha, DeviceMemorySlice<Eigen::bfloat16> a, int lda,
       DeviceMemorySlice<Eigen::bfloat16> b, int ldb, float beta,
       DeviceMemorySlice<Eigen::bfloat16> c, int ldc, int batch_count,
       const NumericOptions &numeric_options,
-      ScratchAllocator *scratch_allocator);
+      ScratchAllocator *scratch_allocator, blas::CallContext context);
+
   Stream &ThenBlasGemmBatchedWithScratch(blas::Transpose transa,
                                          blas::Transpose transb, uint64_t m,
                                          uint64 n, uint64_t k, float alpha,
@@ -939,14 +964,18 @@ class Stream {
                                          float beta, DeviceMemorySlice<float> c,
                                          int ldc, int batch_count,
                                          const NumericOptions &numeric_options,
-                                         ScratchAllocator *scratch_allocator);
+                                         ScratchAllocator *scratch_allocator,
+                                         blas::CallContext context);
+
   Stream &ThenBlasGemmBatchedWithScratch(
       blas::Transpose transa, blas::Transpose transb, uint64_t m, uint64 n,
       uint64_t k, double alpha, DeviceMemorySlice<double> a, int lda,
       DeviceMemorySlice<double> b, int ldb, double beta,
       DeviceMemorySlice<double> c, int ldc, int batch_count,
       const NumericOptions &numeric_options,
-      ScratchAllocator *scratch_allocator);
+      ScratchAllocator *scratch_allocator,
+      blas::CallContext context);
+
   Stream &ThenBlasGemmBatchedWithScratch(
       blas::Transpose transa, blas::Transpose transb, uint64_t m, uint64 n,
       uint64_t k, std::complex<float> alpha,
@@ -954,7 +983,9 @@ class Stream {
       DeviceMemorySlice<std::complex<float>> b, int ldb,
       std::complex<float> beta, DeviceMemorySlice<std::complex<float>> c,
       int ldc, int batch_count, const NumericOptions &numeric_options,
-      ScratchAllocator *scratch_allocator);
+      ScratchAllocator *scratch_allocator,
+      blas::CallContext context );
+
   Stream &ThenBlasGemmBatchedWithScratch(
       blas::Transpose transa, blas::Transpose transb, uint64_t m, uint64 n,
       uint64_t k, std::complex<double> alpha,
@@ -962,7 +993,9 @@ class Stream {
       DeviceMemorySlice<std::complex<double>> b, int ldb,
       std::complex<double> beta, DeviceMemorySlice<std::complex<double>> c,
       int ldc, int batch_count, const NumericOptions &numeric_options,
-      ScratchAllocator *scratch_allocator);
+      ScratchAllocator *scratch_allocator,
+      blas::CallContext context);
+
 
   template <typename InputType, typename OutputType, typename ConstantType>
   tsl::Status ThenBlasGemmStridedBatched(
@@ -971,7 +1004,9 @@ class Stream {
       int64_t stride_a, const DeviceMemory<InputType> &b, int ldb,
       int64_t stride_b, ConstantType beta, DeviceMemory<OutputType> *c, int ldc,
       int64_t stride_c, int batch_count,
-      const NumericOptions &numeric_options) {
+      const NumericOptions &numeric_options,
+      blas::CallContext context) {
+
     static_assert(
         detail::is_any_of<InputType, int8_t, float, Eigen::half,
                           Eigen::bfloat16, double, std::complex<float>,
@@ -998,7 +1033,7 @@ class Stream {
     return blas->DoBlasGemmStridedBatched(
         this, transa, transb, m, n, k, blas::ToDataType<InputType>::value,
         alpha_ptr, a, lda, stride_a, b, ldb, stride_b, beta_ptr, c, ldc,
-        stride_c, batch_count, numeric_options);
+        stride_c, batch_count, numeric_options, context);
   }
 
   // See BlasSupport::DoBlasTrsm.
