@@ -64,6 +64,7 @@ struct GpuConvConfig {
   se::dnn::BatchDescriptor output_descriptor;
   se::dnn::ConvolutionDescriptor conv_desc;
   se::dnn::BatchDescriptor bias_descriptor;
+  se::dnn::CallContext call_context;
 
   Shape input_shape;
   Shape filter_shape;
@@ -164,6 +165,7 @@ struct RunConvOptions {
 };
 
 // This file contains low-level routines for running cudnn convolutions.
+se::dnn::CallContext GetCallContext(const absl::string_view call_context);
 
 // Calls into cudnn to run the specified convolution.
 //
