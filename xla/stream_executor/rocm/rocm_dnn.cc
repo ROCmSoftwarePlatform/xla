@@ -48,6 +48,7 @@ limitations under the License.
 #include "tsl/platform/logging.h"
 #include "tsl/util/determinism.h"
 #include "tsl/util/env_var.h"
+#include "rocm/rocm_config.h"
 
 namespace {
 
@@ -3108,7 +3109,16 @@ class RocmConvRunner : public dnn::ConvRunner {
         input_desc_{input_descriptor, ToMIOpenDataType(input_type)},
         output_desc_{output_descriptor, ToMIOpenDataType(input_type)},
         filter_desc_{filter_descriptor, ToMIOpenDataType(input_type)},
-        conv_desc_{conv_descriptor, ToMIOpenDataType(input_type)} {}
+        conv_desc_{conv_descriptor, ToMIOpenDataType(input_type)} {
+          bool is_backprop = ((kind == dnn::ConvolutionKind::BACKWARD_DATA) || 
+                              (kind == dnn::ConvolutionKind::BACKWARD_FILTER));
+          //#if TF_ROCM_VERSION >= 50000
+            if (is_backprop && (ToMIOpenDataType(input_type) == miopenHalf)) {
+              wrap::miopenSetConvolutionAttribute(
+              conv_desc_.handle(), MIOPEN_CONVOLUTION_ATTRIB_FP16_ALT_IMPL, 1);
+            }
+          //#endif
+      }
 
   std::string ToString() const override {
     return dnn::AlgorithmDesc{algo_id_, false, workspace_size_}.ToString();
@@ -3363,6 +3373,15 @@ bool MIOpenSupport::GetMIOpenConvolveAlgorithmsImmediateMode(
   ScopedConvolutionDescriptor conv{convolution_descriptor,
                                    ToMIOpenDataType(element_type)};
 
+  bool is_backprop = ((kind == dnn::ConvolutionKind::BACKWARD_DATA) || 
+                              (kind == dnn::ConvolutionKind::BACKWARD_FILTER));
+
+  #if TF_ROCM_VERSION >= 50000
+    if (is_backprop && (ToMIOpenDataType(element_type) == miopenHalf)) {
+      wrap::miopenSetConvolutionAttribute(
+          conv.handle(), MIOPEN_CONVOLUTION_ATTRIB_FP16_ALT_IMPL, 1);
+    }
+  #endif
   // First determine the number of algorityhms available
   size_t maxSolutionCount = 0;
 
@@ -3571,6 +3590,16 @@ bool MIOpenSupport::GetMIOpenConvolveAlgorithmsFindMode(
                                 ToMIOpenDataType(element_type)};
   ScopedConvolutionDescriptor conv{convolution_descriptor,
                                    ToMIOpenDataType(element_type)};
+
+  bool is_backprop = ((kind == dnn::ConvolutionKind::BACKWARD_DATA) || 
+                              (kind == dnn::ConvolutionKind::BACKWARD_FILTER));
+
+  #if TF_ROCM_VERSION >= 50000
+    if (is_backprop && (ToMIOpenDataType(element_type) == miopenHalf)) {
+      wrap::miopenSetConvolutionAttribute(
+          conv.handle(), MIOPEN_CONVOLUTION_ATTRIB_FP16_ALT_IMPL, 1);
+    }
+  #endif
 
   // Determine the workspace memory size that will need by the call to Find
   size_t scratch_memory_size = 0;
@@ -3966,7 +3995,8 @@ tsl::Status ROCmFusedMatmulRunner::gemm(Stream* stream, DeviceMemoryBase a_data,
   return stream->ThenBlasGemm<T, T>(
       tb, ta, _n, _m, _k, static_cast<DeviceMemory<T>>(b_data), _ldb,
       static_cast<DeviceMemory<T>>(a_data), _lda,
-      static_cast<DeviceMemory<T>*>(&c_data), _ldc, NumericOptions{});
+      static_cast<DeviceMemory<T>*>(&c_data), _ldc, NumericOptions{},
+      blas::CallContext::kNone);
 }
 
 template <typename T>
@@ -4133,7 +4163,9 @@ bool MIOpenSupport::DoMatMul(Stream* stream,
     if (!stream
              ->ThenBlasGemm(blas::Transpose::kNoTranspose,
                             blas::Transpose::kNoTranspose, m, n, k, weights, m,
-                            input_data, k, output_data, m, NumericOptions{})
+                            input_data, k, output_data, m, NumericOptions{},
+                            blas::CallContext::kNone)
+
              .ok()) {
       return false;
     }
@@ -4216,7 +4248,9 @@ bool MIOpenSupport::DoMatMul(Stream* stream,
     stream->ThenBlasGemmBatched(blas::Transpose::kNoTranspose,
                                 blas::Transpose::kNoTranspose, m, n, k, alpha,
                                 toPtrs(a), lda, toPtrs(b), ldb, beta, toPtrs(c),
-                                ldc, batch_count, NumericOptions{});
+                                ldc, batch_count, NumericOptions{},
+                                blas::CallContext::kNone);
+
   }
 
   return stream->ok();
