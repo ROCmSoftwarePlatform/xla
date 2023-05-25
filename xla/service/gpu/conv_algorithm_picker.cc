@@ -188,7 +188,9 @@ StatusOr<std::vector<GenericConvRunner>> GetAlgorithms(
           /* filter_data = */ DeviceMemoryBase(nullptr),
           config.output_descriptor,
           /* output_data = */ DeviceMemoryBase(nullptr), config.conv_desc,
-          use_fallback, nullptr, numeric_options, &runners));
+          se::dnn::CallContext::kNone, use_fallback, 
+          nullptr, numeric_options, &runners));
+
       for (auto& runner : runners) {
         TF_ASSIGN_OR_RETURN(
             auto runner_cache,
@@ -208,8 +210,10 @@ GetMIOpenAlgorithms(const HloCustomCallInstruction* instr,
                     absl::Span<se::DeviceMemoryBase> operand_buffers,
                     absl::Span<se::DeviceMemoryBase> result_buffers,
                     se::StreamExecutor* stream_exec,
-                    ScratchAllocator* scratch_allocator, se::Stream* stream,
+                    ScratchAllocator* scratch_allocator,
+                    se::dnn::CallContext call_context, se::Stream* stream,
                     const se::NumericOptions& numeric_options) {
+
   TF_ASSIGN_OR_RETURN(GpuConvConfig config, GetGpuConvConfig(instr));
 
   TF_ASSIGN_OR_RETURN(se::dnn::ConvolutionKind kind,
@@ -228,7 +232,8 @@ GetMIOpenAlgorithms(const HloCustomCallInstruction* instr,
       params.config->input_descriptor, params.input_buf,
       params.config->filter_descriptor, params.filter_buf,
       params.config->output_descriptor, params.output_buf,
-      params.config->conv_desc, /* use_fallback = */ false, scratch_allocator,
+      params.config->conv_desc, call_context,
+      /* use_fallback = */ false, scratch_allocator,
       numeric_options, &runners));
 
   return runners;
@@ -961,12 +966,17 @@ StatusOr<AutotuneResult> GpuConvAlgorithmPicker::PickBestAlgorithmNoCacheRocm(
   }
 
   ScratchAllocator scratch_allocator(device_ordinal, allocator);
+  
+  TF_ASSIGN_OR_RETURN(auto backend_config,
+                      instr->backend_config<CudnnConvBackendConfig>());
+  se::dnn::CallContext call_context =
+      GetCallContext(backend_config.call_context());
 
   TF_ASSIGN_OR_RETURN(
       std::vector<std::unique_ptr<const se::dnn::ConvRunner>> runners,
       GetMIOpenAlgorithms(instr, absl::MakeSpan(operand_buffers),
                           absl::MakeSpan(result_buffers), stream_exec,
-                          &scratch_allocator, stream, numeric_options));
+                          &scratch_allocator, call_context, stream, numeric_options));
 
   std::vector<AutotuneResult> profile_results;
 
