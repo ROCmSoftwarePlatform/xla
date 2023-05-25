@@ -103,7 +103,7 @@ static absl::Status CublasLtMatmulImpl(
         a, b, c, algorithm, alpha_real, alpha_imag, beta, dot_dims.lhs_batch,
         dot_dims.lhs_contract, dot_dims.rhs_batch, dot_dims.rhs_contract,
         precision.empty() ? se::blas::kDefaultComputePrecision
-                          : *absl::c_max_element(precision)));
+                          : *absl::c_max_element(precision), false, false));
   }));
 
   // Get the matmul plan for this instance of matmul.
