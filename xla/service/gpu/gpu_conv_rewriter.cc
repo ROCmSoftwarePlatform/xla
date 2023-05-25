@@ -705,9 +705,6 @@ StatusOr<bool> RunOnInstruction(HloInstruction* conv) {
     return false;
   }
 
-  TF_RETURN_IF_ERROR(
-      custom_call->set_backend_config(GetDefaultBackendConfig()));
-
   VLOG(1) << "Replacing convolution " << conv->ToString() << " with "
           << custom_call->ToString();
 
