@@ -172,7 +172,8 @@ StatusOr<std::vector<MaybeFusedConvRunner>> GetAlgorithms(
           /* filter_data = */ DeviceMemoryBase(nullptr),
           config.output_descriptor,
           /* output_data = */ DeviceMemoryBase(nullptr), config.conv_desc,
-          use_fallback, nullptr, se::NumericOptions{deterministic_ops},
+          se::dnn::CallContext::kNone, use_fallback, 
+          nullptr, se::NumericOptions{deterministic_ops},
           &runners));
       for (auto& runner : runners) {
         TF_ASSIGN_OR_RETURN(
@@ -193,7 +194,8 @@ GetMIOpenAlgorithms(const HloCustomCallInstruction* instr,
                     absl::Span<se::DeviceMemoryBase> operand_buffers,
                     se::DeviceMemoryBase result_buffer,
                     se::StreamExecutor* stream_exec,
-                    ScratchAllocator* scratch_allocator, se::Stream* stream,
+                    ScratchAllocator* scratch_allocator,
+                    se::dnn::CallContext call_context, se::Stream* stream,
                     bool deterministic_ops) {
   TF_ASSIGN_OR_RETURN(GpuConvConfig config, GetGpuConvConfig(instr));
 
@@ -212,7 +214,8 @@ GetMIOpenAlgorithms(const HloCustomCallInstruction* instr,
       params.config->input_descriptor, params.input_buf,
       params.config->filter_descriptor, params.filter_buf,
       params.config->output_descriptor, params.output_buf,
-      params.config->conv_desc, /* use_fallback = */ false, scratch_allocator,
+      params.config->conv_desc, call_context,  
+      /* use_fallback = */ false, scratch_allocator,
       se::NumericOptions{deterministic_ops}, &runners));
 
   return runners;
@@ -993,11 +996,16 @@ GpuConvAlgorithmPicker::PickBestAlgorithmNoCacheRocm(
   initialize_buffer(result_buffer);
 
   ScratchAllocator scratch_allocator(device_ordinal, allocator);
+  
+  TF_ASSIGN_OR_RETURN(auto backend_config,
+                      instr->backend_config<CudnnConvBackendConfig>());
+  se::dnn::CallContext call_context =
+      GetCallContext(backend_config.call_context());
 
   TF_ASSIGN_OR_RETURN(
       std::vector<std::unique_ptr<const se::dnn::ConvRunner>> runners,
       GetMIOpenAlgorithms(instr, absl::MakeSpan(operand_buffers), result_buffer,
-                          stream_exec, &scratch_allocator, stream,
+                          stream_exec, &scratch_allocator, call_context, stream,
                           deterministic_ops));
 
   std::vector<AutotuneResult> profile_results;
