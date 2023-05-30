@@ -714,11 +714,13 @@ MIOpenSupport::MIOpenSupport(GpuExecutor* parent) : parent_(parent) {
                                       &return_best_algo_only_));
 
   // by default, use Find Mode APIs for convolution
-  use_immediate_mode_ = false;
+  //use_immediate_mode_ = false;
   // swich to Find Mode if env var TF_ROCM_USE_IMMEDIATE_MODE is set
 
   TF_CHECK_OK(tsl::ReadBoolFromEnvVar("TF_ROCM_USE_IMMEDIATE_MODE", false,
                                       &use_immediate_mode_));
+
+  use_immediate_mode_ = true; //Hardcode Immediate mode for JAX
 
   bool enable_pooling_cache = false;
   TF_CHECK_OK(tsl::ReadBoolFromEnvVar("TF_ROCM_BW_POOL_CACHE", false,
