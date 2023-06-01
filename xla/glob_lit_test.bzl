@@ -44,7 +44,6 @@ def _run_lit_test(name, data, size, tags, driver, features, exec_properties):
       features: [str], list of extra features to enable.
       exec_properties: may enable things like remote execution.
     """
-
     # Disable tests on windows for now, to enable testing rest of all xla and mlir.
     native.py_test(
         name = name,
