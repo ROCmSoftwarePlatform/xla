@@ -400,7 +400,10 @@ class GemmRewriterVisitor : public DfsHloRewriteVisitor {
     gemm_backend_config.set_lhs_stride(lhs_stride);
     gemm_backend_config.set_rhs_stride(rhs_stride);
 
+
+    
     // First try to match the fp8 gemm pattern.
+    
     TF_ASSIGN_OR_RETURN(bool supported_by_cublaslt,
                         GemmIsSupportedByCublasLt(*instr, gemm_backend_config));
     HloInstruction *a, *b, *a_scale = nullptr, *b_scale = nullptr;
@@ -433,6 +436,7 @@ class GemmRewriterVisitor : public DfsHloRewriteVisitor {
       // dot and below it will be rewritten as an FP16 cublas or cublasLt call.
       TF_ASSIGN_OR_RETURN(instr, TurnF8DotIntoF16Dot(instr));
     }
+    
 
     // Couldn't rewrite as an FP8 cublasLt custom call, rewrite as a cublas or
     // cublasLt call.
@@ -1531,6 +1535,10 @@ class GemmRewriterVisitor : public DfsHloRewriteVisitor {
     const HloInstruction *lhs = instr.operand(0);
     const HloInstruction *rhs = instr.operand(1);
     const Shape &output_shape = instr.shape();
+
+    if (std::holds_alternative<se::RocmComputeCapability>(gpu_version_)){
+	return false;
+    }
 
     TF_ASSIGN_OR_RETURN(bool types_are_supported_by_cublas_lt,
                         TypesAreSupportedByCublasLt(instr));
