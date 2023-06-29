@@ -429,6 +429,7 @@ cc_library(
         "//xla/stream_executor:scratch_allocator",
         "//xla/stream_executor/cuda:cublas_lt_header",
         "@tsl//tsl/platform:status",
+        "@local_config_rocm//rocm:rocm_headers",
     ],
 )
 
