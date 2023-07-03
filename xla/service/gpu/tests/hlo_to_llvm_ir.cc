@@ -91,6 +91,7 @@ xla::Status CompileAndPrintLlvmIr(const std::string& hlo_text,
     llvm_module->print(llvm::outs(), nullptr);
   } else {
 #if GOOGLE_CUDA
+    xla::gpu::GpuVersion gpu_version{cuda_compute_capability};
     TF_ASSIGN_OR_RETURN(
         std::string ptx,
         xla::gpu::nvptx::CompileToPtx(

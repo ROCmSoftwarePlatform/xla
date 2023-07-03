@@ -835,6 +835,8 @@ glob_lit_tests(
         "element_wise_row_vectorization.hlo": ["no_rocm"],
     },
     test_file_exts = ["hlo"],
+    features = if_cuda_is_configured(["--param=PTX=PTX"]) +
+               if_rocm_is_configured(["--param=PTX=GCN"]),
 )
 
 # Bundle together all of the test utilities that are used by tests.

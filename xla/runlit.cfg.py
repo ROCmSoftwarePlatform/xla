@@ -57,6 +57,10 @@ if platform.system() == 'Windows':
 else:
   llvm_config.use_default_substitutions()
 
+# Include aditional substitutions that my be defined via params
+llvm_config.config.substitutions.extend(('%%{%s}' % key, val)
+                                        for key, val in lit_config.params.items())
+
 # Tweak the PATH to include the tools dir.
 llvm_config.with_environment('PATH', config.llvm_tools_dir, append_path=True)
 
