@@ -22,11 +22,27 @@ limitations under the License.
 #include <string>
 #include <vector>
 
+#if GOOGLE_CUDA
 #include "third_party/gpus/cuda/include/cublasLt.h"
 #include "third_party/gpus/cuda/include/cublas_v2.h"
 #include "third_party/gpus/cuda/include/cuda.h"
+#else
+#include "rocm/rocm_config.h"
+#endif
 #include "xla/stream_executor/blas.h"
+#if GOOGLE_CUDA
 #include "xla/stream_executor/cuda/cuda_blas_utils.h"
+#else
+#if TF_HIPBLASLT
+#include "../rocm/hipblaslt_wrapper.h"
+namespace stream_executor {
+hipblasDatatype_t AsHipblasDataType(blas::DataType type);
+hipblasLtComputeType_t AsHipblasComputeType(blas::ComputationType type);
+hipblasOperation_t AsHipblasOperation(blas::Transpose trans);
+};
+#endif
+#endif
+
 #include "xla/stream_executor/device_memory.h"
 #include "xla/stream_executor/host_or_device_scalar.h"
 #include "tsl/platform/status.h"
@@ -36,7 +52,11 @@ namespace gpu {
 class GpuExecutor;
 }  // namespace gpu
 
+#if GOOGLE_CUDA
 namespace cuda {
+#else
+namespace rocm {
+#endif
 
 class BlasLt {
   template <typename T>
@@ -239,6 +259,15 @@ class BlasLt {
 BlasLt* GetBlasLt(Stream* stream);
 
 }  // namespace cuda
+namespace gpu {
+#if GOOGLE_CUDA
+using BlasLt = ::stream_executor::cuda::BlasLt;
+inline BlasLt* GetBlasLt(Stream* stream) { return cuda::GetBlasLt(stream); }
+#else
+using BlasLt = ::stream_executor::rocm::BlasLt;
+inline BlasLt* GetBlasLt(Stream* stream) { return rocm::GetBlasLt(stream); }
+#endif
+};
 }  // namespace stream_executor
 
 #endif  // XLA_STREAM_EXECUTOR_CUDA_CUDA_BLAS_LT_H_

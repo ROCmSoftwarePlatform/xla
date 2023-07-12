@@ -25,6 +25,12 @@ limitations under the License.
 namespace xla {
 namespace gpu {
 
+#if GOOGLE_CUDA
+using ComputeCap = se::CudaComputeCapability;
+#else
+using ComputeCap = se::RocmComputeCapability;
+#endif
+
 // cuBLAS GEMM in the most general form can run the following operation:
 //
 // (kAdd
