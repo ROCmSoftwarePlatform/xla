@@ -3991,7 +3991,8 @@ tsl::Status ROCmFusedMatmulRunner::gemm(Stream* stream,
           (DeviceMemory<T>)b_data, _ldb,
           (DeviceMemory<T>)a_data, _lda, 
           (DeviceMemory<T>*)&c_data, _ldc,
-          blas::kDefaultComputePrecision);
+          blas::kDefaultComputePrecision,
+	  blas::CallContext::kNone);
 }
 
 template <typename T>
