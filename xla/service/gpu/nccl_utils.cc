@@ -105,10 +105,10 @@ StatusOr<ncclDataType_t> ToNcclDataType(PrimitiveType element_type,
       // For collectives that just move data around, we can use ncclFloat16 for
       // 16-bit integer data types.
       return ncclFloat16;
-#if defined(__CUDA_BF16_TYPES_EXIST__)
+//#if defined(__CUDA_BF16_TYPES_EXIST__)
     case BF16:
       return ncclBfloat16;
-#endif
+//#endif
     default:
       return tsl::errors::InvalidArgument(absl::StrFormat(
           "Unsupported data type: %s", PrimitiveType_Name(element_type)));
