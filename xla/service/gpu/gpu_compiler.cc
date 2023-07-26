@@ -100,6 +100,7 @@ limitations under the License.
 #include "xla/service/gpu/gpu_async_collective_annotator.h"
 #include "xla/service/gpu/gpu_constants.h"
 #include "xla/service/gpu/gpu_conv_rewriter.h"
+#include "xla/service/gpu/gpu_conv_algorithm_picker.h"
 #include "xla/service/gpu/gpu_device_info.h"
 #include "xla/service/gpu/gpu_executable.h"
 #include "xla/service/gpu/gpu_float_support.h"
@@ -226,7 +227,7 @@ bool ConvIsLowerable(HloInstruction* conv) {
 // and we are using "online" autotuning (i.e., not AOT) we need to use the pass,
 // else we do not need to enable the pass.
 bool RequiresCollectiveScheduleLinearizer(const HloModule* module) {
-#if GOOGLE_CUDA
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
   for (const HloComputation* comp : module->MakeNonfusionComputations()) {
     for (const HloInstruction* inst : comp->instructions()) {
       if (GpuConvAlgorithmPicker::IsCandidate(inst)) {
@@ -986,7 +987,7 @@ Status GpuCompiler::OptimizeHloPostLayoutAssignment(
   // Linearize collective schedule under SPMD partitioning if online autotuning
   // of convolutions is enabled.
   const bool enable_collecive_schedule_linearizer_for_spmd =
-#if GOOGLE_CUDA
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
       hlo_module->config().use_spmd_partitioning() && stream_exec != nullptr &&
       GpuConvAlgorithmPicker::IsEnabled(hlo_module);
 #else
@@ -998,7 +999,6 @@ Status GpuCompiler::OptimizeHloPostLayoutAssignment(
         RequiresCollectiveScheduleLinearizer);
   }
 
-#if GOOGLE_CUDA
   AutotuneConfig autotune_config =
       stream_exec
           ? AutotuneConfig{DeviceConfig{stream_exec, options.device_allocator},
@@ -1013,6 +1013,7 @@ Status GpuCompiler::OptimizeHloPostLayoutAssignment(
   if (GpuConvAlgorithmPicker::IsEnabled(hlo_module)) {
     pipeline.AddPass<GpuConvAlgorithmPicker>(autotune_config);
   }
+  #if GOOGLE_CUDA
   pipeline.AddPass<GemmAlgorithmPicker>(autotune_config);
 
   // By default use an externally provided thread pool.
