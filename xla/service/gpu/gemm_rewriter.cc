@@ -1669,9 +1669,9 @@ class GemmRewriterVisitor : public DfsHloRewriteVisitor {
   StatusOr<bool> GemmIsSupportedByCublasLt(
       const HloInstruction &instr,
       const GemmBackendConfig &gemm_backend_config) const {
-    if (std::holds_alternative<se::RocmComputeCapability>(gpu_version_)) {
-      return false;
-    }
+    //if (std::holds_alternative<se::RocmComputeCapability>(gpu_version_)) {
+    //  return false;
+    //}
 
     const HloInstruction *lhs = instr.operand(0);
     const HloInstruction *rhs = instr.operand(1);
@@ -1704,8 +1704,8 @@ class GemmRewriterVisitor : public DfsHloRewriteVisitor {
 TF_ASSIGN_OR_RETURN(bool output_is_column_major,
                         MatrixIsColumnMajor(instr, gemm_backend_config));
 #if TENSORFLOW_USE_ROCM
-    if (!output_is_column_major)
-      return false;
+    //if (!output_is_column_major)
+    //  return false;
 
     auto rocm_compute_capability_ =
         std::get<se::RocmComputeCapability>(gpu_version_);
