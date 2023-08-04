@@ -1865,7 +1865,7 @@ Status IrEmitterUnnested::EmitLaunchFunc(mlir::Operation* op) {
   return OkStatus();
 }
 
-#if GOOGLE_CUDA
+// #if GOOGLE_CUDA
 Status IrEmitterUnnested::EmitTritonFusion(
     mlir::Operation* op, const AutotuneResult::TritonGemmKey& config) {
   // Note: In this method we can't use `BuildKernelThunk` as usual,
@@ -1908,7 +1908,11 @@ Status IrEmitterUnnested::EmitTritonFusion(
       TF_ASSIGN_OR_RETURN(
           launch_dimensions,
           TritonWrapper(impl_fn_name, hlo_computation, kTritonSoftmaxFusionKind,
+#if GOOGLE_CUDA
                         ir_emitter_context_->cuda_compute_capability(),
+#else TENSORFLOW_USE_ROCM
+                        ir_emitter_context_->rocm_compute_capability(),
+#endif
                         ir_emitter_context_->gpu_device_info(), config, module_,
                         &SoftMax, *ir_emitter_context_->mlir_context()));
     } else {  // Must be a MatMul
@@ -1951,7 +1955,7 @@ Status IrEmitterUnnested::EmitTritonFusion(
   return OkStatus();
 }
 
-#endif  // GOOGLE_CUDA
+// #endif  // GOOGLE_CUDA
 
 Status IrEmitterUnnested::EmitUnnestedTranspose(
     mlir::lmhlo::FusionOp fusion, HloFusionAnalysis& fusion_analysis) {

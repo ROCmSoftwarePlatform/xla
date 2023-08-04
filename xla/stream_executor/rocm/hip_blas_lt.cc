@@ -131,9 +131,9 @@ tsl::Status BlasLt::Init() {
       *leading_dim_stride));
   // Wrap hipblas handle immediately, so it is cleaned up if an error occurs.
   BlasLt::MatrixLayout layout(hip_layout);
-  if (order != Order::kColumnMajor)
-    return tsl::errors::Internal(
-        "HipblasLT does not support row-major matrices");
+  // if (order != Order::kColumnMajor)
+  //   return tsl::errors::Internal(
+  //       "HipblasLT does not support row-major matrices");
   TF_RETURN_IF_ERROR(SetAttr(hip_layout, HIPBLASLT_MATRIX_LAYOUT_BATCH_COUNT,
                              static_cast<int32_t>(batch_size)));
 
