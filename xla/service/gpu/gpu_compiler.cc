@@ -957,9 +957,7 @@ Status GpuCompiler::OptimizeHloPostLayoutAssignment(
     // in the softmax codegen pipeline. However we should run before
     // ReductionDimensionGrouper, as that makes matching the softmax pattern
     // harder.
-    if (debug_options.xla_gpu_enable_triton_softmax_fusion() &&
-        std::holds_alternative<se::CudaComputeCapability>(
-            gpu_target_config.gpu_version)) {
+    if (debug_options.xla_gpu_enable_triton_softmax_fusion()) {
       pipeline.AddPass<HloPassFix<AlgebraicSimplifier>>(options);
       pipeline.AddPass<SoftmaxRewriterTriton>(gpu_target_config.gpu_version);
     }
