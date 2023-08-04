@@ -101,6 +101,7 @@ static bool HasStaticShapeOperands(const FunctionType& signature) {
     std::string_view mlir_module, Options opts,
     absl::Span<const std::string_view> exported,
     std::string_view memory_region_name, CompilationTaskRunner runner) {
+  VLOG(2) << "RB: JitExecutable::Instantiate ENTER";
   // Try to instantiate compilation context from the mlir source.
   StatusOr<std::unique_ptr<JitCompiler>> compiler =
       JitCompiler::Instantiate(opts.compiler, mlir_module, exported);
@@ -109,6 +110,7 @@ static bool HasStaticShapeOperands(const FunctionType& signature) {
   // Collect Functions exported from the jit executable.
   std::vector<JitExecutable::Function> functions;
 
+  VLOG(2) << "RB: JitExecutable::Instantiate 1";
   for (unsigned ordinal = 0; ordinal < (*compiler)->num_exported(); ordinal++) {
     auto fn = (*compiler)->exported(ordinal);
     // Get resolved operands constraints for the exported function.
@@ -127,11 +129,13 @@ static bool HasStaticShapeOperands(const FunctionType& signature) {
     functions.push_back(std::move(function));
   }
 
+  VLOG(2) << "RB: JitExecutable::Instantiate 2";
   // TODO(ezhulenev): We currently only check the constraints of the function
   // with ordinal 0, figure out how to support specialization and recompilation
   // of modules with multiple exported functions.
   const Function& fn = functions[0];
 
+  VLOG(2) << "RB: JitExecutable::Instantiate 3";
   // If all of the operands have static shape, then we can always use default
   // binary for execution (unless specialization is explicitly required by the
   // operands constraints).
@@ -139,6 +143,7 @@ static bool HasStaticShapeOperands(const FunctionType& signature) {
       !IsSpecializationOnly(fn.constraints))
     opts.specialization = Specialization::kDisabled;
 
+  VLOG(2) << "RB: JitExecutable::Instantiate 4";
   // Return an error if specialization is explicitly disabled, yet some of
   // the operands have unresolved constraints.
   if (opts.specialization == Specialization::kDisabled &&
@@ -148,6 +153,7 @@ static bool HasStaticShapeOperands(const FunctionType& signature) {
         "have unresolved constraints: [%s]",
         absl::StrJoin(fn.constraints, ", "));
 
+  VLOG(2) << "RB: JitExecutable::Instantiate 5";
   // If the module must be specialized, return JitExecutable without a default
   // compiled executable.
   if (opts.specialization == Specialization::kAlways ||
@@ -156,14 +162,17 @@ static bool HasStaticShapeOperands(const FunctionType& signature) {
                          /*default_executable=*/std::nullopt,
                          memory_region_name, std::move(runner));
 
+  VLOG(2) << "RB: JitExecutable::Instantiate 6";
   // Otherwise try to compile the default executable.
   StatusOr<Executable> executable =
       JitCompiler::Compile(std::move(*compiler), memory_region_name);
   if (!executable.ok()) return executable.status();
 
+  VLOG(2) << "RB: JitExecutable::Instantiate 8";
   return JitExecutable(mlir_module, std::move(opts), std::move(functions),
                        std::move(*executable), memory_region_name,
                        std::move(runner));
+  VLOG(2) << "RB: JitExecutable::Instantiate EXIT";
 }
 
 JitExecutable::Function::Function(

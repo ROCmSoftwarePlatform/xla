@@ -48,14 +48,14 @@ Status TryDlopenROCmLibraries() {
   auto miopen_status = GetMiopenDsoHandle();
   auto rocfft_status = GetHipfftDsoHandle();
   auto rocrand_status = GetRocrandDsoHandle();
-#if TF_HIPBLASLT
-  auto hiplaslt_status = CachedLoader::GetHipblasLtDsoHandle();
-#endif
+//#if TF_HIPBLASLT
+  auto hipblaslt_status = GetHipblasltDsoHandle();
+//#endif
   if (!rocblas_status.status().ok() || !miopen_status.status().ok() ||
       !rocfft_status.status().ok() || !rocrand_status.status().ok()
-#if TF_HIPBLASLT
+//#if TF_HIPBLASLT
       || !hipblaslt_status.status().ok()
-#endif
+//#endif
   ) {
     return Status(absl::StatusCode::kInternal,
                   absl::StrCat("Cannot dlopen all ROCm libraries."));
