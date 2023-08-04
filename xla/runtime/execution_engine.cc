@@ -231,18 +231,22 @@ ExecutionEngine::CreateFromModule(std::unique_ptr<llvm::LLVMContext> ctx,
                                   std::unique_ptr<llvm::Module> module,
                                   JitOptions options,
                                   absl::Span<const std::string_view> exported) {
+  printf("RB: ExecutionEnginer ENTER");
   auto engine = std::unique_ptr<ExecutionEngine>(new ExecutionEngine(
       options.enable_gdb_listener, options.enable_perf_listener));
 
+  printf("RB: ExecutionEnginer 1");
   // We'll need module pointer later to lookup object file in the cache.
   llvm::Module *module_ptr = module.get();
 
+  printf("RB: ExecutionEnginer 2");
   // Set up the target machine details.
   if (!options.target_machine)
     return InternalError("target machine was not provided");
   module->setDataLayout(options.target_machine->createDataLayout());
   module->setTargetTriple(options.target_machine->getTargetTriple().str());
 
+  printf("RB: ExecutionEnginer 3");
   // Set up exported functions interface functions in the LLVM module.
   for (std::string_view name : exported) {
     if (auto status =
@@ -254,6 +258,7 @@ ExecutionEngine::CreateFromModule(std::unique_ptr<llvm::LLVMContext> ctx,
     }
   }
 
+  printf("RB: ExecutionEnginer 4");
   // Run an optimization pipeline over the LLVM module (alway run with default
   // opt level independent of the options).
   //
@@ -283,12 +288,14 @@ ExecutionEngine::CreateFromModule(std::unique_ptr<llvm::LLVMContext> ctx,
     return obj_layer;
   };
 
+  printf("RB: ExecutionEnginer 7");
   // Optionally enable cache for compiled object files.
   std::unique_ptr<ExecutionEngineObjectCache> obj_cache =
       options.save_compiled_obj_file
           ? std::make_unique<ExecutionEngineObjectCache>()
           : nullptr;
 
+  printf("RB: ExecutionEnginer 8\n");
   // Callback to compile IR module on demand.
   auto compile_function_creator = [&](JITTargetMachineBuilder jtmb)
       -> Expected<std::unique_ptr<IRCompileLayer::IRCompiler>> {
@@ -299,6 +306,7 @@ ExecutionEngine::CreateFromModule(std::unique_ptr<llvm::LLVMContext> ctx,
                                                     obj_cache.get());
   };
 
+  printf("RB: ExecutionEnginer 9\n");
   // Use in-process executor process control with in-place task dispatcher.
   auto executorProcessControl = SelfExecutorProcessControl::Create(
       nullptr, std::make_unique<InPlaceTaskDispatcher>());
@@ -307,12 +315,14 @@ ExecutionEngine::CreateFromModule(std::unique_ptr<llvm::LLVMContext> ctx,
     return InternalError("failed to create executor process control: %s",
                          ToString(err));
 
+  printf("RB: ExecutionEnginer 10\n");
   // TODO(b/286475799): Concurrent compilation leads to spurious memory
   // corruptions and segfaults at run time, however nothing shows up in tsan
   // or asan builds. This is a hack that for some unknown reason helps.
   static auto *lljit_mu = new absl::Mutex();
   std::optional<absl::MutexLock> lljit_lock(lljit_mu);
 
+  printf("RB: ExecutionEnginer 11\n");
   // Construct the LLJIT with the given compiler and object linking layers.
   auto jit = llvm::orc::LLJITBuilder()
                  .setCompileFunctionCreator(compile_function_creator)
@@ -321,11 +331,13 @@ ExecutionEngine::CreateFromModule(std::unique_ptr<llvm::LLVMContext> ctx,
                  .setNumCompileThreads(0)  // disable multi-threading
                  .create();
 
+  printf("RB: ExecutionEnginer 12\n");
   if (auto err = jit.takeError())
     return InternalError("failed to construct LLJIT: %s", ToString(err));
 
   lljit_lock.reset();
 
+  printf("RB: ExecutionEnginer 13\n");
   // Register input module with the LLJIT.
   ThreadSafeModule tsm(std::move(module), std::move(ctx));
   if (auto err = (*jit)->addIRModule(std::move(tsm)))
@@ -334,6 +346,7 @@ ExecutionEngine::CreateFromModule(std::unique_ptr<llvm::LLVMContext> ctx,
   llvm::orc::JITDylib &main_jd = (*jit)->getMainJITDylib();
   llvm::DataLayout data_layout = (*jit)->getDataLayout();
 
+  printf("RB: ExecutionEnginer 14\n");
   // Register user-provided symbols.
   if (options.symbols_binding) {
     auto mangle = llvm::orc::MangleAndInterner(main_jd.getExecutionSession(),
@@ -343,6 +356,7 @@ ExecutionEngine::CreateFromModule(std::unique_ptr<llvm::LLVMContext> ctx,
       return InternalError("failed to add symbols bindings: %s", ToString(err));
   }
 
+  printf("RB: ExecutionEnginer 15\n");
   // Resolve all exported functions to function pointers.
   for (std::string_view name : exported) {
     // Trigger compilation by looking up the exported function.
@@ -359,6 +373,7 @@ ExecutionEngine::CreateFromModule(std::unique_ptr<llvm::LLVMContext> ctx,
     engine->exported_.push_back(ptr);
   }
 
+  printf("RB: ExecutionEnginer 16\n");
   // Check that if we enabled object cache we have an object file for the
   // compiled module.
   std::unique_ptr<llvm::MemoryBuffer> obj_file =
@@ -367,9 +382,11 @@ ExecutionEngine::CreateFromModule(std::unique_ptr<llvm::LLVMContext> ctx,
   if (options.save_compiled_obj_file && !obj_file)
     return InternalError("could not find object file for the XLA module");
 
+  printf("RB: ExecutionEnginer 17\n");
   // Fill remaining fields and return constructed ExecutionEngine to the caller.
   engine->jit_ = std::move(*jit);
   engine->obj_file_ = std::move(obj_file);
+  printf("RB: ExecutionEnginer EXIT\n");
   return std::move(engine);
 }
 

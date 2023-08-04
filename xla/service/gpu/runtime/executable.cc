@@ -184,6 +184,8 @@ GpuRuntimeExecutable::GpuRuntimeExecutable(
 /*static*/ StatusOr<std::unique_ptr<GpuRuntimeExecutable>>
 GpuRuntimeExecutable::Create(std::string module_name,
                              std::unique_ptr<GpuRuntimeProgram> program) {
+  
+  VLOG(2) << "RB: GpuRuntimeExecutable::Create ENTER";
   // Options for the default XLA Runtime compilation pipeline.
   runtime::CompilationPipelineOptions copts;
 
@@ -193,6 +195,7 @@ GpuRuntimeExecutable::Create(std::string module_name,
   // For passing LMHLO attributes as XLA (SE) enums/structs to custom calls.
   copts.populate_attr_encodings = RegisterXlaGpuAttrEncoding;
 
+  VLOG(2) << "RB: GpuRuntimeExecutable::Create 2";
   // Options for constructing XLA runtime JitExecutable.
   JitExecutable::Options opts;
   opts.specialization = JitExecutable::Specialization::kDisabled;
@@ -203,6 +206,7 @@ GpuRuntimeExecutable::Create(std::string module_name,
   opts.compiler.symbols_binding = runtime::ToSymbolsBinding(
       RegisterXlaGpuRuntimeCustomCalls, RegisterXlaGpuTypeIdNames);
 
+  VLOG(2) << "RB: GpuRuntimeExecutable::Create 3";
   // We just use the default compilation pipeline provided by the XLA runtime.
   // Alternatively instead of having a separate Xla Runtime program (LMHLO
   // lowered to canonical dialects), we can assemble a pipeline that will
@@ -213,10 +217,12 @@ GpuRuntimeExecutable::Create(std::string module_name,
         runtime::CreateDefaultXlaGpuRuntimeCompilationPipeline(passes, copts);
       };
 
+  VLOG(2) << "RB: GpuRuntimeExecutable::Create 4";
   // Do not run expensive optimization passes because we do not expect any
   // non-trivial host code in XLA:GPU host executables.
   opts.compiler.jit_code_opt_level = llvm::CodeGenOpt::None;
 
+  VLOG(2) << "RB: GpuRuntimeExecutable::Create 5";
   // Instantiate new JitExecutable from the MLIR source.
   auto jit_executable =
       JitExecutable::Instantiate(program->module, program->entry_point, opts);
@@ -224,18 +230,21 @@ GpuRuntimeExecutable::Create(std::string module_name,
     return InternalError("Failed to compile XLA Runtime program: %s",
                          jit_executable.status().message());
 
+  VLOG(2) << "RB: GpuRuntimeExecutable::Create 6";
   // Instantiate state for all registered runtime modules.
   auto modules_state = ModulesState::Instantiate();
   if (!modules_state.ok())
     return InternalError("Failed to instantiate modules state: %s",
                          modules_state.status().message());
 
+  VLOG(2) << "RB: GpuRuntimeExecutable::Create 7";
   // Instantiate state for all registered FFI modules.
   auto ffi_modules_state = FfiModulesState::Instantiate();
   if (!ffi_modules_state.ok())
     return InternalError("Failed to instantiate FFI modules state: %s",
                          ffi_modules_state.status().message());
 
+  VLOG(2) << "RB: GpuRuntimeExecutable::Create Exit";
   return std::unique_ptr<GpuRuntimeExecutable>(new GpuRuntimeExecutable(
       std::move(module_name), std::move(program->buffer_sizes),
       std::make_unique<JitExecutable>(std::move(*jit_executable)),

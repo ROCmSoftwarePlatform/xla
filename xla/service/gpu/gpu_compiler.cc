@@ -1435,6 +1435,7 @@ StatusOr<std::unique_ptr<Executable>> GpuCompiler::RunBackend(
     }
   }
 
+  VLOG(2) << "RB: GPU_Compiler before CompileModuletoLLVMIrImpl";
   CompileModuleResults compile_module_results;
   TF_RETURN_IF_ERROR(CompileModuleToLlvmIrImpl(
       module.get(), &llvm_context, target_triple_, data_layout_,
@@ -1445,6 +1446,7 @@ StatusOr<std::unique_ptr<Executable>> GpuCompiler::RunBackend(
       GetCanShareBuffer(), pointer_size_, &compile_module_results,
       stream_exec));
 
+  VLOG(2) << "RB: GPU_Compiler after CompileModuletoLLVMIrImpl";
   if (user_pre_optimization_hook_) {
     user_pre_optimization_hook_(*compile_module_results.llvm_module);
   }
@@ -1459,6 +1461,7 @@ StatusOr<std::unique_ptr<Executable>> GpuCompiler::RunBackend(
   llvm_ir::DumpIrIfEnabled(*module, *compile_module_results.llvm_module,
                            /*optimized=*/false);
 
+  VLOG(2) << "RB: Compile to Target Binary";
   using BackendCompileResult = std::pair<std::string, std::vector<uint8_t>>;
   TF_ASSIGN_OR_RETURN(
       BackendCompileResult backend_result,
@@ -1475,6 +1478,7 @@ StatusOr<std::unique_ptr<Executable>> GpuCompiler::RunBackend(
                             thunk_sequence.ToString());
   }
 
+  VLOG(2) << "RB: Compile to Target Binary After";
   auto buffer_assignment_proto = std::make_unique<BufferAssignmentProto>(
       compile_module_results.buffer_assignment->ToProto());
 
@@ -1482,6 +1486,7 @@ StatusOr<std::unique_ptr<Executable>> GpuCompiler::RunBackend(
   std::shared_ptr<const BufferAssignment> buffer_assignment(
       std::move(compile_module_results.buffer_assignment));
 
+  VLOG(2) << "RB: GpuExecutable Create";
   GpuVersion gpu_version = GetGpuVersion(stream_exec);
   TF_ASSIGN_OR_RETURN(
       auto gpu_executable,
@@ -1506,6 +1511,7 @@ StatusOr<std::unique_ptr<Executable>> GpuCompiler::RunBackend(
     gpu_executable->set_ir_module_string(ir_module_string_before_opt);
   }
 
+  VLOG(2) << "RB: GpuExecutable Create After";
   // Dump computation proto state and buffer assignment for
   // CompiledMemoryAnalysis.
   auto hlo_proto = std::make_unique<HloProto>();
@@ -1513,6 +1519,7 @@ StatusOr<std::unique_ptr<Executable>> GpuCompiler::RunBackend(
   *hlo_proto->mutable_buffer_assignment() = buffer_assignment->ToProto();
   gpu_executable->set_hlo_proto(std::move(hlo_proto));
   gpu_executable->set_debug_info(buffer_assignment->GetStats().ToString());
+  VLOG(2) << "RB: RunBackEnd Exit";
   return static_cast<std::unique_ptr<Executable>>(std::move(gpu_executable));
 }
 

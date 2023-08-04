@@ -305,11 +305,13 @@ MakeOptimizingTransformerForJit(llvm::TargetMachine* targetMachine) {
 /*static*/ absl::StatusOr<Executable> JitCompiler::Compile(
     std::unique_ptr<JitCompiler> compiler, std::string_view memory_region_name,
     std::optional<size_t> specialization) {
+  VLOG(2) << "RB: JitCompiler::Compile ENTER";
   // We track end-to-end time to compile the final executable.
   auto compilation_start = std::chrono::steady_clock::now();
 
   const JitCompiler::Options& opts = compiler->options();
 
+  VLOG(2) << "RB: JitCompiler::Compile 1";
   // Calling convention must be defined so we can get the run-time signature.
   if (!opts.calling_convention)
     return compiler->Error("calling convention is not defined");
@@ -318,6 +320,7 @@ MakeOptimizingTransformerForJit(llvm::TargetMachine* targetMachine) {
   std::vector<Executable::Function> functions;
   std::vector<std::string_view> exported;  // names of exported functions
 
+  VLOG(2) << "RB: JitCompiler::Compile 2";
   for (const auto& indexed : llvm::enumerate(compiler->exported())) {
     auto func = indexed.value();
     std::string_view name = exported.emplace_back(func.getName());
@@ -362,37 +365,45 @@ MakeOptimizingTransformerForJit(llvm::TargetMachine* targetMachine) {
         requires_blas));
   }
 
+  VLOG(2) << "RB: JitCompiler::Compile 3";
   // Run the compilation pipeline to lower the module to LLVM dialect.
   if (failed(RunCompilationPipeline(compiler->module(), opts)))
     return compiler->Error("failed to run compilation pipeline");
 
   if (EnablePassTiming()) llvm::TimePassesIsEnabled = true;
 
+  VLOG(2) << "RB: JitCompiler::Compile 4";
   // Prepare JIT target machine for code generation.
   auto builder = llvm::orc::JITTargetMachineBuilder::detectHost();
   if (!builder) return InternalError(toString(builder.takeError()));
 
+  VLOG(2) << "RB: JitCompiler::Compile 5";
   auto target_machine = builder->createTargetMachine();
   if (!target_machine)
     return InternalError(toString(target_machine.takeError()));
 
+  VLOG(2) << "RB: JitCompiler::Compile 6";
   // Name of the compiled module if available.
   auto module_name = compiler->module().getSymName().value_or("<unknown>");
 
+  VLOG(2) << "RB: JitCompiler::Compile 6";
   // Memory region name to mmap executable code.
   std::string mapper_name = llvm::formatv(
       "/xla{0}{1}:@{2}::@{3}", memory_region_name.empty() ? "" : ":",
       EscapeMemRegionName(memory_region_name), module_name,
       specialization.has_value() ? "specialized" : "default");
 
+  VLOG(2) << "RB: JitCompiler::Compile 7";
   // Custom memory mapper to tag memory allocated for XLA executables.
   std::unique_ptr<XlaRuntimeMemoryMapper> memory_mapper =
       XlaRuntimeMemoryMapper::Create(std::move(mapper_name));
 
+  VLOG(2) << "RB: JitCompiler::Compile 8";
   // Register symbols required for running XLA Executable.
   ExecutionEngine::SymbolsBinding symbols =
       RuntimeSymbolsBinding(compiler->options().symbols_binding);
 
+  VLOG(2) << "RB: JitCompiler::Compile 9";
   // Construct options for the XLA runtime execution engine.
   ExecutionEngine::JitOptions engine_options;
   engine_options.opt_level = compiler->options().jit_code_opt_level;
@@ -401,17 +412,20 @@ MakeOptimizingTransformerForJit(llvm::TargetMachine* targetMachine) {
   engine_options.section_memory_mapper = memory_mapper.get();
   engine_options.symbols_binding = std::move(symbols);
 
+  VLOG(2) << "RB: JitCompiler::Compile 10";
   // Translate MLIR module to the LLVM module.
   auto llvm_ctx = std::make_unique<llvm::LLVMContext>();
   auto llvm_module = translateModuleToLLVMIR(compiler->module(), *llvm_ctx);
   if (!llvm_module)
     return compiler->Error("failed to translate module to LLVM IR");
 
+  VLOG(2) << "RB: JitCompiler::Compile 11";
   // Compile input module to the native function.
   auto engine = ExecutionEngine::CreateFromModule(
       std::move(llvm_ctx), std::move(llvm_module), engine_options, exported);
   if (!engine.ok()) return engine.status();
 
+  VLOG(2) << "RB: JitCompiler::Compile 12";
   // At this point compilation is completed, and all symbols in the LLVM module
   // materialized as addresses (all exported functions have a corresponding
   // function pointer).
@@ -420,10 +434,12 @@ MakeOptimizingTransformerForJit(llvm::TargetMachine* targetMachine) {
 
   if (EnablePassTiming()) llvm::reportAndResetTimings();
 
+  VLOG(2) << "RB: JitCompiler::Compile 13";
   // Resolve all exported functions to function pointers.
   for (unsigned i = 0; i < exported.size(); ++i)
     functions[i].fptr = (*engine)->exported(i);
 
+  VLOG(2) << "RB: JitCompiler::Compile 14";
   return Executable(compiler->name(), std::move(memory_mapper),
                     std::move(*engine), std::move(functions), specialization,
                     time_to_compile);

@@ -49,6 +49,7 @@ StatusOr<void*> GetRocsolverDsoHandle();
 StatusOr<void*> GetHipsolverDsoHandle();
 StatusOr<void*> GetHipsparseDsoHandle();
 StatusOr<void*> GetHipDsoHandle();
+StatusOr<void*> GetHipblasltDsoHandle();
 
 // The following method tries to dlopen all necessary GPU libraries for the GPU
 // platform TF is built with (CUDA or ROCm) only when these libraries should be

@@ -106,11 +106,13 @@ StatusOr<std::unique_ptr<GpuExecutable>> GpuExecutable::Create(Params params) {
   auto executable = std::move(params.executable);
   std::unique_ptr<GpuExecutable> result(new GpuExecutable(std::move(params)));
 
+  VLOG(2) << "RB: Gpu_Executable Create ENTER";
   if (std::holds_alternative<OwnedThunkSequence>(executable)) {
     result->thunks_ = std::move(std::get<OwnedThunkSequence>(executable));
     return result;
   }
 
+  VLOG(2) << "RB: Gpu_Executable Create 2";
   if (std::holds_alternative<OwnedGpuRuntimeProgram>(executable)) {
     auto& program = std::get<OwnedGpuRuntimeProgram>(executable);
     TF_ASSIGN_OR_RETURN(
@@ -121,6 +123,7 @@ StatusOr<std::unique_ptr<GpuExecutable>> GpuExecutable::Create(Params params) {
 
   if (std::holds_alternative<OwnedOpenXlaRuntimeProgram>(executable)) {
     auto& program = std::get<OwnedOpenXlaRuntimeProgram>(executable);
+  	VLOG(2) << "RB: Gpu_Executable Create 3";
     TF_ASSIGN_OR_RETURN(
         result->openxla_executable_,
         OpenXlaRuntimeExecutable::Create(std::move(program), result->text(),
@@ -128,6 +131,7 @@ StatusOr<std::unique_ptr<GpuExecutable>> GpuExecutable::Create(Params params) {
     return result;
   }
 
+  VLOG(2) << "RB: GpuExecutable Create EXIT";
   return InternalError("No XLA gpu executable was provided");
 }
 

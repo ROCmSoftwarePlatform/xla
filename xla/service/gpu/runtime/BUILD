@@ -8,6 +8,7 @@ load(
 load(
     "@local_config_rocm//rocm:build_defs.bzl",
     "if_rocm_is_configured",
+    "if_rocm_hipblaslt",
 )
 
 package(
@@ -425,7 +426,7 @@ cc_library(
     name = "cublas_lt_matmul",
     srcs = ["cublas_lt_matmul.cc"],
     hdrs = ["cublas_lt_matmul.h"],
-    local_defines = if_cuda_is_configured(["GOOGLE_CUDA=1"]) + if_rocm_is_configured(["TENSORFLOW_USE_ROCM"]),
+    local_defines = if_cuda_is_configured(["GOOGLE_CUDA=1"]) + if_rocm_is_configured(["TENSORFLOW_USE_ROCM"]) + if_rocm_is_configured(["TF_HIPBLASLT=1"]),
     deps = [
         ":support",
         "//xla:xla_proto_cc",

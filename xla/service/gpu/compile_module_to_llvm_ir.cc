@@ -347,7 +347,8 @@ Status CompileModuleToLlvmIrImpl(
   results->llvm_module = std::make_unique<llvm::Module>("", *llvm_context);
   results->llvm_module->setTargetTriple(target_triple);
   results->llvm_module->setDataLayout(data_layout);
-
+  
+  VLOG(2) << "RB: CompileModuleToLLVMIrImpl ENTER";
   TF_RETURN_IF_ERROR(
       ScheduleGpuModule(hlo_module, pointer_size, gpu_device_info));
   {
@@ -362,6 +363,7 @@ Status CompileModuleToLlvmIrImpl(
     TF_RETURN_IF_ERROR(pipeline.Run(hlo_module).status());
   }
 
+  VLOG(2) << "RB: CompileModuleToLLVMIrImpl 2";
   {
     HloPassPipeline pipeline("remat-pipeline");
 
@@ -384,6 +386,7 @@ Status CompileModuleToLlvmIrImpl(
     }
   }
 
+  VLOG(2) << "RB: CompileModuleToLLVMIrImpl 3";
   auto buffer_size_bytes_function =
       [pointer_size](const BufferValue& buffer_value) -> int64_t {
     return GetSizeOfShape(buffer_value.shape(), pointer_size);
@@ -480,6 +483,7 @@ Status CompileModuleToLlvmIrImpl(
       results->allocations, std::back_inserter(buffer_sizes),
       [](const BufferAllocation& allocation) { return allocation.size(); });
 
+  VLOG(2) << "RB: CompileModuleToLLVMIrImpl 8";
   // TODO(ezhulenev): Remove the FP8 check once https://reviews.llvm.org/D140088
   // is submitted. Currently we can't emit LLVM IR with fp8 types.
   if (IsXlaRuntimeExecutableEnabled(hlo_module->config()) &&
@@ -492,7 +496,8 @@ Status CompileModuleToLlvmIrImpl(
     return OkStatus();
   }
 
-  if (IsOpenXlaRuntimeEnabled(hlo_module->config())) {
+  VLOG(2) << "RB: CompileModuleToLLVMIrImpl 9";
+  if (IsXlaGpu2RuntimeEnabled(hlo_module->config())) {
     TF_ASSIGN_OR_RETURN(
         results->executable,
         LowerToOpenXla(std::move(mlir_context), std::move(mlir_module),
@@ -506,6 +511,7 @@ Status CompileModuleToLlvmIrImpl(
   ForAllThunks([](Thunk* thunk) { thunk->ClearCompileTimeInfo(); },
                thunk_sequence.get());
   results->executable = std::move(thunk_sequence);
+  VLOG(2) << "RB: CompileModuleToLLVMIrImpl EXIT";
   return OkStatus();
 }
 
