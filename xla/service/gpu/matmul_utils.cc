@@ -923,8 +923,8 @@ StatusOr<se::gpu::BlasLt::Epilogue> AsBlasLtEpilogue(
   // *not* be transposed, and if B is row-major, B must be transposed. We never
   // transpose A or B, and expect the caller to ensure A is row-major and B is
   // column when A and B are FP8.
-  const se::blas::Transpose trans_a = se::blas::Transpose::kNoTranspose;
-  const se::blas::Transpose trans_b = se::blas::Transpose::kNoTranspose;
+  se::blas::Transpose trans_a = se::blas::Transpose::kNoTranspose;
+  se::blas::Transpose trans_b = se::blas::Transpose::kNoTranspose;
   if (primitive_util::IsF8Type(lhs_layout.dtype) &&
       lhs_layout.order == MatrixLayout::Order::kColumnMajor) {
     return InternalError("The F8 LHS must be column-major");
@@ -941,6 +941,18 @@ StatusOr<se::gpu::BlasLt::Epilogue> AsBlasLtEpilogue(
       GetBlasComputationType(lhs_layout.dtype, output_layout.dtype,
                              config.compute_precision));
 
+  #if TENSORFLOW_USE_ROCM
+	if(lhs_layout.order == MatrixLayout::Order::kRowMajor) {
+		lhs_layout.order = MatrixLayout::Order::kColumnMajor;
+		trans_a = se::blas::Transpose::kTranspose;
+		std::swap(lhs_layout.num_rows, lhs_layout.num_cols);
+	}
+  	if(rhs_layout.order == MatrixLayout::Order::kRowMajor) {
+	  rhs_layout.order = MatrixLayout::Order::kColumnMajor;
+	  trans_b = se::blas::Transpose::kTranspose;
+	  std::swap(rhs_layout.num_rows, rhs_layout.num_cols);
+	}
+  #endif
   TF_ASSIGN_OR_RETURN(
       se::gpu::BlasLt::MatmulDesc op_desc,
       se::gpu::BlasLt::MatmulDesc::Create(

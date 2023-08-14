@@ -410,7 +410,7 @@ Status GpuRuntimeExecutable::Execute(
   GemmConfigs::Snapshot gemm_configs = gemm_configs_.snapshot();
   FftPlans::Snapshot fft_plans = fft_plans_.snapshot();
 
-#if GOOGLE_CUDA
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
   MatmulPlans::Snapshot matmul_plans = cublas_lt_matmul_plans_.snapshot();
 #endif  // GOOGLE_CUDA
 
