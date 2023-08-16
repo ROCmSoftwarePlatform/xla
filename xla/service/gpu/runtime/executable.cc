@@ -332,6 +332,7 @@ Status GpuRuntimeExecutable::Execute(
     const BufferAllocations& buffer_allocations,
     NonAtomicallyUpgradeableRWLock& gpu_lock,
     const BufferAllocation* temp_alloc) {
+  VLOG(-1) << "within GpuRuntimeExecutable::Execute() starts";
   // We pass a pointer to the executable through UserData, so that we can
   // get access to other exported functions from custom call handlers.
   runtime::Executable& executable = this->executable();
@@ -361,7 +362,7 @@ Status GpuRuntimeExecutable::Execute(
       return InvalidArgument("Expected a buffer of size %d but got %d",
                              memref->sizes()[0], buffer_sizes_[i]);
   }
-
+  VLOG(-1) << "buffer allocations is done";
   // XLA Runtime executables do not return any values.
   runtime::NoResultConverter converter;
 
@@ -371,7 +372,7 @@ Status GpuRuntimeExecutable::Execute(
   if (debug_options_.xla_gpu_enable_highest_priority_async_stream()) {
     stream_priority = se::StreamPriority::Highest;
   }
-
+  VLOG(-1) << "Get the async communications stream for async collectives is done";
   // Create the needed streams to support NcclCollectiveThunk.
   //
   // Calling BorrowStream multiple times doesn't work as intended, see
@@ -385,7 +386,7 @@ Status GpuRuntimeExecutable::Execute(
       async_comm_streams[i] = streams->at(i).get();
     }
   }
-
+  VLOG(-1) << "Create the needed streams to support NcclCollectiveThunk is done";
   // Async Collectives support and Send/Recv events instantiated for each Gpu
   // executable run, so that concurrent executions can run independently using a
   // separate set of events for communication.
@@ -397,7 +398,7 @@ Status GpuRuntimeExecutable::Execute(
   se::DeviceMemoryBase temp_buffer;
   if (temp_alloc)
     temp_buffer = buffer_allocations.GetDeviceAddress(temp_alloc->index());
-
+  VLOG(-1) << "GetDeviceAddress is done";
   // State cached separately for each stream executor.
   StreamExecutorKernels::Snapshot kernels = gpu_kernels_(executor)->snapshot();
   StreamExecutorConvRunners::Snapshot conv_runners =
@@ -412,7 +413,7 @@ Status GpuRuntimeExecutable::Execute(
   CapturedFunctionExecutionCount::Snapshot execution_count =
       captured_function_counts_(executor)->snapshot();
 #endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
-
+  VLOG(-1) << "StreamExecutorGraphInstances is done";
   // Kernels in concurrent regions should be launched on borrowed stream, so
   // that the cuda graph won't record dependencies between kernels.
   // This state stores if the kernel being run is in a concurrent region and
@@ -423,23 +424,22 @@ Status GpuRuntimeExecutable::Execute(
   GemmConfigs::Snapshot gemm_configs = gemm_configs_.snapshot();
   FftPlans::Snapshot fft_plans = fft_plans_.snapshot();
 
-#if GOOGLE_CUDA
+// #if GOOGLE_CUDA
   MatmulPlans::Snapshot matmul_plans = cublas_lt_matmul_plans_.snapshot();
-#endif  // GOOGLE_CUDA
-
+// #endif  // GOOGLE_CUDA
   // Initialize state required for running functions exported from FFI modules.
   TF_ASSIGN_OR_RETURN(FfiStateVector ffi_state,
                       ffi_modules_state_.state_vector());
-
+  VLOG(-1) << "Initialize state required for running functions exported from FFI modules is done";
   // Pass auxiliary data to the custom call handlers.
   runtime::CustomCall::UserData user_data(
       run_options, &executable, &debug_options_, &temp_buffer, &asm_text,
       &ffi_state, &binary, &kernels, &gemm_configs, &conv_runners,
       &collectives_, &fft_plans, &send_recv_events, &gpu_lock,
-#if GOOGLE_CUDA
+// #if GOOGLE_CUDA
       // Auxiliary data that is available only if compiled with CUDA support.
       &matmul_plans,
-#endif  // GOOGLE_CUDA
+// #endif  // GOOGLE_CUDA
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
       &graph_instances, &execution_count,
 #endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
@@ -449,13 +449,13 @@ Status GpuRuntimeExecutable::Execute(
       async_collectives.async_comm_stream(kAsyncStreamCollective)
           ? &async_collectives
           : nullptr);
-
+  VLOG(-1) << "Pass auxiliary data to the custom call handlers is done";
   // Initialize state required for running functions from registered modules.
   auto state_ref = modules_state_.InitializeUserData(user_data);
   if (!state_ref.ok())
     return InternalError("Failed to initialize runtime modules state: %s",
                          state_ref.status().message());
-
+VLOG(-1) << "Initialize state required for running functions from registered modules is done";
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
   // Instantiate all CUDA graphs before executing the main function.
   if (debug_options_.xla_gpu_graph_num_runs_to_instantiate() < 0 &&
@@ -485,7 +485,7 @@ Status GpuRuntimeExecutable::Execute(
     }
   }
 #endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
-
+  VLOG(-1) << "InstantiateAllGraphs is done";
   // Collect all emitted diagnostic messages.
   std::string diagnostic;
   runtime::DiagnosticEngine diagnostic_engine;
@@ -498,9 +498,10 @@ Status GpuRuntimeExecutable::Execute(
   opts.diagnostic_engine = &diagnostic_engine;
   opts.custom_call_registry = &dynamic_custom_calls_;
 
-  // Execute with the prepared call frame.
+  VLOG(-1) << "start to executable.Execute(call_frame, opts);";
+  // Execute with the prepared call frame.  
   executable.Execute(call_frame, opts);
-
+  VLOG(-1) << "Execute with the prepared call frame is done";
   if (auto st = executable.ReturnResults(converter, &call_frame); !st.ok()) {
     return InternalError("Failed to execute XLA Runtime executable: %s%s%s.",
                          st.message(), diagnostic.empty() ? "" : ": ",

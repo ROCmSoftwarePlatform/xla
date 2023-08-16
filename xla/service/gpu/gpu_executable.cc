@@ -520,6 +520,7 @@ static Status ExecuteXlaRuntime(const std::string& module_name,
                                 const BufferAllocation* temp_buffer,
                                 bool block_host_until_done,
                                 NonAtomicallyUpgradeableRWLock& gpu_lock) {
+  VLOG(-1) << "start ExecuteXlaRuntime()";
   uint64_t start_nanos = tsl::Env::Default()->NowNanos();
 
   tsl::profiler::TraceMe hlo_module_activity(
@@ -534,7 +535,7 @@ static Status ExecuteXlaRuntime(const std::string& module_name,
     return absl::StrFormat("XlaModule:#hlo_module=%s%s#", module_name,
                            module_id_str);
   });
-
+  VLOG(-1) << "start gpu_runtime_executable.Execute()";
   auto executed = gpu_runtime_executable.Execute(
       run_options, asm_text, binary, buffer_allocations, gpu_lock, temp_buffer);
   if (!executed.ok()) return executed;
@@ -604,6 +605,7 @@ Status GpuExecutable::PopulatePersistentTempBuffers(
 StatusOr<ExecutionOutput> GpuExecutable::ExecuteAsyncOnStreamImpl(
     const ServiceExecutableRunOptions* run_options,
     VariantArguments arguments) {
+  VLOG(-1) << "ExecuteAsyncOnStreamImpl() is start";
   XLA_SCOPED_LOGGING_TIMER(absl::StrCat(
       "GpuExecutable::ExecuteAsyncOnStreamImpl(", module_name_, ")"));
   se::DeviceMemoryAllocator* const memory_allocator = run_options->allocator();
@@ -615,7 +617,7 @@ StatusOr<ExecutionOutput> GpuExecutable::ExecuteAsyncOnStreamImpl(
   se::gpu::GpuExecutor* gpu_executor = se::gpu::ExtractGpuExecutor(executor);
   se::gpu::ScopedActivateExecutorContext activation(gpu_executor);
 #endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
-
+  VLOG(-1) << "ExtractGpuExecutor() is done";
   // If persistent buffers are enabled, the executable cannot execute
   // concurrently, therefore performance can suffer under contention.
   absl::MutexLockMaybe lock(
@@ -664,6 +666,7 @@ StatusOr<ExecutionOutput> GpuExecutable::ExecuteAsyncOnStreamImpl(
       BufferAllocations buffer_allocations,
       GenerateBufferAllocations(arguments, globals, memory_allocator,
                                 device_ordinal, persistent_buffers_map));
+  VLOG(-1) << "GenerateBufferAllocations() is done";
   VLOG(2) << buffer_allocations.ToString();
   std::set<se::DeviceMemoryBase> buffers_in_result;
 
@@ -775,10 +778,10 @@ StatusOr<ExecutionOutput> GpuExecutable::ExecuteAsyncOnStreamImpl(
     }
     buffers_in_result.insert(result_buffer);
   }
-
+  VLOG(-1) << "Device buffer allocation is done and start to ExecuteThunksOrXlaRuntime()";
   TF_RETURN_IF_ERROR(ExecuteThunksOrXlaRuntime(
       run_options, buffer_allocations, block_host_until_done, gpu_lock));
-
+  VLOG(-1) << "  ExecuteThunksOrXlaRuntime() is done";
   // Free all temporary allocations.
   std::vector<BufferAllocation> non_persistent_allocations;
   for (const BufferAllocation& allocation : allocations_) {
@@ -800,6 +803,7 @@ Status GpuExecutable::ExecuteThunksOrXlaRuntime(
     const ServiceExecutableRunOptions* run_options,
     const BufferAllocations& buffer_allocations, bool block_host_until_done,
     NonAtomicallyUpgradeableRWLock& gpu_lock) {
+  VLOG(-1) << "GpuExecutable::ExecuteThunksOrXlaRuntime() starts";
   TF_RETURN_IF_ERROR(
       CheckCompatibilityWithServiceExecutableRunOptions(run_options));
 
@@ -814,7 +818,7 @@ Status GpuExecutable::ExecuteThunksOrXlaRuntime(
     for (const std::unique_ptr<Thunk>& thunk : *thunks_) {
       TF_RETURN_IF_ERROR(thunk->Initialize(*this, executor));
     }
-
+    VLOG(-1) << "starts to ExecuteThunks()";
     return ExecuteThunks(
         module_name_, unique_id, *thunks_, run_options, buffer_allocations,
         block_host_until_done,
@@ -836,6 +840,7 @@ Status GpuExecutable::ExecuteThunksOrXlaRuntime(
   }
 
   if (gpu_runtime_executable_) {
+    VLOG(-1) << "start to ExecuteXlaRuntime()";
     return ExecuteXlaRuntime(module_name_, unique_id, *gpu_runtime_executable_,
                              run_options, text_, binary_, buffer_allocations,
                              temp_buffer, block_host_until_done, gpu_lock);

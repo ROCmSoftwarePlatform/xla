@@ -144,6 +144,7 @@ class Executable {
                              const ExecuteOpts& opts) const;
 
   void Execute(CallFrame& call_frame, const ExecuteOpts& opts) const {
+    VLOG(-1) << "void Execute(CallFrame& call_frame, const ExecuteOpts& opts)";
     Execute(0, call_frame, opts);
   }
 

@@ -293,6 +293,7 @@ Status Executable::InitializeCallFrame(unsigned ordinal, ArgumentsRef arguments,
 absl::StatusOr<ExecutionReference> Executable::Execute(
     unsigned ordinal, ArgumentsRef arguments, const ResultConverter& results,
     const ExecuteOpts& opts, bool verify_arguments) const {
+  VLOG(-1) << "Execute the compiled XLA runtime executable...";
   // CallFrame can be allocated on the stack because compiled function will
   // unpack all the arguments it needs, and async regions will not access
   // the data after the initial function will return the result.
@@ -321,7 +322,7 @@ absl::StatusOr<ExecutionReference> Executable::Execute(
       do_not_optimize(value);
     }
   }
-#endif
+#endif  
 
   // Compiled function takes arguments and results as `void**` type erased
   // pointer. See mlir::ExecutionEngine `packFunctionArguments` for the details.
@@ -329,25 +330,26 @@ absl::StatusOr<ExecutionReference> Executable::Execute(
                                     verify_arguments);
       !st.ok())
     return (results.ReturnError(st), st);
-
+  VLOG(-1) << "InitializeCallFrame() is done";
   auto exec_ref = Execute(ordinal, call_frame, opts);
-
+  VLOG(-1) << "Execute(ordinal, call_frame, opts) is done";
   // Convert compiled function return values into results.
   if (auto st = ReturnResults(ordinal, results, &call_frame); !st.ok())
     return st;
-
+  VLOG(-1) << "Convert compiled function return values into results is done";
   return {std::move(exec_ref)};
 }
 
 ExecutionReference Executable::Execute(unsigned ordinal, CallFrame& call_frame,
                                        const ExecuteOpts& opts) const {
+  VLOG(-1) << "ExecutionReference Executable::Execute()...";                                      
   assert(ordinal < functions_.size() && "function ordinal out of bounds");
   const Function& fn = functions_[ordinal];
 
   // Set the AsyncRuntime to be used by all async tasks spawned by the
   // executable.
   AsyncRuntime::Set(AsyncRuntime(opts.async_task_runner));
-
+  VLOG(-1) << "Set the AsyncRuntime is done";
   ExecutionReference exec_ref;
   ExecutionContext* execution_ctx_ptr = nullptr;
   // For sync executable, runtime execution context can be used only by the
@@ -356,13 +358,16 @@ ExecutionReference Executable::Execute(unsigned ordinal, CallFrame& call_frame,
       &fn.results_memory_layout, &call_frame, opts.custom_call_data,
       opts.custom_call_registry, opts.diagnostic_engine};
   if (IsAsync()) {
+    VLOG(-1) << "IsAsync()....";    
     // With custom calls inside async functions the lifetime of the execution
     // context must be extended until all pending async tasks are completed.
     exec_ref = ExecutionReference(new ExecutionContext{
         &fn.results_memory_layout, &call_frame, opts.custom_call_data,
         opts.custom_call_registry, opts.diagnostic_engine});
     execution_ctx_ptr = exec_ref.get();
+    VLOG(-1) << "ExecutionReference is done";      
   } else {
+    VLOG(-1) << "Is not Async()....";        
     // Override the execution context argument.
     execution_ctx_ptr = &execution_ctx;
   }
@@ -370,9 +375,10 @@ ExecutionReference Executable::Execute(unsigned ordinal, CallFrame& call_frame,
   assert(call_frame.args.size() == fn.arguments_memory_layout.num_args_ptrs);
   assert(call_frame.args[0] == nullptr && "expected to see a placeholder");
   call_frame.args[0] = &execution_ctx_ptr;
-
+  VLOG(-1) << "start to Call the compiled function";     
   // Call the compiled function.
   (*fn.fptr)(call_frame.args.data());
+  VLOG(-1) << "  Call the compiled function is done";  
   return exec_ref;
 }
 
@@ -381,13 +387,14 @@ Status Executable::ReturnResults(unsigned ordinal,
                                  CallFrame* call_frame) const {
   // If execution failed, forward error to all results.
   if (call_frame->is_error) {
+    VLOG(-1) << "call_frame->is_error";
     auto err = InternalError("run time error: %s", call_frame->error);
     return (results.ReturnError(err), err);
   }
 
   assert(ordinal < functions_.size() && "function ordinal out of bounds");
   const Function& fn = functions_[ordinal];
-
+  VLOG(-1) << "const Function& fn = functions_[ordinal] is done";  
   // Try to convert results using registered conversion functions.
   bool converted = true;
 
@@ -398,9 +405,11 @@ Status Executable::ReturnResults(unsigned ordinal,
     bool res = succeeded(results.ReturnValue(i, type, runtime_type, ret));
     converted = converted && res;
   }
-
-  if (LLVM_UNLIKELY(!converted))
+  VLOG(-1) << "to convert results using registered conversion functions is done";  
+  if (LLVM_UNLIKELY(!converted)){
+    VLOG(-1) << "failed to convert all returned values";
     return InternalError("failed to convert all returned values");
+  }
   else
     return absl::OkStatus();
 }
@@ -529,6 +538,7 @@ FunctionRef::FunctionRef(const Executable* executable, unsigned ordinal)
 absl::StatusOr<ExecutionReference> FunctionRef::operator()(
     ArgumentsRef arguments, const ResultConverter& results,
     const Executable::ExecuteOpts& opts, bool verify_arguments) const {
+  VLOG(-1) << "FunctionRef::operator()";    
   return executable_->Execute(ordinal_, arguments, results, opts,
                               verify_arguments);
 }

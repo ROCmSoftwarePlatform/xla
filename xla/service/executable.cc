@@ -108,9 +108,11 @@ StatusOr<ScopedShapedBuffer> Executable::ExecuteAsyncOnStream(
   for (const ShapedBuffer* arg : arguments) {
     args.emplace_back(MakeMaybeOwningDeviceMemoryTree(*arg));
   }
+  VLOG(-1) << "start to ExecuteAsyncOnStream()";
   TF_ASSIGN_OR_RETURN(ExecutionOutput out,
                       ExecuteAsyncOnStream(run_options, std::move(args),
                                            hlo_execution_profile));
+  VLOG(-1) << "ExecuteAsyncOnStream() is done";
   return out.ConsumeResult();
 }
 
@@ -161,6 +163,7 @@ StatusOr<std::vector<ScopedShapedBuffer>> Executable::ExecuteOnStreams(
 StatusOr<ScopedShapedBuffer> Executable::ExecuteOnStreamWrapper(
     const ServiceExecutableRunOptions* run_options,
     absl::Span<const ShapedBuffer* const> arguments) {
+  VLOG(-1) << "StatusOr<ScopedShapedBuffer> Executable::ExecuteOnStreamWrapper";
   StatusOr<ScopedShapedBuffer> result =
       ExecuteAsyncOnStreamWrapper(run_options, arguments);
   Status block_status = run_options->stream()->BlockHostUntilDone();
@@ -172,6 +175,7 @@ StatusOr<ScopedShapedBuffer> Executable::ExecuteOnStreamWrapper(
 StatusOr<ExecutionOutput> Executable::ExecuteOnStreamWrapper(
     const ServiceExecutableRunOptions* run_options,
     std::vector<ExecutionInput> arguments) {
+  VLOG(-1) << "StatusOr<ExecutionOutput> Executable::ExecuteOnStreamWrapper";
   StatusOr<ExecutionOutput> result =
       ExecuteAsyncOnStreamWrapper(run_options, std::move(arguments));
   Status block_status = run_options->stream()->BlockHostUntilDone();
@@ -198,6 +202,7 @@ Status ExecuteWrapperAfterExecution(
     Executable* executable, const ExecuteAsyncOnStreamWrapperState& state,
     Status return_status, se::Stream* stream) {
   if (!return_status.ok()) {
+    VLOG(-1) << "!return_status.ok()";
     if (state.profile != nullptr) {
       Status status = stream->BlockHostUntilDone();
       if (!status.ok()) {
@@ -237,10 +242,13 @@ StatusOr<ScopedShapedBuffer> Executable::ExecuteAsyncOnStreamWrapper(
     const ServiceExecutableRunOptions* run_options,
     absl::Span<const ShapedBuffer* const> arguments) {
   auto state = ExecuteWrapperBeforeExecution(*this, run_options);
+  VLOG(-1) << "ExecuteWrapperBeforeExecution is done";
   StatusOr<ScopedShapedBuffer> return_value =
       ExecuteAsyncOnStream(run_options, arguments, nullptr);
+  VLOG(-1) << "ExecuteAsyncOnStream is done";
   TF_RETURN_IF_ERROR(ExecuteWrapperAfterExecution(
       this, state, return_value.status(), run_options->stream()));
+  VLOG(-1) << "ExecuteWrapperAfterExecution is done";
   return return_value;
 }
 

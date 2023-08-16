@@ -66,8 +66,10 @@ namespace gpu {
 // Only reason we need this wrapper class is to make the GpuDriver* API
 class GpuContext {
  public:
-  GpuContext(const int v) : device_ordinal_(v) {}
+  GpuContext(hipCtx_t context, const int v) : 
+          context_(context), device_ordinal_(v) {}
 
+  hipCtx_t context() const { return context_; }
   int device_ordinal() const { return device_ordinal_; }
 
   // Disallow copying and moving.
@@ -78,6 +80,7 @@ class GpuContext {
 
  private:
   const int device_ordinal_;
+  hipCtx_t const context_;
 };
 
 namespace {
@@ -404,7 +407,7 @@ GpuDriver::ContextGetSharedMemConfig(GpuContext* context) {
   VLOG(2) << "Create new HIP graph";
   RETURN_IF_ROCM_ERROR(hipGraphCreate(graph, /*flags=*/0),
                        "Failed to create HIP graph");
-  VLOG(2) << "Created HIP graph " << graph;
+  VLOG(2) << "Created HIP graph " << *graph;
   return ::tsl::OkStatus();
 }
 
@@ -565,13 +568,15 @@ static std::string_view StreamCaptureModeToString(
     unsigned int block_dim_x, unsigned int block_dim_y,
     unsigned int block_dim_z, unsigned int shared_mem_bytes,
     void** kernel_params, void** extra) {
-  VLOG(2) << "Add kernel node to a graph: " << graph
+  VLOG(2) << "Add kernel node to a graph " << graph
           << "; kernel: " << kernel_name << "; gdx: " << grid_dim_x
           << " gdy: " << grid_dim_y << " gdz: " << grid_dim_z
           << " bdx: " << block_dim_x << " bdy: " << block_dim_y
           << " bdz: " << block_dim_z << "; shmem: " << shared_mem_bytes;
 
   hipKernelNodeParams params;
+  memset(&params, 0, sizeof(params));
+
   params.func = function;
   params.gridDim.x = grid_dim_x;
   params.gridDim.y = grid_dim_y;
@@ -583,9 +588,44 @@ static std::string_view StreamCaptureModeToString(
   params.kernelParams = kernel_params;
   params.extra = extra;
 
+  if (shared_mem_bytes != 0) {
+    RETURN_IF_ROCM_ERROR(
+        hipFuncSetAttribute(function,                             
+                           hipFuncAttributeMaxDynamicSharedMemorySize,
+                           shared_mem_bytes),
+        "Failed to set shared memory size");
+  }
+
   RETURN_IF_ROCM_ERROR(
       hipGraphAddKernelNode(node, graph, deps.data(), deps.size(), &params),
       "Failed to add kernel node to a HIP graph");
+
+  return ::tsl::OkStatus();
+}
+
+/* static */ tsl::Status GpuDriver::GraphAddMemcpyD2DNode(
+    GpuContext* context, hipGraphNode_t* node, hipGraph_t graph,
+    absl::Span<hipGraphNode_t> deps, hipDeviceptr_t gpu_dst, hipDeviceptr_t gpu_src,
+    uint64_t size) {
+  VLOG(2) << "Add memcpy d2d node to a graph " << graph
+          << "; dst: " << reinterpret_cast<void*>(gpu_dst)
+          << "; src: " << reinterpret_cast<void*>(gpu_src) << "; size: " << size
+          << "; context: " << context->context() << "; deps: " << deps.size();
+
+  HIP_MEMCPY3D params;
+  memset(&params, 0, sizeof(params));
+
+  params.srcMemoryType = hipMemoryTypeDevice;
+  params.srcDevice = gpu_src;
+  params.dstMemoryType = hipMemoryTypeDevice;
+  params.dstDevice = gpu_dst;
+  params.WidthInBytes = size;
+  params.Height = 1;
+  params.Depth = 1;
+
+  RETURN_IF_ROCM_ERROR(
+      hipGraphAddMemcpyNode(node, graph, deps.data(), deps.size(), &params),
+      "Failed to add memcpy d2d node to a HIP graph");
 
   return ::tsl::OkStatus();
 }
@@ -1223,6 +1263,26 @@ static std::string_view StreamCaptureModeToString(
       absl::StatusCode::kInternal,
       absl::StrFormat("failed to get pointer into for device pointer %p; %s",
                       reinterpret_cast<void*>(dptr), ToString(result).c_str())};
+}
+
+/* static */ tsl::StatusOr<GpuContext*> GpuDriver::GetPointerContext(
+    hipDeviceptr_t pointer) {
+  GpuContext* context = nullptr;
+  hipError_t result =
+      hipPointerGetAttribute(&context, HIP_POINTER_ATTRIBUTE_CONTEXT, pointer);
+  if (result == hipSuccess) {
+    if (context == nullptr) {
+      return tsl::Status(
+          absl::StatusCode::kUnavailable,
+          "Empty context returned while querying context for device pointer");
+    }
+    return context;
+  }
+
+  return tsl::Status(
+      absl::StatusCode::kInternal,
+      absl::StrCat("failed to query context for device pointer: ",
+                   ToString(result)));
 }
 
 /* static */ tsl::StatusOr<MemorySpace> GpuDriver::GetPointerMemorySpace(

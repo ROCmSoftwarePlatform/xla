@@ -88,11 +88,13 @@ namespace wrap {
   __macro(hipEventSynchronize)                      \
   __macro(hipFree)                                  \
   __macro(hipFuncSetCacheConfig)                    \
+  __macro(hipFuncSetAttribute)                      \
   __macro(hipGetDevice)                             \
   __macro(hipGetDeviceCount)                        \
   __macro(hipGetDeviceProperties)                   \
   __macro(hipGetErrorString)                        \
   __macro(hipGraphDebugDotPrint)                    \
+  __macro(hipGraphAddMemcpyNode)                    \
   __macro(hipGraphDestroy)                          \
   __macro(hipGraphExecDestroy)                      \
   __macro(hipGraphExecUpdate)                       \

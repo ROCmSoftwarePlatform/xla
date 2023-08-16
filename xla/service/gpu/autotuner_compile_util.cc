@@ -155,6 +155,7 @@ AutotunerCompileUtil::Create(const AutotuneConfig& config,
 
 StatusOr<ExecutionOutput> AutotunerCompileUtil::Execute(
     Executable& executable, std::vector<ExecutionInput> arguments) {
+  VLOG(-1) << "start to AutotunerCompileUtil::Execute()";
   // Require exclusive GPU lock to prevent other runs during autotuning.
   GpuExecutableRunOptions gpu_opts;
   gpu_opts.set_requires_exclusive_lock_on_gpu();

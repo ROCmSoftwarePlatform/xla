@@ -167,6 +167,7 @@ StatusOr<Literal> Client::ExecuteAndTransfer(
     const XlaComputation& computation, absl::Span<GlobalData* const> arguments,
     const ExecutionOptions* execution_options,
     ExecutionProfile* execution_profile) {
+  VLOG(-1) << "within Cllient::ExecuteAndTransfer()";      
   TF_ASSIGN_OR_RETURN(
       std::unique_ptr<GlobalData> data,
       Execute(computation, arguments, execution_options, execution_profile));
@@ -278,6 +279,7 @@ StatusOr<std::unique_ptr<GlobalData>> Client::Execute(
     const XlaComputation& computation, absl::Span<GlobalData* const> arguments,
     const ExecutionOptions* execution_options,
     ExecutionProfile* execution_profile) {
+  VLOG(-1) << "starts Client::Execute()";
   // Create an ExecutionOptions if necessary, or set its DeviceHandles.
   std::optional<ExecutionOptions> options_storage;
   if (!execution_options || execution_options->device_handles().empty()) {
@@ -306,7 +308,7 @@ StatusOr<std::unique_ptr<GlobalData>> Client::Execute(
   VLOG(1) << "Making ExecuteParallel request: "
           << execution_options->DebugString();
   TF_ASSIGN_OR_RETURN(auto results, ExecuteParallel(computation_instances));
-  VLOG(1) << "ExecuteParallel request done.";
+  VLOG(-1) << "ExecuteParallel request done.";
 
   // The result selection is a bit hacky, but better than assuming it is
   // device 0.
@@ -315,20 +317,20 @@ StatusOr<std::unique_ptr<GlobalData>> Client::Execute(
   for (int64_t i = 0, end = results.size(); i < end; i++) {
     TF_ASSIGN_OR_RETURN(const Shape& shape, GetShape(*results[i]));
     if (!ShapeUtil::IsEmptyTuple(shape)) {
-      VLOG(3) << "Fetching result from device " << i << ": "
+      VLOG(-1) << "Fetching result from device " << i << ": "
               << ShapeUtil::HumanString(shape);
       return std::move(results[i]);
     }
   }
   TF_RET_CHECK(!results.empty());
-  VLOG(1) << "Defaulting to device 0 result";
+  VLOG(-1) << "Defaulting to device 0 result";
   return std::move(results[0]);
 }
 
 StatusOr<std::vector<std::unique_ptr<GlobalData>>> Client::ExecuteParallel(
     absl::Span<const XlaComputationInstance> computations) {
   ExecuteGraphParallelRequest request;
-
+  VLOG(-1) << "start to ExecuteParallel()";
   for (const XlaComputationInstance& computation : computations) {
     ExecuteGraphRequest single_request;
     *single_request.mutable_computation() = computation.computation.proto();
@@ -343,9 +345,10 @@ StatusOr<std::vector<std::unique_ptr<GlobalData>>> Client::ExecuteParallel(
   VLOG(1) << "making execute-graph-parallel request: "
           << request.ShortDebugString();
   Status s = stub_->ExecuteGraphParallel(&request, &response);
-  VLOG(1) << "done with request";
+  VLOG(-1) << "done with request";
 
   if (!s.ok()) {
+    VLOG(-1) << "!s not ok";
     return s;
   }
 
@@ -358,7 +361,7 @@ StatusOr<std::vector<std::unique_ptr<GlobalData>>> Client::ExecuteParallel(
       *computations[i].execution_profile = response.responses(i).profile();
     }
   }
-
+  VLOG(-1) << "done with outputs";
   return std::move(outputs);
 }
 

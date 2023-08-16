@@ -287,9 +287,9 @@ StatusOr<std::vector<std::unique_ptr<Executable>>> Service::BuildExecutables(
     std::vector<std::unique_ptr<HloModuleConfig>> module_configs,
     Backend* backend, std::vector<std::vector<se::StreamExecutor*>> executors,
     const Compiler::CompileOptions& options, bool run_backend_only) {
-  VLOG(1) << StrFormat("BuildExecutable on service %p", this);
+  VLOG(-1) << StrFormat("BuildExecutable on service %p", this);
 
-  VLOG(1) << "Computations:";
+  VLOG(-1) << "Computations:";
   for (const HloModuleProto* proto : module_protos) {
     VLOG(1) << proto->name();
   }
@@ -313,6 +313,7 @@ StatusOr<std::vector<std::unique_ptr<Executable>>> Service::BuildExecutables(
 
   std::vector<std::unique_ptr<Executable>> executables;
   if (!run_backend_only) {
+    VLOG(-1) << "!run_backend_only";
     TF_ASSIGN_OR_RETURN(executables, backend->compiler()->Compile(
                                          std::move(module_group),
                                          std::move(executors), options));
@@ -467,7 +468,7 @@ StatusOr<GlobalDataHandle> Service::ExecuteAndRegisterResult(
     const std::string& result_tag, ExecutionProfile* profile) {
   // Set up streams.
   std::vector<StreamPool::Ptr> streams;
-
+  VLOG(-1) << "starts to Service::ExecuteAndRegisterResult()";
   TF_ASSIGN_OR_RETURN(auto replicas, Replicas(*backend, device_handle));
   TF_RET_CHECK(!replicas.empty());
   for (se::StreamExecutor* executor : replicas) {
@@ -481,7 +482,7 @@ StatusOr<GlobalDataHandle> Service::ExecuteAndRegisterResult(
   for (int64_t replica = 0; replica < replicas.size(); ++replica) {
     device_assignment(replica, 0) = replicas[replica]->device_ordinal();
   }
-
+  VLOG(-1) << "Set up streams is done";
   // Set up run options.
   std::vector<ServiceExecutableRunOptions> run_options;
   run_options.reserve(streams.size());
@@ -502,16 +503,17 @@ StatusOr<GlobalDataHandle> Service::ExecuteAndRegisterResult(
                                          &run_options[0], arguments[0]));
     return allocation_tracker_.Register(std::move(result), result_tag);
   }
-
+  VLOG(-1) << "Set up run options is done";
   // TODO(b/69985541): Support profiling also on this path.
 
   std::vector<absl::Span<const ShapedBuffer* const>> replicated_arguments;
   for (const auto& arg : arguments) {
     replicated_arguments.push_back(arg);
   }
-
+  VLOG(-1) << "start executable->ExecuteOnStreams";
   TF_ASSIGN_OR_RETURN(auto results, executable->ExecuteOnStreams(
                                         run_options, replicated_arguments));
+    VLOG(-1) << "executable->ExecuteOnStreams is done";
   TF_RET_CHECK(!results.empty());
   return allocation_tracker_.RegisterReplicatedBuffers(std::move(results),
                                                        result_tag);
@@ -560,7 +562,7 @@ StatusOr<std::vector<std::vector<const ShapedBuffer*>>> Service::GetArguments(
 
 Status Service::ExecuteGraphParallel(const ExecuteGraphParallelRequest* arg,
                                      ExecuteParallelResponse* result) {
-  VLOG(1) << "running execute-graph-parallel request";
+  VLOG(-1) << "running execute-graph-parallel request";
 
   std::vector<std::vector<std::vector<const ShapedBuffer*>>> all_arguments;
   std::vector<std::vector<se::StreamExecutor*>> all_executors;
@@ -625,7 +627,7 @@ Status Service::ExecuteGraphParallel(const ExecuteGraphParallelRequest* arg,
         CreateModuleConfig(
             ProgramShape{request.computation().host_program_shape()},
             replicated_arguments.front(), request.execution_options()));
-    VLOG(3)
+    VLOG(-1)
         << "ExecuteGraphParallel created HloModuleConfig computation layout: "
         << module_config->entry_computation_layout().ToString();
 
@@ -669,7 +671,7 @@ Status Service::ExecuteGraphParallel(const ExecuteGraphParallelRequest* arg,
                                          &snapshots[i]));
     }
   }
-
+  VLOG(-1) << "Build the HloModules and compile to generate the executables is done";
   // If we have multiple executables to run, execute them all in parallel.  But
   // if we only have one executable, execute it using the vanilla, non-parallel
   // call.
@@ -686,6 +688,7 @@ Status Service::ExecuteGraphParallel(const ExecuteGraphParallelRequest* arg,
   Status execution_status = OkStatus();
 
   if (executable_ptrs.size() == 1) {
+    VLOG(-1) << "ExecuteAndRegisterResult starts";
     StatusOr<GlobalDataHandle> output_or_status = ExecuteAndRegisterResult(
         executable_ptrs[0], all_arguments[0], execute_backend_.get(),
         device_handles[0], computation_names[0], &profile);
@@ -693,19 +696,18 @@ Status Service::ExecuteGraphParallel(const ExecuteGraphParallelRequest* arg,
       outputs.push_back(std::move(output_or_status).value());
     } else {
       execution_status = output_or_status.status();
-    }
+    }    
   } else {
     StatusOr<std::vector<GlobalDataHandle>> outputs_or_status =
         ExecuteParallelAndRegisterResult(executable_ptrs, all_arguments,
                                          execute_backend_.get(), device_handles,
-                                         computation_names, &profile);
+                                         computation_names, &profile);                           
     if (outputs_or_status.ok()) {
       outputs = std::move(outputs_or_status).value();
     } else {
       execution_status = outputs_or_status.status();
     }
-  }
-
+  }  
   if (!execution_status.ok()) {
     // Execution failed so we don't have the results.  Dump the HLO snapshot
     // with just the program arguments.
@@ -715,7 +717,7 @@ Status Service::ExecuteGraphParallel(const ExecuteGraphParallelRequest* arg,
   }
 
   TF_RETURN_IF_ERROR(execution_status);
-
+  VLOG(-1) << "DumpHloSnapshotIfEnabled is done";
   for (const GlobalDataHandle& output : outputs) {
     ExecuteResponse response;
     *response.mutable_output() = output;
@@ -737,7 +739,7 @@ Status Service::ExecuteGraphParallel(const ExecuteGraphParallelRequest* arg,
     }
   }
 
-  VLOG(1) << "successfully completed 'execute-graph-parallel' request";
+  VLOG(-1) << "successfully completed 'execute-graph-parallel' request";
   return OkStatus();
 }
 

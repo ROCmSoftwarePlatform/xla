@@ -45,9 +45,11 @@ StatusOr<std::vector<std::unique_ptr<Executable>>> LLVMCompiler::Compile(
     TF_ASSIGN_OR_RETURN(modules[i],
                         RunHloPasses(std::move(modules[i]), stream_execs[i][0],
                                      options.device_allocator));
+    VLOG(-1) << "RunHloPasses is done";
     TF_ASSIGN_OR_RETURN(std::unique_ptr<Executable> executable,
                         RunBackend(std::move(modules[i]), stream_execs[i][0],
                                    options.device_allocator));
+    VLOG(-1) << "RunBackend is done";                                   
     result.push_back(std::move(executable));
   }
 

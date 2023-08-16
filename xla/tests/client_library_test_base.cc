@@ -116,6 +116,7 @@ StatusOr<Literal> ClientLibraryTestBase::ExecuteAndTransfer(
     *execution_options.mutable_shape_with_output_layout() =
         shape_with_output_layout->ToProto();
   }
+  VLOG(-1) << "start to client_->ExecuteAndTransfer()";
   return client_->ExecuteAndTransfer(computation, arguments,
                                      &execution_options);
 }
@@ -359,6 +360,7 @@ Status ClientLibraryTestBase::ComputeAndCompareLiteralWithStatus(
     XlaBuilder* builder, const Literal& expected,
     absl::Span<GlobalData* const> arguments_passed_in, ErrorSpec error,
     const Shape* shape_with_layout) {
+  VLOG(-1) << "ComputeAndCompareLiteralWithStatus starts...";
   std::vector<GlobalData*> arguments(arguments_passed_in.begin(),
                                      arguments_passed_in.end());
 
@@ -376,6 +378,8 @@ Status ClientLibraryTestBase::ComputeAndCompareLiteralWithStatus(
   }
 
   TF_ASSIGN_OR_RETURN(auto computation, builder->Build());
+  VLOG(-1) << "builder->Build() starts...";
+  
   // We allow using a float expected literal for a bfloat16 output. In this
   // case, we need to convert the expected literal to bfloat16.
   const Literal* expected_ptr = &expected;
@@ -410,6 +414,8 @@ Status ClientLibraryTestBase::ComputeAndCompareLiteralWithStatus(
   }
   TF_ASSIGN_OR_RETURN(auto actual, ExecuteAndTransfer(computation, arguments,
                                                       shape_with_layout));
+
+  VLOG(-1) << "ExecuteAndTransfer is done...";    
   EXPECT_TRUE(LiteralTestUtil::Near(*expected_ptr, actual, error));
   return OkStatus();
 }
