@@ -119,7 +119,6 @@ Status AMDGPUCompiler::OptimizeHloPostLayoutAssignment(
       hlo_module, stream_exec, options, gpu_target_config, autotune_results));
 
   HloPassPipeline post_pipeline("AMDGPU post-layout_assignment");
-
   // Transform TriangularSolve ops into custom-calls, so we can add temp
   // memory.
   post_pipeline.AddPass<TriangularSolveRewriter>();
