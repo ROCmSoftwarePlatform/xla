@@ -475,7 +475,7 @@ cc_library(
 
 cc_library(
     name = "ir_emitter_triton",
-    srcs = if_cuda_is_configured(["ir_emitter_triton.cc"]) + if_rocm_hipblaslt([
+    srcs = if_gpu_is_configured(["ir_emitter_triton.cc"]) + if_rocm_hipblaslt([
         "ir_emitter_triton.cc",
     ]),
     hdrs = if_gpu_is_configured(["ir_emitter_triton.h"]),
@@ -550,9 +550,10 @@ cc_library(
         "@tsl//tsl/platform:tensor_float_32_utils",
     ] + if_cuda_is_configured([
         "@triton//:NVGPUToLLVM",
+        "@triton//:TritonNvidiaGPUTransforms",
+    ]) + if_gpu_is_configured([
         "@triton//:TritonGPUToLLVM",
         "@triton//:TritonGPUTransforms",
-        "@triton//:TritonNvidiaGPUTransforms",
         "@triton//:TritonLLVMIR",
         "@triton//:TritonToTritonGPU",
     ]),
@@ -560,16 +561,12 @@ cc_library(
 
 xla_test(
     name = "ir_emitter_triton_test",
-    srcs = if_cuda_is_configured(["ir_emitter_triton_test.cc"]),
+    srcs = if_gpu_is_configured(["ir_emitter_triton_test.cc"]),
     backends = [
-        "gpu_a100",
-        "gpu_v100",
+        "gpu",
     ],
-    shard_count = 20,
-    tags = [
-        "noasan",  # TODO(b/319626241): Reenable once the signed-integer-overflow is fixed
-        "nomac",
-    ],
+    shard_count = 10,
+    tags = ["nomac"],
     deps = [
         ":backend_configs_cc",
         ":gpu_device_info_for_tests",
@@ -605,6 +602,7 @@ xla_test(
         "@tsl//tsl/platform:status_matchers",
         "@tsl//tsl/platform:statusor",
         "@tsl//tsl/platform:test",
+        "@tsl//tsl/platform:tensor_float_32_utils",
     ],
 )
 

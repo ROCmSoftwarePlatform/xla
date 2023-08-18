@@ -80,6 +80,7 @@ limitations under the License.
 #include "mlir/Target/LLVMIR/Dialect/Builtin/BuiltinToLLVMIRTranslation.h"  // from @llvm-project
 #include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"  // from @llvm-project
 #include "mlir/Target/LLVMIR/Dialect/NVVM/NVVMToLLVMIRTranslation.h"  // from @llvm-project
+#include "mlir/Target/LLVMIR/Dialect/ROCDL/ROCDLToLLVMIRTranslation.h"  // from @llvm-project
 #include "mlir/Target/LLVMIR/Export.h"  // from @llvm-project
 #include "mlir/Transforms/Passes.h"  // from @llvm-project
 #include "xla/autotuning.pb.h"
@@ -731,10 +732,15 @@ absl::StatusOr<Value> EmitScope(
   return values[instructions.back()];
 }
 
-absl::Status CreateTritonPipeline(mlir::OpPassManager& pm,
-                                  const se::CudaComputeCapability& cc,
-                                  const TritonGemmConfig& config) {
-  const int ccAsInt = cc.major * 10 + cc.minor;
+void CreateTritonPipeline(mlir::OpPassManager& pm,
+                          const GpuVersion gpu_version,
+                          const TritonGemmConfig& config) {
+  int ccAsInt = 0;
+  if(std::holds_alternative<se::CudaComputeCapability>(gpu_version)) {
+    auto cc = std::get<se::CudaComputeCapability>(gpu_version);
+    int ccAsInt = cc.major * 10 + cc.minor;
+  }
+
   const int threadsPerWarp = 32;
   mlir::triton::nvidia_gpu::ClusterInfo clusterInfo;
   clusterInfo.clusterDimX = config.cluster_dims.x;
@@ -820,13 +826,19 @@ absl::Status CreateTritonPipeline(mlir::OpPassManager& pm,
   // // TODO(b/316566238): Use TMA info collected here in XLA runtime.
   mlir::triton::gpu::TMAMetadataTy tma_infos;
   pm.addPass(mt::createConvertTritonGPUToLLVMPass(ccAsInt,
-                                                  /*target=*/mlir::triton::NVVM,
+#ifdef TENSORFLOW_USE_ROCM
+                                                  /*target=*/mt::ROCDL,
+#else
+                                                  /*target=*/mt::Default,
+#endif
                                                   &tma_infos));
   if (cc.IsAtLeastHopper() && config.enable_warp_specialization) {
     pm.addPass(mlir::createLoopInvariantCodeMotionPass());
     pm.addPass(mlir::createCSEPass());
   }
+#ifndef TENSORFLOW_USE_ROCM
   pm.addPass(mt::createConvertNVGPUToLLVMPass());
+#endif
   pm.addPass(mlir::createArithToLLVMConversionPass());
   pm.addPass(mlir::createCanonicalizerPass());
   pm.addPass(mlir::createCSEPass());
@@ -1974,6 +1986,7 @@ absl::StatusOr<std::unique_ptr<llvm::Module>> TranslateLLVMToLLVMIR(
   mlir::registerBuiltinDialectTranslation(registry);
   mlir::registerLLVMDialectTranslation(registry);
   mlir::registerNVVMDialectTranslation(registry);
+  mlir::registerROCDLDialectTranslation(registry);
   module->getContext()->appendDialectRegistry(registry);
 
   std::unique_ptr<llvm::Module> llvmModule =
@@ -2063,7 +2076,7 @@ absl::StatusOr<mlir::OwningOpRef<mlir::ModuleOp>> CreateTritonModule(
 absl::StatusOr<TritonWrapperResult> TritonWrapper(
     const TritonFusionAnalysis& analysis, absl::string_view fn_name,
     const HloComputation* hlo_computation, absl::string_view fusion_kind,
-    const se::CudaComputeCapability& cc,
+    const se::GpuComputeCapability& cc,
     const se::DeviceDescription& device_info, const TritonGemmConfig& config,
     llvm::Module* llvm_module, TritonIrEmitter ir_emitter,
     mlir::MLIRContext& mlir_context) {
@@ -2191,11 +2204,13 @@ absl::StatusOr<TritonWrapperResult> TritonWrapper(
           ->getAttrOfType<mlir::IntegerAttr>("triton_gpu.shared")
           .getInt();
   VLOG(2) << "Shared memory usage: " << shared_mem_bytes << " B";
+#ifndef TENSORFLOW_USE_ROCM
   if (shared_mem_bytes > device_info.shared_memory_per_block_optin()) {
     return absl::ResourceExhaustedError(absl::StrFormat(
         "Shared memory size limit exceeded: requested %d, available: %d",
         shared_mem_bytes, device_info.shared_memory_per_block_optin()));
   }
+#endif
 
   TF_ASSIGN_OR_RETURN(
       std::unique_ptr<llvm::Module> ll_triton_module,
