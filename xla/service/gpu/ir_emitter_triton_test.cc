@@ -940,6 +940,7 @@ ENTRY e {
 }
 
 TEST_F(TritonGemmTest, NoPadding) {
+
   const char* hlo_text = R"(
 HloModule t
 
@@ -950,6 +951,12 @@ ENTRY e {
   ROOT _ = f16[15,17] dot(p0, cp1),
     lhs_contracting_dims={1}, rhs_contracting_dims={0}
 })";
+
+
+  //GTEST_MESSAGE_("Zoran",::testing::TestPartResult::kSuccess);
+  EXPECT_TRUE(false) << "Zoran";
+//  EXPECT_TRUE(false) << output_directory;
+  EXPECT_TRUE(false) << "Zoran";
 
   MatchOptimizedHlo(hlo_text, R"(
 ; CHECK: ENTRY
@@ -963,7 +970,22 @@ ENTRY e {
 ; CHECK-NOT: slice
 )");
 
-  EXPECT_TRUE(RunAndCompare(hlo_text, ErrorSpec{/*aabs=*/1e-3, /*arel=*/1e-3}));
+  TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<HloModule> verified_module,
+                          ParseAndReturnVerifiedModule(hlo_text));
+
+  std::string output_directory;
+  if (!tsl::io::GetTestUndeclaredOutputsDir(&output_directory)) {
+    output_directory = tsl::testing::TmpDir();
+  }
+  DebugOptions debug_options = verified_module->config().debug_options();
+  debug_options.set_xla_dump_to(output_directory);
+  debug_options.set_xla_gpu_dump_llvmir(true);
+  verified_module->config().set_debug_options(debug_options);
+
+  EXPECT_TRUE(RunAndCompare(std::move(verified_module),
+                            ErrorSpec{/*aabs=*/1e-3, /*arel=*/1e-3}));
+
+  //EXPECT_TRUE(RunAndCompare(hlo_text, ErrorSpec{/*aabs=*/1e-3, /*arel=*/1e-3}));
 }
 
 TEST_F(TritonGemmTest, SplitLhsNoncontractingTransposeRhs) {
@@ -2607,6 +2629,7 @@ ENTRY e {
   llvm::LLVMContext llvm_ctx;
   llvm::Module llvm_module("module", llvm_ctx);
   mlir::MLIRContext mlir_context;
+  const GpuVersion gpu_version = se::RocmComputeCapability{"gfx906"};
 
   TF_ASSERT_OK_AND_ASSIGN(auto gpu_config,
                           hlo_module->entry_computation()

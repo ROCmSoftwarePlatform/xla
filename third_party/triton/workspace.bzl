@@ -1,5 +1,4 @@
 """Provides the repository macro to import Triton."""
-
 load("//third_party:repo.bzl", "tf_http_archive", "tf_mirror_urls")
 
 def repo():
