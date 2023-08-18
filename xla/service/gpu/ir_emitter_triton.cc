@@ -80,6 +80,7 @@ limitations under the License.
 #include "mlir/Target/LLVMIR/Dialect/Builtin/BuiltinToLLVMIRTranslation.h"  // from @llvm-project
 #include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"  // from @llvm-project
 #include "mlir/Target/LLVMIR/Dialect/NVVM/NVVMToLLVMIRTranslation.h"  // from @llvm-project
+#include "mlir/Target/LLVMIR/Dialect/ROCDL/ROCDLToLLVMIRTranslation.h"  // from @llvm-project
 #include "mlir/Target/LLVMIR/Export.h"  // from @llvm-project
 #include "mlir/Transforms/Passes.h"  // from @llvm-project
 #include "xla/autotuning.pb.h"
@@ -717,9 +718,14 @@ StatusOr<Value> EmitScope(
 }
 
 void CreateTritonPipeline(mlir::OpPassManager& pm,
-                          const se::CudaComputeCapability& cc, int num_warps,
+                          const GpuVersion gpu_version, int num_warps,
                           int num_stages) {
-  const int ccAsInt = cc.major * 10 + cc.minor;
+  int ccAsInt = 0;
+  if(std::holds_alternative<se::CudaComputeCapability>(gpu_version)) {
+    auto cc = std::get<se::CudaComputeCapability>(gpu_version);
+    int ccAsInt = cc.major * 10 + cc.minor;
+  }
+
   const int threadsPerWarp = 32;
   const int numCTAs = 1;
   // Based on make_ttir() in
@@ -739,9 +745,11 @@ void CreateTritonPipeline(mlir::OpPassManager& pm,
   // Based on make_ttgir() under "# optimize TTGIR" in
   // @triton//:python/triton/compiler/backends/cuda.py
   pm.addPass(mlir::createTritonGPUCoalescePass());
+#ifndef TENSORFLOW_USE_ROCM
   pm.addPass(mlir::createTritonNvidiaGPUPlanCTAPass(/*clusterInfo=*/));
   pm.addPass(mlir::createTritonGPURewriteTensorPointerPass(ccAsInt));
   pm.addPass(mlir::createTritonNvidiaGPUPlanCTAPass(/*clusterInfo=*/));
+#endif
   pm.addPass(mlir::createTritonGPURemoveLayoutConversionsPass());
   pm.addPass(mlir::createTritonGPUAccelerateMatmulPass(ccAsInt));
   pm.addPass(mlir::createTritonGPURemoveLayoutConversionsPass());
@@ -749,22 +757,28 @@ void CreateTritonPipeline(mlir::OpPassManager& pm,
   pm.addPass(mlir::createCSEPass());
   pm.addPass(mlir::createTritonGPUPipelinePass(num_stages, num_warps, numCTAs,
                                                ccAsInt));
+#ifndef TENSORFLOW_USE_ROCM
   pm.addPass(
       mlir::createTritonNvidiaGPUMaterializeLoadStorePass(num_warps, ccAsInt));
+#endif
   if (ccAsInt <= 80) {
     pm.addPass(mlir::createTritonGPUPrefetchPass());
   }
   pm.addPass(mlir::createTritonGPUOptimizeDotOperandsPass());
   pm.addPass(mlir::createTritonGPURemoveLayoutConversionsPass());
   pm.addPass(mlir::createTritonGPUDecomposeConversionsPass());
+#ifndef TENSORFLOW_USE_ROCM
   pm.addPass(mlir::createTritonNvidiaGPUWSFixupMissingAttrs());
+#endif
   pm.addPass(mlir::createTritonGPUReorderInstructionsPass());
   pm.addPass(mlir::createCSEPass());
   pm.addPass(mlir::createSymbolDCEPass());
+#ifndef TENSORFLOW_USE_ROCM
   if (ccAsInt >= 90) {
     pm.addPass(mlir::createTritonNvidiaGPUFenceInsertionPass(ccAsInt));
   }
   pm.addPass(mlir::createTritonNvidiaGPUWSFixupMissingAttrs());
+#endif
   pm.addPass(mlir::createTritonGPUOptimizeThreadLocalityPass());
   pm.addPass(mlir::createCanonicalizerPass());
   // Based on translateTritonGPUToLLVMIR() in
@@ -774,7 +788,9 @@ void CreateTritonPipeline(mlir::OpPassManager& pm,
   pm.addPass(mt::createConvertTritonGPUToLLVMPass(ccAsInt,
                                                   /*target=*/mt::Default,
                                                   /*tmaMetadata=*/nullptr));
+#ifndef TENSORFLOW_USE_ROCM
   pm.addPass(mt::createConvertNVGPUToLLVMPass());
+#endif
   pm.addPass(mlir::createArithToLLVMConversionPass());
   pm.addPass(mlir::createCanonicalizerPass());
   pm.addPass(mlir::createCSEPass());
@@ -1901,6 +1917,7 @@ StatusOr<std::unique_ptr<llvm::Module>> TranslateLLVMToLLVMIR(
   mlir::registerBuiltinDialectTranslation(registry);
   mlir::registerLLVMDialectTranslation(registry);
   mlir::registerNVVMDialectTranslation(registry);
+  mlir::registerROCDLDialectTranslation(registry);
   module->getContext()->appendDialectRegistry(registry);
 
   std::unique_ptr<llvm::Module> llvmModule =
@@ -1990,7 +2007,7 @@ StatusOr<mlir::OwningOpRef<mlir::ModuleOp>> CreateTritonModule(
 StatusOr<TritonWrapperResult> TritonWrapper(
     const TritonFusionAnalysis& analysis, absl::string_view fn_name,
     const HloComputation* hlo_computation, absl::string_view fusion_kind,
-    const se::CudaComputeCapability& cc,
+    const se::GpuComputeCapability& cc,
     const se::DeviceDescription& device_info, const TritonGemmConfig& config,
     llvm::Module* llvm_module, TritonIrEmitter ir_emitter,
     mlir::MLIRContext& mlir_context) {
@@ -2035,7 +2052,6 @@ StatusOr<TritonWrapperResult> TritonWrapper(
       auto triton_module,
       CreateTritonModule(analysis, fn_name, hlo_computation, device_info,
                          config, ir_emitter, mlir_context));
-
   VLOG(3) << hlo_computation->ToString(HloPrintOptions::ShortParsable());
   VLOG(2) << config.ToString();
 

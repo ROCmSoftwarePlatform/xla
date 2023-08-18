@@ -437,7 +437,7 @@ cc_library(
 
 cc_library(
     name = "ir_emitter_triton",
-    srcs = if_cuda_is_configured(["ir_emitter_triton.cc"]) + if_rocm_hipblaslt([
+    srcs = if_gpu_is_configured(["ir_emitter_triton.cc"]) + if_rocm_hipblaslt([
         "ir_emitter_triton.cc",
     ]),
     hdrs = if_gpu_is_configured(["ir_emitter_triton.h"]),
@@ -509,9 +509,10 @@ cc_library(
         "@tsl//tsl/platform:tensor_float_32_utils",
     ] + if_cuda_is_configured([
         "@triton//:NVGPUToLLVM",
+        "@triton//:TritonNvidiaGPUTransforms",
+    ]) + if_gpu_is_configured([
         "@triton//:TritonGPUToLLVM",
         "@triton//:TritonGPUTransforms",
-        "@triton//:TritonNvidiaGPUTransforms",
         "@triton//:TritonLLVMIR",
         "@triton//:TritonToTritonGPU",
     ]),
@@ -519,12 +520,11 @@ cc_library(
 
 xla_test(
     name = "ir_emitter_triton_test",
-    srcs = if_cuda_is_configured(["ir_emitter_triton_test.cc"]),
-    backend_tags = {"gpu": [
-        "requires-gpu-sm70",
-    ]},
-    backends = ["gpu"],
-    shard_count = 20,
+    srcs = if_gpu_is_configured(["ir_emitter_triton_test.cc"]),
+    backends = [
+        "gpu",
+    ],
+    shard_count = 10,
     tags = ["nomac"],
     deps = [
         ":backend_configs_cc",
@@ -561,6 +561,7 @@ xla_test(
         "@tsl//tsl/platform:status_matchers",
         "@tsl//tsl/platform:statusor",
         "@tsl//tsl/platform:test",
+        "@tsl//tsl/platform:tensor_float_32_utils",
     ],
 )
 
