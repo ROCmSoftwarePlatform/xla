@@ -26,6 +26,7 @@ limitations under the License.
 #include "xla/service/gpu/launch_dimensions.h"
 #include "xla/statusor.h"
 #include "triton/Dialect/Triton/IR/Dialect.h"
+#include "gpu_types.h"
 
 namespace xla {
 namespace gpu {
@@ -56,7 +57,7 @@ using LaunchDimensionsGenerator = std::function<StatusOr<LaunchDimensions>(
 // MatMul and SoftMax above are some such IR generators.
 StatusOr<LaunchDimensions> TritonWrapper(
     absl::string_view fn_name, const HloComputation* hlo_computation,
-    absl::string_view fusion_kind, const se::CudaComputeCapability& cc,
+    absl::string_view fusion_kind, const GpuVersion gpu_version,
     const GpuDeviceInfo& device_info,
     const AutotuneResult::TritonGemmKey& config, llvm::Module* llvm_module,
     LaunchDimensionsGenerator generator, mlir::MLIRContext& mlir_context);

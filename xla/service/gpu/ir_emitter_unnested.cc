@@ -1813,7 +1813,7 @@ Status IrEmitterUnnested::EmitTritonFusion(
 
 Status IrEmitterUnnested::EmitFusion(mlir::Operation* op) {
   auto fusion_op = mlir::cast<mlir::lmhlo::FusionOp>(op);
-
+  VLOG(5) << "Zoran: EmitFusion";
   // Parse backend config.
   FusionBackendConfig backend_config;
   if (auto backend_config_str = fusion_op.getBackendConfig()
@@ -1827,7 +1827,7 @@ Status IrEmitterUnnested::EmitFusion(mlir::Operation* op) {
                  << backend_config_str.str();
     }
   }
-
+  VLOG(5) << "Zoran: EmitFusion 1";
   // Create HloFusionInstruction instance.
   TF_ASSIGN_OR_RETURN(
       HloComputation * fused_computation,
@@ -1840,6 +1840,7 @@ Status IrEmitterUnnested::EmitFusion(mlir::Operation* op) {
                               fused_computation);
   TF_RETURN_IF_ERROR(fusion.set_backend_config(backend_config));
 
+  VLOG(5) << "Zoran: EmitFusion 2";
   // Create HloFusionAnalysis instance.
   GpuDeviceInfo device_info = ir_emitter_context_->gpu_device_info();
   TF_ASSIGN_OR_RETURN(auto fusion_analysis,
@@ -1859,7 +1860,7 @@ Status IrEmitterUnnested::EmitFusion(mlir::Operation* op) {
     }
     return OkStatus();
   }
-
+  VLOG(5) << "Zoran: EmitFusion 4";
   // Dispatch to the fusion specific emitter.
   auto emitter_fusion_kind = fusion_analysis.GetEmitterFusionKind();
   switch (emitter_fusion_kind) {
