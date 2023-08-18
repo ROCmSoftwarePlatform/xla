@@ -938,6 +938,7 @@ class GemmRewriterTritonVisitor : public DfsHloRewriteVisitor {
   // if so - fuses all its compatible inputs and outputs as a new computation
   // and replaces the original dot() with a call to the computation.
   Status HandleDot(HloInstruction* dot) override {
+    VLOG(5) << "Zoran: HandleDot";
     std::string fusion_name = absl::StrCat("triton_gemm_", dot->name());
     HloComputation::Builder builder(absl::StrCat(fusion_name, "_computation"));
     std::vector<HloInstruction*> fusion_inputs;
@@ -951,13 +952,14 @@ class GemmRewriterTritonVisitor : public DfsHloRewriteVisitor {
     // If a GEMM requiring padding for cuBLAS is encountered here this
     // happened because earlier ShouldTritonHandleGEMM() accepted it and padding
     // was skipped. Accept it ignoring profitability checks.
-    if (!CublasRequiresPadding(
-            *Cast<HloDotInstruction>(dot),
-            std::get<se::CudaComputeCapability>(gpu_version_)) &&
-        !should_fuse) {
-      return OkStatus();
+    if(std::holds_alternative<se::CudaComputeCapability>(gpu_version_)) {
+      if (!CublasRequiresPadding(
+              *Cast<HloDotInstruction>(dot),
+              std::get<se::CudaComputeCapability>(gpu_version_)) &&
+          !should_fuse) {
+        return OkStatus();
+      }
     }
-
     HloComputation* computation =
         dot->GetModule()->AddComputationAndUnifyNamesAndIds(builder.Build(),
                                                             /*is_entry=*/false);
@@ -1270,8 +1272,6 @@ Status PropagateDimensionOrdersToParameters(
 
 // Data types that are supported by the Triton emitters.
 bool IsTritonSupportedDataType(PrimitiveType type, GpuVersion gpu_version) {
-  auto cuda_compute_capability =
-      std::get<se::CudaComputeCapability>(gpu_version);
   switch (type) {
     case PRED:
     case S8:
@@ -1281,8 +1281,13 @@ bool IsTritonSupportedDataType(PrimitiveType type, GpuVersion gpu_version) {
     case F32:
       return true;
     case BF16:
-      return cuda_compute_capability.IsAtLeast(
+      if(std::holds_alternative<se::CudaComputeCapability>(gpu_version)) {
+        auto cuda_compute_capability =
+          std::get<se::CudaComputeCapability>(gpu_version);
+        return cuda_compute_capability.IsAtLeast(
           stream_executor::CudaComputeCapability::AMPERE);
+      }
+      return false;
     default:
       return false;
   }
@@ -1477,15 +1482,18 @@ FusionDecision CanTritonHandleGEMM(const HloInstruction& dot,
   }
 
   auto supported_output_type = [&](const PrimitiveType t) {
-    const auto cuda_compute_capability =
-        std::get<se::CudaComputeCapability>(gpu_version);
     switch (t) {
       case F16:
       case F32:
         return true;
       case BF16:
-        return cuda_compute_capability.IsAtLeast(
+        if(std::holds_alternative<se::CudaComputeCapability>(gpu_version)) {
+          auto cuda_compute_capability =
+            std::get<se::CudaComputeCapability>(gpu_version);
+          return cuda_compute_capability.IsAtLeast(
             stream_executor::CudaComputeCapability::AMPERE);
+        return false;
+      }
       default:
         return false;
     }

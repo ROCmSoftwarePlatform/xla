@@ -68,6 +68,7 @@ limitations under the License.
 #include "mlir/Target/LLVMIR/Dialect/Builtin/BuiltinToLLVMIRTranslation.h"  // from @llvm-project
 #include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"  // from @llvm-project
 #include "mlir/Target/LLVMIR/Dialect/NVVM/NVVMToLLVMIRTranslation.h"  // from @llvm-project
+#include "mlir/Target/LLVMIR/Dialect/ROCDL/ROCDLToLLVMIRTranslation.h"  // from @llvm-project
 #include "mlir/Target/LLVMIR/Export.h"  // from @llvm-project
 #include "mlir/Transforms/Passes.h"  // from @llvm-project
 #include "xla/comparison_util.h"
@@ -573,9 +574,14 @@ StatusOr<Value> EmitScope(
 }
 
 void CreateTritonPipeline(mlir::OpPassManager& pm,
-                          const se::CudaComputeCapability& cc, int num_warps,
+                          const GpuVersion gpu_version/*const se::CudaComputeCapability& cc*/, int num_warps,
                           int num_stages) {
-  const int ccAsInt = cc.major * 10 + cc.minor;
+  int ccAsInt = 0;
+  if(std::holds_alternative<se::CudaComputeCapability>(gpu_version)) {
+    auto cc = std::get<se::CudaComputeCapability>(gpu_version);
+    int ccAsInt = cc.major * 10 + cc.minor;
+  }
+
   // Based on optimize_ttir() in
   // @triton//:python/triton/compiler/compiler.py
   pm.addPass(mt::createRewriteTensorPointerPass());
@@ -607,7 +613,7 @@ void CreateTritonPipeline(mlir::OpPassManager& pm,
   // @triton//:lib/Target/LLVMIR/LLVMIRTranslation.cpp
   pm.addPass(mlir::createConvertSCFToCFPass());
   pm.addPass(mlir::createConvertIndexToLLVMPass());
-  pm.addPass(mt::createConvertTritonGPUToLLVMPass(ccAsInt));
+  pm.addPass(mt::createConvertTritonGPUToLLVMPass(ccAsInt, true));
   pm.addPass(mlir::createArithToLLVMConversionPass());
   pm.addPass(mlir::createCanonicalizerPass());
   pm.addPass(mlir::createCSEPass());
@@ -1397,6 +1403,7 @@ StatusOr<std::unique_ptr<llvm::Module>> TranslateLLVMToLLVMIR(
   mlir::registerBuiltinDialectTranslation(registry);
   mlir::registerLLVMDialectTranslation(registry);
   mlir::registerNVVMDialectTranslation(registry);
+  mlir::registerROCDLDialectTranslation(registry);
   module->getContext()->appendDialectRegistry(registry);
 
   std::unique_ptr<llvm::Module> llvmModule =
@@ -1423,7 +1430,7 @@ StatusOr<std::unique_ptr<llvm::Module>> TranslateLLVMToLLVMIR(
 
 StatusOr<LaunchDimensions> TritonWrapper(
     absl::string_view fn_name, const HloComputation* hlo_computation,
-    absl::string_view fusion_kind, const se::CudaComputeCapability& cc,
+    absl::string_view fusion_kind, const GpuVersion gpu_version,
     const GpuDeviceInfo& device_info,
     const AutotuneResult::TritonGemmKey& config, llvm::Module* llvm_module,
     LaunchDimensionsGenerator generator, mlir::MLIRContext& mlir_context) {
@@ -1473,6 +1480,7 @@ StatusOr<LaunchDimensions> TritonWrapper(
   VLOG(3) << hlo_computation->ToString();
   VLOG(2) << config.ShortDebugString();
 
+  VLOG(5) << "Zoran: Build Triton kernel start";
   // Build Triton kernel.
   SmallVector<Type> fn_arg_types;
   for (HloInstruction* p : hlo_computation->parameter_instructions()) {
@@ -1505,9 +1513,12 @@ StatusOr<LaunchDimensions> TritonWrapper(
                                 device_info.shared_memory_per_block_optin));
 
   b.create<mt::ReturnOp>(loc);
+  VLOG(5) << "Zoran: Build Triton kernel triton module dump start";
   VLOG(6) << llvm_ir::DumpToString(triton_module);
   CHECK(mlir::succeeded(mlir::verify(triton_module)));
+  VLOG(5) << "Zoran: Build Triton kernel triton module dump end";
 
+  VLOG(5) << "Zoran: Compile Triton kernel to LLVM.";
   // Compile Triton kernel to LLVM.
   mlir::PassManager pm(&mlir_context);
 
@@ -1542,14 +1553,16 @@ StatusOr<LaunchDimensions> TritonWrapper(
                  << "--xla_dump_to is set, so the llvm dumps are disabled.";
     }
   }
-
-  CreateTritonPipeline(pm, cc, config.num_warps(), config.num_stages());
+  VLOG(5) << "Zoran : before CreateTritonPipeline";
+  CreateTritonPipeline(pm, gpu_version, config.num_warps(), config.num_stages());
+  VLOG(5) << "Zoran : after CreateTritonPipeline";
   // Triton generates pointers to the global address space, while XLA needs a
   // kernel signature with pointers to the generic address space.
   pm.addPass(std::make_unique<GeneralizeKernelSignaturePass>());
   // llvm::Linker::linkModules() segfaults if we don't strip locations.
   pm.addPass(mlir::createStripDebugInfoPass());
 
+  VLOG(5) << "Zoran: Compile Triton kernel to LLVM 1.";
   bool succeeded = mlir::succeeded(pm.run(triton_module));
 
   if (log_stream.has_value()) {
@@ -1559,6 +1572,7 @@ StatusOr<LaunchDimensions> TritonWrapper(
   if (!succeeded) {
     return InternalError("Failed to compile Triton kernel.");
   }
+  VLOG(5) << "Zoran: Compile Triton kernel to LLVM 2.";
 
   const int shared_mem_bytes =
       triton_module->getAttrOfType<mlir::IntegerAttr>("triton_gpu.shared")
@@ -1568,10 +1582,13 @@ StatusOr<LaunchDimensions> TritonWrapper(
     return ResourceExhausted("Shared memory size limit exceeded.");
   }
   launch_dimensions.SetSharedMemBytes(shared_mem_bytes);
+  VLOG(5) << "Zoran: Compile Triton kernel to LLVM 3.";
 
   TF_ASSIGN_OR_RETURN(std::unique_ptr<llvm::Module> ll_triton_module,
                       TranslateLLVMToLLVMIR(&llvm_module->getContext(),
                                             triton_module, libdevice_path));
+  VLOG(5) << "Zoran: Compile Triton kernel to LLVM 4.";
+
   LogAndVerify(ll_triton_module.get());
 
   // Integrate LLVM matmul kernel into XLA's LLVM module.
@@ -1579,10 +1596,12 @@ StatusOr<LaunchDimensions> TritonWrapper(
       ll_triton_module->getNamedMetadata("nvvm.annotations"));
   ll_triton_module->setDataLayout(llvm_module->getDataLayout());
   // Use override flag because libdevice functions can be present in both.
+  VLOG(5) << "Zoran: Compile Triton kernel to LLVM 5.";
   CHECK(!llvm::Linker::linkModules(*llvm_module, std::move(ll_triton_module),
                                    llvm::Linker::Flags::OverrideFromSrc));
+  VLOG(5) << "Zoran: Compile Triton kernel to LLVM 6.";
   LogAndVerify(llvm_module);
-
+  VLOG(5) << "Zoran: Compile Triton kernel to LLVM 7.";
   return launch_dimensions;
 }
 

@@ -115,11 +115,12 @@ Status AMDGPUCompiler::OptimizeHloPostLayoutAssignment(
     HloModule* hlo_module, se::StreamExecutor* stream_exec,
     const CompileOptions& options, const GpuTargetConfig& gpu_target_config,
     const AutotuneResults* autotune_results) {
+  VLOG(5) << "Zoran: AMDGPUCompiler::OptimizeHloPostLayoutAssignment 0";
   TF_RETURN_IF_ERROR(GpuCompiler::OptimizeHloPostLayoutAssignment(
       hlo_module, stream_exec, options, gpu_target_config, autotune_results));
 
   HloPassPipeline post_pipeline("AMDGPU post-layout_assignment");
-
+  VLOG(5) << "Zoran: AMDGPUCompiler::OptimizeHloPostLayoutAssignment 1";
   // Transform TriangularSolve ops into custom-calls, so we can add temp
   // memory.
   post_pipeline.AddPass<TriangularSolveRewriter>();

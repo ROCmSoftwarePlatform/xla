@@ -61,6 +61,7 @@ const char kUsageHeader[] =
     "\n";
 
 StatusOr<std::string> AotCompileCpuExecutable(
+  VLOG(5) << "Zoran: AotCompileCpuExecutable 0";
     std::unique_ptr<HloModule> hlo_module) {
   cpu::CpuCompiler cpu_compiler;
   TF_ASSIGN_OR_RETURN(
@@ -78,8 +79,10 @@ StatusOr<std::string> AotCompileGpuExecutable(
     const gpu::GpuTargetConfig& gpu_target_config,
     const AutotuneResults& autotune_results = AutotuneResults()) {
 #if GOOGLE_CUDA
+  VLOG(5) << "Zoran: gpu::NVPTXCompiler";
   auto gpu_compiler = gpu::NVPTXCompiler();
 #elif TENSORFLOW_USE_ROCM
+  VLOG(5) << "Zoran: gpu::AMDGPUCompiler()";
   auto gpu_compiler = gpu::AMDGPUCompiler();
 #endif
   Compiler::CompileOptions compile_options;
