@@ -1270,7 +1270,6 @@ xla_test(
         "interpreter",
     ],
     shard_count = 40,
-    tags = ["no_rocm"],
     deps = [
         ":client_library_test_base",
         ":hlo_test_base",
