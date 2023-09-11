@@ -259,7 +259,7 @@ bool HloFusionAnalysis::HasConsistentTransposeHeros() const {
 
 HloFusionAnalysis::EmitterFusionKind HloFusionAnalysis::GetEmitterFusionKind()
     const {
-#if GOOGLE_CUDA  || TF_HIPBLASLT
+#if GOOGLE_CUDA  || TENSORFLOW_USE_ROCM
   if (fusion_backend_config_.kind() == kTritonGemmFusionKind ||
       fusion_backend_config_.kind() == kTritonSoftmaxFusionKind) {
     return EmitterFusionKind::kTriton;

@@ -252,7 +252,8 @@ tsl::Status GpuExecutor::Launch(Stream* stream, const ThreadDim& thread_dims,
                                 const BlockDim& block_dims,
                                 const KernelBase& kernel,
                                 const KernelArgsArrayBase& args) {
-  CHECK_EQ(kernel.Arity(), args.number_of_arguments());
+  CHECK_EQ(kernel.Arity() + (args.number_of_shared_bytes() > 0),
+             args.number_of_arguments());
   GpuStreamHandle hipstream = AsGpuStreamValue(stream);
   const GpuKernel* rocm_kernel = AsGpuKernel(&kernel);
   hipFunction_t hipfunc = rocm_kernel->AsGpuFunctionHandle();
@@ -872,6 +873,9 @@ GpuExecutor::CreateDeviceDescription(int device_ordinal) {
   builder.set_shared_memory_per_core(
       GpuDriver::GetMaxSharedMemoryPerCore(device).value());
   builder.set_shared_memory_per_block(
+      GpuDriver::GetMaxSharedMemoryPerBlock(device).value());
+  // Setting to the same value as for set_shared_memory_per_block
+  builder.set_shared_memory_per_block_optin(
       GpuDriver::GetMaxSharedMemoryPerBlock(device).value());
   int core_count = GpuDriver::GetMultiprocessorCount(device).value();
   builder.set_core_count(core_count);

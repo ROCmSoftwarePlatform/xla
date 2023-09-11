@@ -132,7 +132,7 @@ class IrEmitterUnnested : public IrEmitter {
 #if GOOGLE_CUDA || TF_HIPBLASLT
   Status EmitCublasLtMatmulThunk(mlir::Operation* op);
 #endif  // GOOGLE_CUDA || TF_HIPBLASLT
-#if GOOGLE_CUDA
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
   Status EmitCublasLtMatmulThunkF8(mlir::Operation* op);
   Status EmitConvolutionReorderThunk(mlir::Operation* op);
   Status EmitTritonFusion(mlir::Operation* op,
