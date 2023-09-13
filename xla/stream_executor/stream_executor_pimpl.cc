@@ -482,7 +482,6 @@ tsl::Status StreamExecutor::Launch(Stream* stream, const ThreadDim& thread_dims,
                                    const KernelArgsArrayBase& args) {
   SubmitTrace(&TraceListener::LaunchSubmit, stream, thread_dims, block_dims,
               kernel, args);
-
   return implementation_->Launch(stream, thread_dims, block_dims, kernel, args);
 }
 

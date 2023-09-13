@@ -287,8 +287,10 @@ tsl::Status GpuExecutor::Launch(Stream* stream, const ThreadDim& thread_dims,
     VLOG(2) << "*(arg.address): "
             << reinterpret_cast<void*>(
                    *static_cast<const uint64_t*>(arg.address));
-    kernargs.push_back(
+    if (!arg.is_shared) {
+      kernargs.push_back(
         reinterpret_cast<void*>(*static_cast<const uint64_t*>(arg.address)));
+    }
   }
 
   size_t size = sizeof(void*) * kernargs.size();
