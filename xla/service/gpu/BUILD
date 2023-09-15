@@ -1506,6 +1506,7 @@ cc_library(
         "//xla/mlir_hlo",
         "//xla/mlir_hlo:lhlo_gpu",
         "//xla/stream_executor:stream_executor_headers",
+        "//xla/stream_executor/gpu:gpu_blas_lt",
         "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/types:span",
         "@tsl//tsl/platform:statusor",

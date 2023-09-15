@@ -221,6 +221,7 @@ cc_library(
         "//xla/stream_executor/gpu:gpu_helpers_header",
         "//xla/stream_executor/gpu:gpu_stream_header",
         "//xla/stream_executor/gpu:gpu_timer_header",
+        "//xla/stream_executor/gpu:gpu_blas_lt",
         "//xla/stream_executor/platform",
         "//xla/stream_executor:blas",
         "//xla/stream_executor/platform:dso_loader",
@@ -457,6 +458,7 @@ cc_library(
         "//xla/stream_executor/platform:dso_loader",
         "//xla/stream_executor:scratch_allocator",
         "//xla/stream_executor/gpu:gpu_helpers_header",
+        "//xla/stream_executor/gpu:gpu_blas_lt",
         "//xla:util",
     ]) + if_static([
         ":hipblaslt_if_static",
