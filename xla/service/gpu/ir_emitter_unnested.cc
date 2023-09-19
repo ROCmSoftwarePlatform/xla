@@ -1698,7 +1698,7 @@ static Status ProcessFusionForConversion(mlir::Region* region,
   return OkStatus();
 }
 
-#if GOOGLE_CUDA
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 Status IrEmitterUnnested::EmitTritonFusion(
     mlir::Operation* op, const AutotuneResult::TritonGemmKey& config,
     const absl::flat_hash_map<const mlir::Operation*, const HloInstruction*>&
@@ -1786,7 +1786,7 @@ Status IrEmitterUnnested::EmitTritonFusion(
   return OkStatus();
 }
 
-#endif  // GOOGLE_CUDA
+#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 
 Status IrEmitterUnnested::EmitFusion(
     mlir::Operation* op,

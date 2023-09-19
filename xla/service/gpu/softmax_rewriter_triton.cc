@@ -54,10 +54,11 @@ bool HasDefaultLayout(const Shape& shape) {
 
 bool IsTritonSupportedInstruction(const HloInstruction* instr,
                                   const GpuVersion& gpu_version) {
+  VLOG(-1) << "within IsTritonSupportedInstruction()";
   if (!instr->shape().IsArray()) {
     return false;
   }
-
+  VLOG(-1) << "instr->shape().IsArray()";
   if (!IsTritonSupportedDataType(instr->shape().element_type(), gpu_version)) {
     return false;
   }
@@ -223,12 +224,12 @@ std::optional<HloInstruction*> MatchesTritonCompatibleClosedReductionDiamond(
   // We also assume that the reduction is done on the last axis of the producer
   // array.
   std::optional<HloInstruction*> match_failure = std::nullopt;
-
+  VLOG(-1) << "within MatchesTritonCompatibleClosedReductionDiamond()";
   if (!instr->IsElementwiseBinary() ||
       !IsTritonSupportedInstruction(instr, gpu_version)) {
     return match_failure;
   }
-
+  VLOG(-1) << "no match_failure";
   HloInstruction* producer;
   HloInstruction* broadcast;
   HloInstruction* reduce;
@@ -243,11 +244,11 @@ std::optional<HloInstruction*> MatchesTritonCompatibleClosedReductionDiamond(
         IsTritonSupportedComputation(reduce->to_apply(), gpu_version))) {
     return match_failure;
   }
-
+  VLOG(-1) << "no TrivialEdge";
   if (!HasOneUse(broadcast) || !HasOneUse(reduce)) {
     return match_failure;
   }
-
+  VLOG(-1) << "no HasOneUse";
   producer = reduce->mutable_operand(0);
 
   if (!(reduce->dimensions().size() == 1 &&
@@ -256,17 +257,17 @@ std::optional<HloInstruction*> MatchesTritonCompatibleClosedReductionDiamond(
                                broadcast->shape().rank() - 1))) {
     return match_failure;
   }
-
+  VLOG(-1) << "no reduce->dimensions()";
   // TODO(b/291204753): remove this filter. This heuristic enables flipping the
   // default flag while filtering out cases that could result in regressions.
   if (reduce->operand(0)->shape().dimensions().back() < 64) {
     return match_failure;
   }
-
+  VLOG(-1) << "no reduce->operand(0)";
   while (IsTriviallyFusible(producer, gpu_version)) {
     producer = producer->mutable_operand(0);
   }
-
+  VLOG(-1) << "IsTriviallyFusible(producer, gpu_version)";
   if (!HasDefaultLayout(producer->shape()) ||
       !IsTriviallyConnectedProducerOf(producer, instr->mutable_operand(0),
                                       gpu_version) ||
@@ -363,7 +364,7 @@ SoftmaxRewriterTriton::FindAllFusibleDiamondChains(
     HloModule& module,
     const absl::flat_hash_set<absl::string_view>& execution_threads) const {
   std::vector<DiamondDescriptor> matched_diamonds;
-
+  VLOG(-1) << "start triton softmax";
   for (HloComputation* comp :
        module.MakeNonfusionComputations(execution_threads)) {
     if (comp->IsCustomCallComputation()) {
@@ -384,7 +385,7 @@ SoftmaxRewriterTriton::FindAllFusibleDiamondChains(
       }
     }
   }
-
+  VLOG(-1) << "iterate all HloComputation";
   if (matched_diamonds.empty()) {
     return {};
   }
@@ -401,7 +402,7 @@ SoftmaxRewriterTriton::FindAllFusibleDiamondChains(
         CHECK_EQ(instr->dimensions(0), operand_rank - 1);
         return instr->operand(0)->shape().dimensions(operand_rank - 1);
       };
-
+  VLOG(-1) << "reduction_dimension_size_from_diamond_root is ok";
   auto last_trivially_fusible_user = [&](HloInstruction* instr) {
     while (HasOneUse(instr) && !instr->IsRoot() &&
            IsTriviallyFusible(instr->users().front(), gpu_version_)) {
@@ -419,7 +420,7 @@ SoftmaxRewriterTriton::FindAllFusibleDiamondChains(
     }
     return instr;
   };
-
+  VLOG(-1) << "last_trivially_fusible_user is ok";
   // If we matched several diamonds, it may be possible for some of them to be
   // fused together. This is the case if the following conditions hold:
   //   1. The path between the root of diamond n towards the producer of

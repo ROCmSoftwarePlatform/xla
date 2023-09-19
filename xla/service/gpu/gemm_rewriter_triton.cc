@@ -1582,8 +1582,6 @@ Status FusionContext::PropagateDimensionOrdersToParameters(
 
 // Data types that are supported by the Triton emitters.
 bool IsTritonSupportedDataType(PrimitiveType type, GpuVersion gpu_version) {
-  auto cuda_compute_capability =
-      std::get<se::CudaComputeCapability>(gpu_version);
   switch (type) {
     case PRED:
     case S8:
@@ -1593,8 +1591,14 @@ bool IsTritonSupportedDataType(PrimitiveType type, GpuVersion gpu_version) {
     case F32:
       return true;
     case BF16:
-      return cuda_compute_capability.IsAtLeast(
-          stream_executor::CudaComputeCapability::AMPERE);
+        if (std::holds_alternative<se::CudaComputeCapability>(gpu_version)) {
+          auto cuda_compute_capability =
+            std::get<se::CudaComputeCapability>(gpu_version);
+          return cuda_compute_capability.IsAtLeast(
+            stream_executor::CudaComputeCapability::AMPERE);
+        }else{
+          return true;
+        }
     default:
       return false;
   }

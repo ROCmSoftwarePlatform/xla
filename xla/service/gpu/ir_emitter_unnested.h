@@ -135,10 +135,12 @@ class IrEmitterUnnested : public IrEmitter {
 #if GOOGLE_CUDA
   Status EmitCublasLtMatmulThunkF8(mlir::Operation* op);
   Status EmitConvolutionReorderThunk(mlir::Operation* op);
+#endif
   Status EmitTritonFusion(
       mlir::Operation* op, const AutotuneResult::TritonGemmKey& config,
       const absl::flat_hash_map<const mlir::Operation*, const HloInstruction*>&
           hlo_for_lmhlo);
+#if GOOGLE_CUDA
   Status EmitFusedMHAThunk(mlir::Operation* op);
   Status EmitFusedMHABackwardThunk(mlir::Operation* op);
 #endif  // GOOGLE_CUDA

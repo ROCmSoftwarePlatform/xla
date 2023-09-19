@@ -62,7 +62,12 @@ class SoftmaxRewriterTritonTest
  public:
   void SetUp() override {
     gpu_version_ = GpuVersion{
-        se::CudaComputeCapability{se::CudaComputeCapability::AMPERE, 0}};
+#if GOOGLE_CUDA          
+        se::CudaComputeCapability{se::CudaComputeCapability::AMPERE, 0}
+#elif TENSORFLOW_USE_ROCM
+        se::RocmComputeCapability{"gfx90a"}
+#endif
+};
   }
 
  protected:

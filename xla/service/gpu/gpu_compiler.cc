@@ -893,11 +893,13 @@ Status GpuCompiler::OptimizeHloPostLayoutAssignment(
       return IsReductionFromOrToContiguousDimensions(*r);
     });
     pipeline.AddPass<HloPassFix<MoveCopyToUsers>>();
+    VLOG(-1) << "before GEMM triton rewriter"; 
 
     // Rewrite GEMMs into custom calls.
     GpuVersion gpu_version =
         gpu_target_config.gpu_device_info.compute_capability;
     const auto* cuda_cc = std::get_if<se::CudaComputeCapability>(&gpu_version);
+    const auto* rocm_cc = std::get_if<se::RocmComputeCapability>(&gpu_version);
     if (debug_options.xla_gpu_enable_triton_gemm() && cuda_cc != nullptr &&
         cuda_cc->IsAtLeast(se::CudaComputeCapability::VOLTA)) {
       pipeline.AddPass<GemmRewriterTriton>(gpu_version);
@@ -920,8 +922,11 @@ Status GpuCompiler::OptimizeHloPostLayoutAssignment(
     // ReductionDimensionGrouper, as that makes matching the softmax pattern
     // harder.
     if (debug_options.xla_gpu_enable_triton_softmax_fusion() &&
-        cuda_cc != nullptr &&
-        cuda_cc->IsAtLeast(se::CudaComputeCapability::VOLTA)) {
+        (cuda_cc != nullptr &&
+        cuda_cc->IsAtLeast(se::CudaComputeCapability::VOLTA)) ||
+        (rocm_cc != nullptr)
+        ) {
+      VLOG(-1) << "softmax test";    
       pipeline.AddPass<HloPassFix<AlgebraicSimplifier>>(options);
       pipeline.AddPass<SoftmaxRewriterTriton>(gpu_version);
     }

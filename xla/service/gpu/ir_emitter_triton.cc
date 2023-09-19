@@ -46,6 +46,7 @@ limitations under the License.
 #include "mlir/Conversion/ArithToLLVM/ArithToLLVM.h"  // from @llvm-project
 #include "mlir/Conversion/IndexToLLVM/IndexToLLVM.h"  // from @llvm-project
 #include "mlir/Conversion/SCFToControlFlow/SCFToControlFlow.h"  // from @llvm-project
+#include "mlir/Conversion/ControlFlowToLLVM/ControlFlowToLLVM.h" // from @llvm-project
 #include "mlir/Dialect/Arith/IR/Arith.h"  // from @llvm-project
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"  // from @llvm-project
 #include "mlir/Dialect/LLVMIR/LLVMTypes.h"  // from @llvm-project
@@ -77,6 +78,7 @@ limitations under the License.
 #include "mlir/Target/LLVMIR/Dialect/Builtin/BuiltinToLLVMIRTranslation.h"  // from @llvm-project
 #include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"  // from @llvm-project
 #include "mlir/Target/LLVMIR/Dialect/NVVM/NVVMToLLVMIRTranslation.h"  // from @llvm-project
+#include "mlir/Target/LLVMIR/Dialect/ROCDL/ROCDLToLLVMIRTranslation.h"  // from @llvm-project
 #include "mlir/Target/LLVMIR/Export.h"  // from @llvm-project
 #include "mlir/Transforms/Passes.h"  // from @llvm-project
 #include "xla/autotuning.pb.h"
@@ -607,9 +609,19 @@ StatusOr<Value> EmitScope(
 }
 
 void CreateTritonPipeline(mlir::OpPassManager& pm,
-                          const se::CudaComputeCapability& cc, int num_warps,
+                          const GpuVersion& gpu_version, int num_warps,
                           int num_stages) {
-  const int ccAsInt = cc.major * 10 + cc.minor;
+  // RocmComputeCapability                        
+  if (std::holds_alternative<se::RocmComputeCapability>(gpu_version)) {    
+    // 1 is CDNA1 MFMA 
+    // 2 is CDNA2 MFMA (with bf16 instruction)
+    // right now we are focusing on CDNA2 MFMA on XLA/Triton
+    const int ccAsInt = 2; 
+  }else{
+    auto cc = std::get<se::CudaComputeCapability>(gpu_version);
+    const int ccAsInt = cc.major * 10 + cc.minor;
+  }
+
   // Based on optimize_ttir() in
   // @triton//:python/triton/compiler/compiler.py
   pm.addPass(mt::createRewriteTensorPointerPass());
@@ -647,6 +659,10 @@ void CreateTritonPipeline(mlir::OpPassManager& pm,
   pm.addPass(mlir::createCanonicalizerPass());
   pm.addPass(mlir::createCSEPass());
   pm.addPass(mlir::createSymbolDCEPass());
+#if TENSORFLOW_USE_ROCM
+  pm.addPass(mlir::createConvertSCFToCFPass());
+  pm.addPass(createConvertControlFlowToLLVMPass());
+#endif  
   // Note: translateTritonGPUToLLVMIR adds line info with LLVMDIScopePass.
 }
 
@@ -1393,7 +1409,7 @@ StatusOr<std::unique_ptr<llvm::Module>> TranslateLLVMToLLVMIR(
 
 StatusOr<LaunchDimensions> TritonWrapper(
     absl::string_view fn_name, const HloComputation* hlo_computation,
-    absl::string_view fusion_kind, const se::CudaComputeCapability& cc,
+    absl::string_view fusion_kind, const GpuVersion& gpu_version,
     const GpuDeviceInfo& device_info,
     const AutotuneResult::TritonGemmKey& config, llvm::Module* llvm_module,
     LaunchDimensionsGenerator generator, mlir::MLIRContext& mlir_context) {
@@ -1454,7 +1470,7 @@ StatusOr<LaunchDimensions> TritonWrapper(
        ShapeUtil::GetLeafShapes(hlo_computation->root_instruction()->shape())) {
     fn_arg_types.push_back(mt::PointerType::get(
         TritonType(b, s.shape.element_type()), mn::kGlobalMemorySpace));
-  }
+  }`
 
   auto fn = b.create<mt::FuncOp>(loc, fn_name,
                                  b.getFunctionType(fn_arg_types, std::nullopt));
@@ -1465,15 +1481,17 @@ StatusOr<LaunchDimensions> TritonWrapper(
   b.setInsertionPointToStart(&fn.front());
 
   const std::string libdevice_path =
+#if TENSORFLOW_USE_ROCM  
+      "";
+#else      
       nvptx::LibDevicePath(hlo_computation->parent()
                                ->config()
                                .debug_options()
                                .xla_gpu_cuda_data_dir());
-
+#endif 
   TF_ASSIGN_OR_RETURN(LaunchDimensions launch_dimensions,
                       generator(b, libdevice_path, hlo_computation, fn, config,
                                 device_info.shared_memory_per_block_optin));
-
   b.create<mt::ReturnOp>(loc);
   if (DumpingEnabledForHloModule(*hlo_computation->parent())) {
     DumpToFileInDirOrStdout(*hlo_computation->parent(), "triton_ir", "ttir",
@@ -1517,7 +1535,7 @@ StatusOr<LaunchDimensions> TritonWrapper(
     }
   }
 
-  CreateTritonPipeline(pm, cc, config.num_warps(), config.num_stages());
+  CreateTritonPipeline(pm, gpu_version, config.num_warps(), config.num_stages());
   if (log_stream.has_value()) {
     pm.printAsTextualPipeline(log_stream.value());
     log_stream->write("\n\n", 2);
