@@ -162,11 +162,11 @@ std::pair<bool, int> RowVectorizationEnabled(const HloInstruction* fusion,
 // Computes the maximum valid unroll factor for a given instruction.
 int ComputeMaxUnrollFactor(int64_t num_elements) {
   constexpr int kMaxUnrollFactor = 4;
-  for (int i = kMaxUnrollFactor; i > 1; i /= 2) {
+  /*for (int i = kMaxUnrollFactor; i > 1; i /= 2) {
     if (num_elements % i == 0) {
       return i;
     }
-  }
+  }*/
   return 1;
 }
 
