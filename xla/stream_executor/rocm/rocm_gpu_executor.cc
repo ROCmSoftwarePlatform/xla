@@ -284,10 +284,10 @@ tsl::Status GpuExecutor::Launch(Stream* stream, const ThreadDim& thread_dims,
   KernelArgIterator iter = args.arg_iterator();
   while (iter.has_next()) {
     KernelArg arg = iter.next();
-    VLOG(2) << "*(arg.address): "
-            << reinterpret_cast<void*>(
-                   *static_cast<const uint64_t*>(arg.address));
     if (!arg.is_shared) {
+      VLOG(2) << "*(arg.address): "
+              << reinterpret_cast<void*>(
+                     *static_cast<const uint64_t*>(arg.address));
       kernargs.push_back(
         reinterpret_cast<void*>(*static_cast<const uint64_t*>(arg.address)));
     }
