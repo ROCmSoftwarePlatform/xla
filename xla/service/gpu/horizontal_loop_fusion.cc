@@ -177,9 +177,10 @@ bool IsProfitableFusionCandidate(const HloInstruction& instr,
   // from each horizontal fused operands, while for kInput fused kernel, each
   // GPU thread can only process 1 element. From experience, we enable larger
   // tensor size threshold for kLoop fusion.
-  const int64_t kShapeThreshold =
-      sliced_input_fusion ? 128 * 2048 : 8192 * 8192;
-  const int64_t kInstrCountThreshold = sliced_input_fusion ? 30 : 128;
+  const int64_t kShapeThreshold = 128 * 2048;
+      //sliced_input_fusion ? 128 * 2048 : 8192 * 8192;
+  //const int64_t kInstrCountThreshold = sliced_input_fusion ? 30 : 128;
+  const int64_t kInstrCountThreshold = 30;
   const HloInstruction* root = (instr.opcode() == HloOpcode::kFusion)
                                    ? instr.fused_expression_root()
                                    : &instr;
