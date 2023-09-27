@@ -365,7 +365,7 @@ class GpuDriver {
   // Creates a kernel execution node and adds it to a graph.
   // https://docs.nvidia.com/cuda/cuda-driver-api/group__CUDA__GRAPH.html#group__CUDA__GRAPH_1g50d871e3bd06c1b835e52f2966ef366b
   static tsl::Status GraphAddKernelNode(
-      CUgraphNode* node, GpuGraphHandle graph,
+      GpuGraphNodeHandle* node, GpuGraphHandle graph,
       absl::Span<GpuGraphNodeHandle> deps, absl::string_view kernel_name,
       GpuFunctionHandle function, unsigned int grid_dim_x,
       unsigned int grid_dim_y, unsigned int grid_dim_z,
