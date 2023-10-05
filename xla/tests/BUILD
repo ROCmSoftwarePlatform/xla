@@ -2381,7 +2381,6 @@ xla_cc_test(
         "local_client_aot_test.cc",
         ":local_client_aot_test_computation.o",
     ],
-    linkstatic = 1,
     deps = [
         "//xla:executable_run_options",
         "@com_google_absl//absl/base:dynamic_annotations",
