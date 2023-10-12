@@ -310,10 +310,6 @@ tsl::Status GpuExecutor::Launch(Stream* stream, const ThreadDim& thread_dims,
 
 tsl::Status GpuExecutor::Submit(Stream* stream,
                                 const CommandBuffer& command_buffer) {
-  if (command_buffer.mode() != CommandBuffer::Mode::kPrimary) {
-    return absl::InvalidArgumentError(
-        "Can't submit non-primary command buffer for execution");
-  }
 
   auto exec = GpuCommandBuffer::Cast(&command_buffer)->executable();
   VLOG(3) << "Launch command buffer execuable graph " << exec
@@ -737,11 +733,11 @@ GpuExecutor::GetStreamImplementation() {
 }
 
 tsl::StatusOr<std::unique_ptr<internal::CommandBufferInterface>>
-GpuExecutor::GetCommandBufferImplementation(CommandBuffer::Mode mode) {
+GpuExecutor::GetCommandBufferImplementation() {
   VLOG(2) << "Create ROCm command buffer (ROCm graph)";
   GpuGraphHandle graph = nullptr;
   TF_RETURN_IF_ERROR(GpuDriver::CreateGraph(&graph));
-  return std::make_unique<GpuCommandBuffer>(mode, /*parent=*/this, graph);
+  return std::make_unique<GpuCommandBuffer>(/*parent=*/this, graph);
 }
 
 void* GpuExecutor::GpuContextHack() { return context_; }
