@@ -31,9 +31,10 @@ limitations under the License.
 #include "xla/service/gpu/matmul_utils.h"
 #include "xla/service/gpu/triton_fusion_analysis.h"
 #include "xla/statusor.h"
+#include "xla/stream_executor/gpu/gpu_types.h"
 #include "xla/stream_executor/device_description.h"
 #include "triton/Dialect/Triton/IR/Dialect.h"
-#include "gpu_types.h"
+
 
 namespace xla {
 namespace gpu {

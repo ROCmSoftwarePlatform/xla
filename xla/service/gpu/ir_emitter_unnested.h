@@ -152,7 +152,7 @@ class IrEmitterUnnested : public IrEmitter {
   absl::Status EmitCublasLtMatmulThunk(mlir::Operation* op);
   absl::Status EmitCublasLtMatmulThunk(const HloCustomCallInstruction* instr);
 #endif  // GOOGLE_CUDA || TF_HIPBLASLT
-#if GOOGLE_CUDA
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
   absl::Status EmitCublasLtMatmulThunkF8(mlir::Operation* op);
   absl::Status EmitCublasLtMatmulThunkF8(const HloCustomCallInstruction* instr);
   absl::Status EmitConvolutionReorderThunk(mlir::Operation* op);
