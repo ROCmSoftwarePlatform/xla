@@ -1723,7 +1723,7 @@ Status IrEmitterUnnested::EmitLaunchFunc(mlir::Operation* op) {
   return OkStatus();
 }
 
-#if GOOGLE_CUDA
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 Status IrEmitterUnnested::EmitTritonFusion(
     mlir::Operation* op, const AutotuneResult::TritonGemmKey& config) {
   // Note: In this method we can't use `BuildKernelThunk` as usual,
@@ -1865,7 +1865,7 @@ Status IrEmitterUnnested::EmitFusion(mlir::Operation* op) {
   auto emitter_fusion_kind = fusion_analysis.GetEmitterFusionKind();
   switch (emitter_fusion_kind) {
     case HloFusionAnalysis::EmitterFusionKind::kTriton: {
-#if GOOGLE_CUDA
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
       if (backend_config.kind() == kTritonGemmFusionKind) {
         if (!backend_config.has_triton_gemm_config()) {
           LOG(WARNING) << "Using fallback triton GEMM config for op "

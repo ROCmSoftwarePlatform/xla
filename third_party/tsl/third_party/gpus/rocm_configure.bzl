@@ -722,7 +722,7 @@ def _create_local_rocm_repository(repository_ctx):
         "-DTENSORFLOW_USE_ROCM=1",
         "-D__HIP_PLATFORM_HCC__",
         "-DEIGEN_USE_HIP",
-        "-DTRITONGPU_DEFAULT_WARPSIZE=32",
+        "-DTRITONGPU_DEFAULT_WARPSIZE=64",
         "-DUSE_ROCM"
     ])
 
