@@ -2103,7 +2103,7 @@ static Status ProcessFusionForConversion(mlir::Region* region,
   return OkStatus();
 }
 
-#if GOOGLE_CUDA
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 StatusOr<FusionEmissionResult> IrEmitterUnnested::EmitTritonFusion(
     const HloFusionAnalysis& hlo_fusion_analysis,
     const HloFusionInstruction* fusion, mlir::Operation* op) {
@@ -2354,7 +2354,7 @@ Status IrEmitterUnnested::EmitFusion(
       break;
     }
     case HloFusionAnalysis::EmitterFusionKind::kTriton: {
-#if GOOGLE_CUDA
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
       TF_ASSIGN_OR_RETURN(emission_result,
                           EmitTritonFusion(fusion_analysis, fusion, fusion_op));
       break;

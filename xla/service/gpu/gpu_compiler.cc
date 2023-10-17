@@ -1225,11 +1225,11 @@ Status GpuCompiler::OptimizeHloPostLayoutAssignment(
     }
     else if (debug_options.xla_gpu_enable_triton_gemm() &&
         std::holds_alternative<se::RocmComputeCapability>(
-            gpu_target_config.gpu_version)) {
-              pipeline.AddPass<GemmRewriterTriton>(gpu_target_config.gpu_version);
+            gpu_version)) {
+              pipeline.AddPass<GemmRewriterTriton>(gpu_version);
     }
 
-    pipeline.AddPass<GemmRewriter>(gpu_target_config.gpu_version);
+    pipeline.AddPass<GemmRewriter>(gpu_version);
 
     // Rewrite GEMMs with broadcasted inputs as strided GEMMs.
     pipeline.AddPass<GemmBroadcastFoldingRewriter>();

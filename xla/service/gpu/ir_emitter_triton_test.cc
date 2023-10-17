@@ -811,11 +811,9 @@ ENTRY entry {
 
   TritonGemmConfig config(16, 32, 512, 1, 4, 8);
   EXPECT_THAT(
-<<<<<<< HEAD
       TritonWrapper(*TritonFusionAnalysis::Execute(*triton_dot_computation),
                     "test_fn", triton_dot_computation, kTritonGemmFusionKind,
-                    se::CudaComputeCapability{se::CudaComputeCapability::AMPERE,
-                                              /*minor=*/0},
+                    se::RocmComputeCapability{"gfx906"},
                     dev_info, config, &llvm_module, &EmitMatMul, mlir_context),
       tsl::testing::StatusIs(
           tsl::error::RESOURCE_EXHAUSTED,
@@ -829,26 +827,8 @@ ENTRY entry {
       const auto result,
       TritonWrapper(*TritonFusionAnalysis::Execute(*triton_dot_computation),
                     "test_fn", triton_dot_computation, kTritonGemmFusionKind,
-                    se::CudaComputeCapability{se::CudaComputeCapability::AMPERE,
-                                              /*minor=*/0},
+                    se::RocmComputeCapability{"gfx906"},
                     dev_info, config, &llvm_module, &EmitMatMul, mlir_context));
-=======
-      TritonWrapper("test_fn", triton_dot_computation, kTritonGemmFusionKind,
-                    se::RocmComputeCapability{"gfx906"},
-                    dev_info, config, &llvm_module, &MatMul, mlir_context),
-      tsl::testing::StatusIs(tsl::error::RESOURCE_EXHAUSTED,
-                             "Shared memory size limit exceeded."));
-
-  config.set_block_m(64);
-  config.set_block_n(128);
-  config.set_block_k(128);
-  config.set_num_stages(1);
-  TF_ASSERT_OK_AND_ASSIGN(
-      const LaunchDimensions launch_dimensions,
-      TritonWrapper("test_fn", triton_dot_computation, kTritonGemmFusionKind,
-                    se::RocmComputeCapability{"gfx906"},
-                    dev_info, config, &llvm_module, &MatMul, mlir_context));
->>>>>>> 22a7780b9... Initial implementation. Number of tests fails. Requires a lot of code clen-up.
   // Use optin shared memory which is > shared_memory_per_block.
   EXPECT_GT(result.shmem_bytes, dev_info.shared_memory_per_block());
 }
@@ -922,12 +902,6 @@ ENTRY e {
     lhs_contracting_dims={1}, rhs_contracting_dims={0}
 })";
 
-
-  //GTEST_MESSAGE_("Zoran",::testing::TestPartResult::kSuccess);
-  EXPECT_TRUE(false) << "Zoran";
-//  EXPECT_TRUE(false) << output_directory;
-  EXPECT_TRUE(false) << "Zoran";
-
   MatchOptimizedHlo(hlo_text, R"(
 ; CHECK: ENTRY
 ; CHECK-NEXT: parameter
@@ -940,22 +914,7 @@ ENTRY e {
 ; CHECK-NOT: slice
 )");
 
-  TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<HloModule> verified_module,
-                          ParseAndReturnVerifiedModule(hlo_text));
-
-  std::string output_directory;
-  if (!tsl::io::GetTestUndeclaredOutputsDir(&output_directory)) {
-    output_directory = tsl::testing::TmpDir();
-  }
-  DebugOptions debug_options = verified_module->config().debug_options();
-  debug_options.set_xla_dump_to(output_directory);
-  debug_options.set_xla_gpu_dump_llvmir(true);
-  verified_module->config().set_debug_options(debug_options);
-
-  EXPECT_TRUE(RunAndCompare(std::move(verified_module),
-                            ErrorSpec{/*aabs=*/1e-3, /*arel=*/1e-3}));
-
-  //EXPECT_TRUE(RunAndCompare(hlo_text, ErrorSpec{/*aabs=*/1e-3, /*arel=*/1e-3}));
+  EXPECT_TRUE(RunAndCompare(hlo_text, ErrorSpec{/*aabs=*/1e-3, /*arel=*/1e-3}));
 }
 
 TEST_F(TritonGemmTest, SplitLhsNoncontractingTransposeRhs) {
@@ -1304,17 +1263,10 @@ ENTRY entry {
   // Fails if the tiling is too complex.
   TritonGemmConfig config(512, 512, 32, 1, 1, 2);
   EXPECT_THAT(
-<<<<<<< HEAD
       TritonWrapper(*TritonFusionAnalysis::Execute(*triton_dot_computation),
                     "test_fn", triton_dot_computation, kTritonGemmFusionKind,
-                    se::CudaComputeCapability{se::CudaComputeCapability::AMPERE,
-                                              /*minor=*/0},
-                    dev_info, config, &llvm_module, &EmitMatMul, mlir_context),
-=======
-      TritonWrapper("test_fn", triton_dot_computation, kTritonGemmFusionKind,
                     se::RocmComputeCapability{"gfx906"},
-                    dev_info, config, &llvm_module, &MatMul, mlir_context),
->>>>>>> 22a7780b9... Initial implementation. Number of tests fails. Requires a lot of code clen-up.
+                    dev_info, config, &llvm_module, &EmitMatMul, mlir_context),
       tsl::testing::StatusIs(
           tsl::error::RESOURCE_EXHAUSTED,
           "Tiling complexity heuristic exceeded: 147456 > 9000"));
@@ -1324,17 +1276,10 @@ ENTRY entry {
   config.block_n = 32;
   config.block_k = 32;
   TF_CHECK_OK(
-<<<<<<< HEAD
       TritonWrapper(*TritonFusionAnalysis::Execute(*triton_dot_computation),
                     "test_fn", triton_dot_computation, kTritonGemmFusionKind,
-                    se::CudaComputeCapability{se::CudaComputeCapability::AMPERE,
-                                              /*minor=*/0},
-                    dev_info, config, &llvm_module, &EmitMatMul, mlir_context)
-=======
-      TritonWrapper("test_fn", triton_dot_computation, kTritonGemmFusionKind,
                     se::RocmComputeCapability{"gfx906"},
-                    dev_info, config, &llvm_module, &MatMul, mlir_context)
->>>>>>> 22a7780b9... Initial implementation. Number of tests fails. Requires a lot of code clen-up.
+                    dev_info, config, &llvm_module, &EmitMatMul, mlir_context)
           .status());
 }
 
@@ -2563,27 +2508,19 @@ ENTRY e {
   llvm::LLVMContext llvm_ctx;
   llvm::Module llvm_module("module", llvm_ctx);
   mlir::MLIRContext mlir_context;
-  const GpuVersion gpu_version = se::RocmComputeCapability{"gfx906"};
+  se::GpuComputeCapability gpu_version = se::RocmComputeCapability{"gfx906"};
 
   TF_ASSERT_OK_AND_ASSIGN(auto config,
                           hlo_module->entry_computation()
                               ->root_instruction()
                               ->backend_config<FusionBackendConfig>());
   TF_ASSERT_OK_AND_ASSIGN(
-<<<<<<< HEAD
       const auto result,
       TritonWrapper(*TritonFusionAnalysis::Execute(*triton_dot_computation),
                     "test_fn", triton_dot_computation, kTritonGemmFusionKind,
-                    GetCudaComputeCapability(), dev_info,
+                    gpu_version, dev_info,
                     TritonGemmConfig::FromProto(config.triton_gemm_config()),
                     &llvm_module, &EmitMatMul, mlir_context));
-=======
-      const LaunchDimensions launch_dimensions,
-      TritonWrapper("test_fn", triton_dot_computation, kTritonGemmFusionKind,
-                    gpu_version, dev_info,
-                    config.triton_gemm_config(), &llvm_module, &MatMul,
-                    mlir_context));
->>>>>>> 22a7780b9... Initial implementation. Number of tests fails. Requires a lot of code clen-up.
   // The config is chosen so that the used memory size is slightly above the
   // 48 kB boundary of standard / optin shared memory so that any GPU that
   // has the optin one should be able to execute the test.
