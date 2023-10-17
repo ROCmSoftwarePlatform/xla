@@ -186,9 +186,11 @@ INSTANTIATE_TEST_SUITE_P(
     ::testing::Combine(
         ::testing::Values(
             // TODO(b/300112551): upgrade CUB to version 1.13
-            // CreateRandomLiteral<BF16, bfloat16>(
-            //   bfloat16(),
-            //   Eigen::bfloat16_impl::float_to_bfloat16_rtne<true>(1)),
+// #if TENSORFLOW_USE_ROCM
+//             CreateRandomLiteral<BF16, bfloat16>(
+//               bfloat16(),
+//               Eigen::bfloat16_impl::float_to_bfloat16_rtne<true>(1)),
+// #endif              
             CreateRandomLiteral<F16, half>(
                 half(), Eigen::half_impl::float_to_half_rtne(1)),
             CreateRandomLiteral<F32, float>(0, 1),
