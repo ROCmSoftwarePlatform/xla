@@ -915,12 +915,6 @@ ENTRY e {
     lhs_contracting_dims={1}, rhs_contracting_dims={0}
 })";
 
-
-  //GTEST_MESSAGE_("Zoran",::testing::TestPartResult::kSuccess);
-  EXPECT_TRUE(false) << "Zoran";
-//  EXPECT_TRUE(false) << output_directory;
-  EXPECT_TRUE(false) << "Zoran";
-
   MatchOptimizedHlo(hlo_text, R"(
 ; CHECK: ENTRY
 ; CHECK-NEXT: parameter
@@ -933,22 +927,7 @@ ENTRY e {
 ; CHECK-NOT: slice
 )");
 
-  TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<HloModule> verified_module,
-                          ParseAndReturnVerifiedModule(hlo_text));
-
-  std::string output_directory;
-  if (!tsl::io::GetTestUndeclaredOutputsDir(&output_directory)) {
-    output_directory = tsl::testing::TmpDir();
-  }
-  DebugOptions debug_options = verified_module->config().debug_options();
-  debug_options.set_xla_dump_to(output_directory);
-  debug_options.set_xla_gpu_dump_llvmir(true);
-  verified_module->config().set_debug_options(debug_options);
-
-  EXPECT_TRUE(RunAndCompare(std::move(verified_module),
-                            ErrorSpec{/*aabs=*/1e-3, /*arel=*/1e-3}));
-
-  //EXPECT_TRUE(RunAndCompare(hlo_text, ErrorSpec{/*aabs=*/1e-3, /*arel=*/1e-3}));
+  EXPECT_TRUE(RunAndCompare(hlo_text, ErrorSpec{/*aabs=*/1e-3, /*arel=*/1e-3}));
 }
 
 TEST_F(TritonGemmTest, SplitLhsNoncontractingTransposeRhs) {
@@ -1323,6 +1302,7 @@ ENTRY entry {
                     se::CudaComputeCapability{se::CudaComputeCapability::AMPERE,
                                               /*minor=*/0},
 #endif
+                    dev_info, config, &llvm_module, &EmitMatMul, mlir_context)
           .status());
 }
 
@@ -2560,7 +2540,7 @@ ENTRY e {
   llvm::LLVMContext llvm_ctx;
   llvm::Module llvm_module("module", llvm_ctx);
   mlir::MLIRContext mlir_context;
-  const GpuVersion gpu_version = se::RocmComputeCapability{"gfx906"};
+  se::GpuComputeCapability gpu_version = se::RocmComputeCapability{"gfx906"};
 
   TF_ASSERT_OK_AND_ASSIGN(auto config,
                           hlo_module->entry_computation()
@@ -2570,7 +2550,7 @@ ENTRY e {
       const auto result,
       TritonWrapper(*TritonFusionAnalysis::Execute(*triton_dot_computation),
                     "test_fn", triton_dot_computation, kTritonGemmFusionKind,
-                    GetCudaComputeCapability(), dev_info,
+                    gpu_version, dev_info,
                     TritonGemmConfig::FromProto(config.triton_gemm_config()),
                     &llvm_module, &EmitMatMul, mlir_context));
   // The config is chosen so that the used memory size is slightly above the
