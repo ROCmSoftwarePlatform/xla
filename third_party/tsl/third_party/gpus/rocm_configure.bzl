@@ -288,14 +288,19 @@ def _lib_name(lib, version = "", static = False):
         return "lib%s.so%s" % (lib, version)
 
 def _rocm_lib_paths(repository_ctx, lib, basedir):
-    file_name = _lib_name(lib, version = "", static = False)
-    return [
-        repository_ctx.path("%s/lib64/%s" % (basedir, file_name)),
-        repository_ctx.path("%s/lib64/stubs/%s" % (basedir, file_name)),
-        repository_ctx.path("%s/lib/x86_64-linux-gnu/%s" % (basedir, file_name)),
-        repository_ctx.path("%s/lib/%s" % (basedir, file_name)),
-        repository_ctx.path("%s/%s" % (basedir, file_name)),
-    ]
+    if type(basedir) == type('str'):
+        basedir = (basedir,)
+    rv=[]
+    for x in basedir:
+        file_name = _lib_name(lib, version = "", static = False)
+        rv.extend([
+            repository_ctx.path("%s/lib64/%s" % (x, file_name)),
+            repository_ctx.path("%s/lib64/stubs/%s" % (x, file_name)),
+            repository_ctx.path("%s/lib/x86_64-linux-gnu/%s" % (x, file_name)),
+            repository_ctx.path("%s/lib/%s" % (x, file_name)),
+            repository_ctx.path("%s/%s" % (x, file_name)),
+            ])
+    return rv
 
 def _batch_files_exist(repository_ctx, libs_paths, bash_bin):
     all_paths = []
@@ -345,14 +350,14 @@ def _find_libs(repository_ctx, rocm_config, hipfft_or_rocfft, miopen_path, rccl_
     libs_paths = [
         (name, _rocm_lib_paths(repository_ctx, name, path))
         for name, path in [
-            ("amdhip64", rocm_config.rocm_toolkit_path + "/hip"),
+            ("amdhip64", (rocm_config.rocm_toolkit_path, rocm_config.rocm_toolkit_path+"/hip")),
             ("rocblas", rocm_config.rocm_toolkit_path),
             (hipfft_or_rocfft, rocm_config.rocm_toolkit_path),
             ("hiprand", rocm_config.rocm_toolkit_path),
             ("MIOpen", miopen_path),
             ("rccl", rccl_path),
             ("hipsparse", rocm_config.rocm_toolkit_path),
-            ("roctracer64", rocm_config.rocm_toolkit_path + "/roctracer"),
+            ("roctracer64", (rocm_config.rocm_toolkit_path, rocm_config.rocm_toolkit_path+"/roctracer")),
             ("rocsolver", rocm_config.rocm_toolkit_path),
         ]
     ]
