@@ -192,6 +192,7 @@ class RocmComputeCapability {
       "gfx906",  // MI50 / MI60
       "gfx908",  // MI100
       "gfx90a",  // MI200
+      "gfx940", "gfx941", "gfx942",
       "gfx1030"  // Navi21
   };
 };
