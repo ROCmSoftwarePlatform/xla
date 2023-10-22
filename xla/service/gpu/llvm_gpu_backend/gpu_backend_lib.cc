@@ -856,10 +856,12 @@ Status AMDGPUTargetModuleLinker(llvm::Module* module,
 // When that upstreaming happens (and TF LLVM pointer moves past the
 // upstream commit), the following mapping will need to change
 std::string MapGCNArchNameTokenToFeatureStr(const std::string& token) {
-  if (token == "sramecc+") {
-    return "+sramecc";
-  } else if (token == "sramecc-") {
-    return "-sramecc";
+  if (token == "sramecc+" || token == "sramecc-") {
+      // We drop sramecc entirely, because the value we get is unreliable,
+      // and setting it incorrectly results in numeric errors.
+      // With sramecc unset, the compiler will generate code that works
+      // correctly with either value.
+      return "";
   } else if (token == "xnack+") {
     return "+xnack";
   } else if (token == "xnack-") {
