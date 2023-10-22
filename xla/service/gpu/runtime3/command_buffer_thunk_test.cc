@@ -38,7 +38,7 @@ limitations under the License.
 namespace xla::gpu {
 
 static se::StreamExecutor* CudaExecutor() {
-  auto* platform = se::MultiPlatformManager::PlatformWithName("CUDA").value();
+  auto* platform = se::MultiPlatformManager::PlatformWithName("GPU").value();
   return platform->ExecutorForDevice(0).value();
 }
 

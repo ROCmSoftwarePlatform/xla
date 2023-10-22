@@ -211,6 +211,13 @@ MultiPlatformManagerImpl::InitializedPlatformNamesWithFilter(
 
 tsl::StatusOr<Platform*> MultiPlatformManagerImpl::LookupByNameLocked(
     absl::string_view target) {
+  if(target=="GPU") {
+#if TENSORFLOW_USE_ROCM
+    target = "ROCM";
+#else
+    target = "CUDA";
+#endif
+  }
   auto it = name_map_.find(absl::AsciiStrToLower(target));
   if (it == name_map_.end()) {
     return tsl::Status(
