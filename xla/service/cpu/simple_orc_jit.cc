@@ -82,7 +82,10 @@ llvm::SmallVector<std::string, 0> DetectMachineAttributes() {
   llvm::StringMap<bool> host_features;
   if (llvm::sys::getHostCPUFeatures(host_features)) {
     for (auto& feature : host_features) {
-      result.push_back((feature.second ? '+' : '-') +
+      if(std::string(feature.first()).substr(0,6)=="avx512")
+        result.push_back('-'+std::string(feature.first()));
+      else
+        result.push_back((feature.second ? '+' : '-') +
                        std::string(feature.first()));
     }
   }
