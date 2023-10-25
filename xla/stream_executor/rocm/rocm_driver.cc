@@ -1466,7 +1466,9 @@ GpuDriver::GraphNodeGetType(hipGraphNode_t node) {
     if (pos != string::npos) gcnArchName = gcnArchName.substr(pos + 3);
     VLOG(3) << "GCN arch name (stripped) " << gcnArchName;
     return ((gcnArchName == "908") || (gcnArchName == "909") ||
-            (gcnArchName == "90a") || (gcnArchName == "940"));
+            (gcnArchName == "90a") || (gcnArchName == "940") ||
+            (gcnArchName == "941") || (gcnArchName == "942")
+            );
   }
   return tsl::Status{
       absl::StatusCode::kInternal,
@@ -1615,7 +1617,10 @@ static tsl::StatusOr<T> GetSimpleAttribute(hipDevice_t device,
   if (gcnArchName.substr(0, 6) == "gfx908") {
     *reserve = RESERVED_GFX908;
   } else if (gcnArchName.substr(0, 6) == "gfx90a" ||
-             gcnArchName.substr(0, 6) == "gfx940") {
+             gcnArchName.substr(0, 6) == "gfx940" ||
+             gcnArchName.substr(0, 6) == "gfx941" ||
+             gcnArchName.substr(0, 6) == "gfx942"
+             ) {
     *reserve = RESERVED_GFX9_X;
   }
   return true;
