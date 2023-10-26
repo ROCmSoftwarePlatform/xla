@@ -24,8 +24,8 @@ limitations under the License.
 #include "absl/numeric/bits.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
-#include "third_party/gpus/cuda/include/cuda_runtime_api.h"
 #include "xla/primitive_util.h"
+#include "xla/service/gpu/runtime/gpu_kernel_helper.h"
 #include "xla/service/gpu/runtime/topk_kernel_common.h"
 #include "xla/stream_executor/gpu/gpu_stream.h"
 #include "xla/xla_data.pb.h"
@@ -44,6 +44,7 @@ size_t NumThreads(size_t n, size_t k, size_t batch_size) {
       std::min(simultaneous_threads_per_block, kTopKMaxThreadsPerBlock);
   // Minimum amount of data that each thread needs to receive for the algorithm.
   size_t min_slice = absl::bit_floor(n / absl::bit_ceil(k));
+  // VLOG(0) << "threads_per_block, min_slice: " << threads_per_block << ',' << min_slice;
   return std::min(threads_per_block, min_slice);
 }
 
@@ -80,12 +81,12 @@ struct TopkArgs {
 };
 
 template <typename T>
-absl::StatusOr<void*> GetKernel(int n, int k) {
-  if (k <= 1) return GetTopKKernelForK<T, 1>(n);
-  if (k <= 2) return GetTopKKernelForK<T, 2>(n);
-  if (k <= 4) return GetTopKKernelForK<T, 4>(n);
-  if (k <= 8) return GetTopKKernelForK<T, 8>(n);
-  if (k <= 16) return GetTopKKernelForK<T, 16>(n);
+absl::StatusOr<void*> GetKernel(int n_threads, int k) {
+  if (k <= 1) return GetTopKKernelForK<T, 1>(n_threads);
+  if (k <= 2) return GetTopKKernelForK<T, 2>(n_threads);
+  if (k <= 4) return GetTopKKernelForK<T, 4>(n_threads);
+  if (k <= 8) return GetTopKKernelForK<T, 8>(n_threads);
+  if (k <= 16) return GetTopKKernelForK<T, 16>(n_threads);
   return absl::UnimplementedError(absl::StrCat("Unsupported K: ", k));
 }
 
@@ -94,22 +95,28 @@ absl::Status TypedTopK(TopkArgs<T> args) {
   int num_threads = NumThreads(args.num_elements, args.k, args.batch_size);
   if (num_threads == 0) {
     return absl::FailedPreconditionError(
-        "Invalid kernel pameters. This is likely a bug in the "
+        "Invalid kernel parameters. This is likely a bug in the "
         "TopkSpecializer.");
   }
-  TF_ASSIGN_OR_RETURN(void* kernel, GetKernel<T>(args.num_elements, args.k));
+
+  TF_ASSIGN_OR_RETURN(void* kernel, GetKernel<T>(num_threads, args.k));
   int blocks_per_grid = args.batch_size;
   constexpr size_t max_kv_size = sizeof(uint64_t);
   // Allocate shmem assuming we have a full reduction.
   int shmem_size = absl::bit_ceil(args.k) * max_kv_size * 32;
+
+  //int slice_size = (args.num_elements + num_threads-1) / num_threads;
+  // VLOG(0) << args.num_elements <<','<< args.k<<','<< args.batch_size<<
+  //   " blocksPergrid: " << blocks_per_grid << " -- shmem_size: " << shmem_size
+  //   << " num_threads: " << num_threads << " slice_size: " << slice_size;
   void* kernel_args[] = {&args.data, &args.num_elements, &args.top_elements,
                          &args.top_indices, &args.k};
-  cudaError_t launch_status =
-      cudaLaunchKernel(kernel, blocks_per_grid, num_threads, kernel_args,
+  auto launch_status =
+      gpuLaunchKernel(kernel, blocks_per_grid, num_threads, kernel_args,
                        shmem_size, args.stream);
-  if (launch_status != cudaSuccess) {
+  if (launch_status != gpuSuccess) {
     return absl::InternalError(absl::StrCat("Failed to launch kernel: ",
-                                            cudaGetErrorString(launch_status)));
+                                            gpuGetErrorString(launch_status)));
   }
   return absl::OkStatus();
 }

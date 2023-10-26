@@ -51,7 +51,7 @@ namespace xla {
 
 namespace memory_space_assignment {
 // Forward Declaration of Options.
-class Options;
+struct Options;
 
 inline constexpr char kConcatBitcastCustomCall[] = "ConcatBitcast";
 

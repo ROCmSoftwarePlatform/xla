@@ -232,7 +232,6 @@ class Compiler {
  public:
   // Description of a target device for compilation.
   struct TargetConfig {
-    TargetConfig() = default;
     explicit TargetConfig(const se::GpuTargetConfigProto& proto);
     explicit TargetConfig(se::StreamExecutor* s);
 
