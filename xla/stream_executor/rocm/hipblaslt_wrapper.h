@@ -22,6 +22,7 @@ limitations under the License.
 #include "rocm/rocm_config.h"
 
 #if TF_HIPBLASLT
+#define __HIP_PLATFORM_AMD__
 #if TF_ROCM_VERSION >= 50500
 #include "rocm/include/hipblaslt/hipblaslt.h"
 #else
