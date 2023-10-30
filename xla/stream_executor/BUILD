@@ -432,6 +432,7 @@ cc_library(
         "@tsl//tsl/platform:status",
         "@tsl//tsl/platform:statusor",
     ],
+    alwayslink = True,
 )
 
 cc_library(
@@ -502,6 +503,7 @@ cc_library(
         "@tsl//tsl/platform:status",
         "@tsl//tsl/platform:statusor",
     ],
+    alwayslink = True,
 )
 
 cc_library(
