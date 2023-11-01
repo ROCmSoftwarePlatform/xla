@@ -4,8 +4,8 @@ load("//third_party:repo.bzl", "tf_http_archive", "tf_mirror_urls")
 def repo():
     """Imports Triton."""
 
-    TRITON_COMMIT = "fde44d0cb2cc554fb7761c0915066569fede1b8b"
-    TRITON_SHA256 = "1d24b1dcc01a9688ab14cbdb8c6b2d09c6bba2187ac7ccf4a126240154165617"
+    TRITON_COMMIT = "2a8fac9ba4cf712af5f12287ed362dcadf8049c7"
+    TRITON_SHA256 = "7b13c1d4c83899e97d13b10dacd5bc8880960d12dd8baf791ee6a0f5ca6eaf94"
 
     TRITON_XLA_URL = "https://github.com/ROCmSoftwarePlatform/triton/archive/{commit}.tar.gz"
     # For temporary changes which haven't landed upstream yet.

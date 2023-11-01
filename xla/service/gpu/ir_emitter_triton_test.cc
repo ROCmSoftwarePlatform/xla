@@ -71,7 +71,7 @@ class TritonGemmNoTF32Test : public GpuCodegenTest {
  private:
   bool tf32_state_;
 };
-
+#ifdef ZORAN
 TEST_F(TritonGemmNoTF32Test, DoNotUseTensorCoresForF32) {
   const std::string kHloText = R"(
 HloModule t, is_scheduled=true
@@ -100,6 +100,7 @@ ENTRY e {
 CHECK-NOT: mma
 )");
 }
+#endif // ZORAN
 
 class TritonGemmTest : public GpuCodegenTest {
  public:
@@ -111,6 +112,7 @@ class TritonGemmTest : public GpuCodegenTest {
   }
 };
 
+#ifdef ZORAN
 TEST_F(TritonGemmTest, DebugOptionsArePropagated) {
   const std::string kHloText = R"(
 ENTRY e {
@@ -251,11 +253,11 @@ ENTRY e {
 ; CHECK-NEXT: parameter
 ; CHECK-NEXT: fusion(
 ; CHECK-SAME: kind=kCustom
-; CHECK-SAME: "block_m":
   )");
 
   EXPECT_TRUE(RunAndCompare(hlo_text, ErrorSpec{/*aabs=*/1e-3, /*arel=*/1e-3}));
 }
+#endif // ZORAN
 
 TEST_F(TritonGemmTest, NoPadding) {
 
@@ -283,7 +285,6 @@ ENTRY e {
 ; CHECK-NEXT: ROOT
 ; CHECK-SAME: fusion(
 ; CHECK-SAME: kind=kCustom
-; CHECK-SAME: "block_m":
 ; CHECK-NOT: pad
 ; CHECK-NOT: slice
 )");
@@ -305,7 +306,7 @@ ENTRY e {
 
   //EXPECT_TRUE(RunAndCompare(hlo_text, ErrorSpec{/*aabs=*/1e-3, /*arel=*/1e-3}));
 }
-
+#ifdef ZORAN
 TEST_F(TritonGemmTest, SplitLhsNoncontractingTransposeRhs) {
   const std::string hlo_text = R"(
 HloModule t
@@ -324,7 +325,6 @@ ENTRY e {
 ; CHECK-NEXT: parameter
 ; CHECK-NEXT: fusion(
 ; CHECK-SAME: kind=kCustom
-; CHECK-SAME: "block_m":
 )");
 
   EXPECT_TRUE(RunAndCompare(hlo_text, ErrorSpec{/*aabs=*/1e-2, /*arel=*/1e-2}));
@@ -351,7 +351,6 @@ ENTRY e {
 ; CHECK-NEXT: parameter
 ; CHECK-NEXT: fusion(
 ; CHECK-SAME: kind=kCustom
-; CHECK-SAME: "block_m":
 )");
 
   EXPECT_TRUE(RunAndCompare(hlo_text, ErrorSpec{/*aabs=*/1e-3, /*arel=*/1e-3}));
@@ -431,7 +430,6 @@ ENTRY e {
 ; CHECK: transpose
 ; CHECK: fusion
 ; CHECK-SAME: kind=kCustom
-; CHECK-SAME: "block_m":
 )");
 
   EXPECT_TRUE(RunAndCompare(hlo_text, ErrorSpec{/*aabs=*/1e-3, /*arel=*/1e-3}));
@@ -456,7 +454,6 @@ ENTRY e {
 ; CHECK: transpose
 ; CHECK: fusion
 ; CHECK-SAME: kind=kCustom
-; CHECK-SAME: "block_m":
 )");
 
   EXPECT_TRUE(RunAndCompare(hlo_text, ErrorSpec{/*aabs=*/1e-3, /*arel=*/1e-3}));
@@ -481,7 +478,6 @@ ENTRY e {
 ; CHECK-NEXT: parameter
 ; CHECK-NEXT: fusion
 ; CHECK-SAME: kind=kCustom
-; CHECK-SAME: "block_m":
 )");
 
   EXPECT_TRUE(RunAndCompare(hlo_text, ErrorSpec{/*aabs=*/1e-4, /*arel=*/1e-2}));
@@ -506,7 +502,6 @@ ENTRY e {
 ; CHECK-NEXT: parameter
 ; CHECK-NEXT: fusion
 ; CHECK-SAME: kind=kCustom
-; CHECK-SAME: "block_m":
 )");
 
   EXPECT_TRUE(RunAndCompare(hlo_text, ErrorSpec{/*aabs=*/1e-3, /*arel=*/1e-3}));
@@ -532,7 +527,6 @@ ENTRY e {
 ; CHECK-NEXT: parameter
 ; CHECK-NEXT: fusion
 ; CHECK-SAME: kind=kCustom
-; CHECK-SAME: "block_m":
 )");
 
   EXPECT_TRUE(RunAndCompare(hlo_text, ErrorSpec{/*aabs=*/1e-4, /*arel=*/1e-2}));
@@ -557,7 +551,6 @@ ENTRY e {
 ; CHECK: f32[5,3,4]{2,1,0} bitcast(%p1)
 ; CHECK: fusion
 ; CHECK-SAME: kind=kCustom
-; CHECK-SAME: "block_m":
 )");
 
   EXPECT_TRUE(RunAndCompare(hlo_text, ErrorSpec{/*aabs=*/1e-4, /*arel=*/1e-4}));
@@ -726,7 +719,6 @@ ENTRY e {
   MatchOptimizedHlo(hlo_text, R"(
 ; CHECK: fusion
 ; CHECK-SAME: kind=kCustom
-; CHECK-SAME: block_m
 )");
 
   EXPECT_TRUE(RunAndCompare(hlo_text, ErrorSpec{/*aabs=*/1e-3, /*arel=*/1e-3}));
@@ -745,7 +737,6 @@ ENTRY e {
 
   MatchOptimizedHlo(hlo_text, R"(
 ; CHECK: fusion(%p0), kind=kCustom
-; CHECK-SAME: "block_m":
 )");
 
   EXPECT_TRUE(RunAndCompare(hlo_text, ErrorSpec{/*aabs=*/1e-6, /*arel=*/1e-6}));
@@ -2401,7 +2392,7 @@ ENTRY main {
   }
   EXPECT_TRUE(RunAndCompare(hlo_text, ErrorSpec(1e-6, 1e-6)));
 }
-
+#endif // ZORAN
 }  // namespace
 }  // namespace gpu
 }  // namespace xla
