@@ -928,6 +928,7 @@ void AMDGPUBackendInit(const DebugOptions& debug_options) {
   LLVMInitializeAMDGPUTarget();
   LLVMInitializeAMDGPUTargetInfo();
   LLVMInitializeAMDGPUTargetMC();
+  LLVMInitializeAMDGPUAsmParser();
   LLVMInitializeAMDGPUAsmPrinter();
 
 #endif
