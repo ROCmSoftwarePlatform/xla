@@ -71,7 +71,7 @@ class TritonGemmNoTF32Test : public GpuCodegenTest {
  private:
   bool tf32_state_;
 };
-#ifdef ZORAN
+
 TEST_F(TritonGemmNoTF32Test, DoNotUseTensorCoresForF32) {
   const std::string kHloText = R"(
 HloModule t, is_scheduled=true
@@ -100,7 +100,6 @@ ENTRY e {
 CHECK-NOT: mma
 )");
 }
-#endif // ZORAN
 
 class TritonGemmTest : public GpuCodegenTest {
  public:
@@ -112,7 +111,6 @@ class TritonGemmTest : public GpuCodegenTest {
   }
 };
 
-#ifdef ZORAN
 TEST_F(TritonGemmTest, DebugOptionsArePropagated) {
   const std::string kHloText = R"(
 ENTRY e {
@@ -257,7 +255,6 @@ ENTRY e {
 
   EXPECT_TRUE(RunAndCompare(hlo_text, ErrorSpec{/*aabs=*/1e-3, /*arel=*/1e-3}));
 }
-#endif // ZORAN
 
 TEST_F(TritonGemmTest, NoPadding) {
 
@@ -271,12 +268,6 @@ ENTRY e {
   ROOT _ = f16[15,17] dot(p0, cp1),
     lhs_contracting_dims={1}, rhs_contracting_dims={0}
 })";
-
-
-  //GTEST_MESSAGE_("Zoran",::testing::TestPartResult::kSuccess);
-  EXPECT_TRUE(false) << "Zoran";
-//  EXPECT_TRUE(false) << output_directory;
-  EXPECT_TRUE(false) << "Zoran";
 
   MatchOptimizedHlo(hlo_text, R"(
 ; CHECK: ENTRY
@@ -306,7 +297,7 @@ ENTRY e {
 
   //EXPECT_TRUE(RunAndCompare(hlo_text, ErrorSpec{/*aabs=*/1e-3, /*arel=*/1e-3}));
 }
-#ifdef ZORAN
+
 TEST_F(TritonGemmTest, SplitLhsNoncontractingTransposeRhs) {
   const std::string hlo_text = R"(
 HloModule t
@@ -745,10 +736,12 @@ ENTRY e {
 class TritonGemmLevel2Test : public TritonGemmTest {
  public:
   void SetUp() override {
+/*    
     if (!GetCudaComputeCapability().IsAtLeast(
             se::CudaComputeCapability::AMPERE)) {
       GTEST_SKIP() << "Triton fusion on pre-Ampere GPUs is limited.";
     }
+*/
   }
   DebugOptions GetDebugOptionsForTest() override {
     DebugOptions debug_options = HloTestBase::GetDebugOptionsForTest();
@@ -1288,10 +1281,12 @@ ENTRY e {
 
 TEST_F(CompareTest, UsingOptinSharedMemoryOnAmpereProducesSameResult) {
   // On pre-Ampere GPUs the test would use a different amount of shared memory.
+
   if (!GetCudaComputeCapability().IsAtLeast(
           se::CudaComputeCapability::AMPERE)) {
     GTEST_SKIP() << "This test is for Ampere+ GPUs.";
   }
+
   const GpuDeviceInfo dev_info =
       GetGpuDeviceInfo(backend().default_stream_executor());
   constexpr int kBytesOfSharedMemoryTested = 64 * 1024;
@@ -1440,10 +1435,12 @@ ENTRY e {
 }
 
 TEST_F(CompareTest, S8BF16) {
+
   if (!GetCudaComputeCapability().IsAtLeast(
           se::CudaComputeCapability::AMPERE)) {
     GTEST_SKIP() << "No BF16 before Ampere.";
   }
+
   const char* hlo_text_ref = R"(
 HloModule r
 
@@ -1487,10 +1484,12 @@ ENTRY e {
 }
 
 TEST_F(CompareTest, SplitK) {
+
   if (!GetCudaComputeCapability().IsAtLeast(
           se::CudaComputeCapability::AMPERE)) {
     GTEST_SKIP() << "No BF16 before Ampere.";
   }
+
   const std::string hlo_text_ref = R"(
 HloModule t, is_scheduled=true
 
@@ -1558,10 +1557,12 @@ ENTRY e {
 }
 
 TEST_F(CompareTest, SplitKBatch) {
+
   if (!GetCudaComputeCapability().IsAtLeast(
           se::CudaComputeCapability::AMPERE)) {
     GTEST_SKIP() << "No BF16 before Ampere.";
   }
+
   const std::string kHloTextRef = R"(
 HloModule m, is_scheduled=true
 
@@ -1618,10 +1619,12 @@ ENTRY e {
 }
 
 TEST_F(CompareTest, SplitKNontrivialBitcast) {
+
   if (!GetCudaComputeCapability().IsAtLeast(
           se::CudaComputeCapability::AMPERE)) {
     GTEST_SKIP() << "No BF16 before Ampere.";
   }
+
   const std::string kHloTextRef = R"(
 HloModule module, is_scheduled=true
 
@@ -1929,10 +1932,12 @@ ENTRY e {
 }
 
 TEST_F(CompareTest, PredToBF16ConversionWorks) {
+
   if (!GetCudaComputeCapability().IsAtLeast(
           se::CudaComputeCapability::AMPERE)) {
     GTEST_SKIP() << "No BF16 before Ampere.";
   }
+  
   const std::string kHloTextTest = R"(
 HloModule m, is_scheduled=true
 
@@ -2392,7 +2397,7 @@ ENTRY main {
   }
   EXPECT_TRUE(RunAndCompare(hlo_text, ErrorSpec(1e-6, 1e-6)));
 }
-#endif // ZORAN
+
 }  // namespace
 }  // namespace gpu
 }  // namespace xla

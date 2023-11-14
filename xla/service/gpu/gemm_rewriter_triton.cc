@@ -1000,7 +1000,6 @@ class GemmRewriterTritonVisitor : public DfsHloRewriteVisitor {
   // if so - fuses all its compatible inputs and outputs as a new computation
   // and replaces the original dot() with a call to the computation.
   Status HandleDot(HloInstruction* dot) override {
-    VLOG(5) << "Zoran: HandleDot";
     std::string fusion_name = absl::StrCat("triton_gemm_", dot->name());
     HloComputation::Builder builder(absl::StrCat(fusion_name, "_computation"));
     std::vector<HloInstruction*> fusion_inputs;
@@ -1021,6 +1020,11 @@ class GemmRewriterTritonVisitor : public DfsHloRewriteVisitor {
           !should_fuse) {
         return OkStatus();
       }
+    }  else if (std::holds_alternative<se::RocmComputeCapability>(gpu_version_)) {
+        // Todo: check ROCM padding requirements.
+        if(!should_fuse) {
+          return OkStatus();
+        }
     }
     HloComputation* computation =
         dot->GetModule()->AddComputationAndUnifyNamesAndIds(builder.Build(),
