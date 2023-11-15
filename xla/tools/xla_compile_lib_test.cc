@@ -53,11 +53,11 @@ using ::tsl::testing::StatusIs;
 #if XLA_TEST_BACKEND_CPU
 static constexpr absl::string_view kPlatformName = "Host";
 #elif XLA_TEST_BACKEND_GPU
-static constexpr absl::string_view kPlatformName =
+static constexpr absl::string_view kPlatformName = 
 #if TENSORFLOW_USE_ROCM
-    "ROCM";
+ "ROCM";
 #else
-    "CUDA";
+ "CUDA";
 #endif
 #endif  // XLA_TEST_BACKEND_CPU
 
