@@ -320,7 +320,7 @@ GpuPerformanceModel::EstimateRunTimeForInstruction(
       absl::Seconds(1.0f * bytes_written / device_info->memory_bandwidth());
   absl::Duration exec_time = std::max(compute_time, read_time + write_time);
 
-  if (VLOG_IS_ON(8)) {
+  if (VLOG_IS_ON(-1)) {
     LOG(INFO) << "FLOPs: " << flops;
     LOG(INFO) << "Bytes read: " << bytes_read;
     LOG(INFO) << "Bytes written: " << bytes_written;
@@ -693,7 +693,7 @@ GpuPerformanceModel::RunTimes GpuPerformanceModel::EstimateRunTimes(
     total_producer_utilization += utilization_by_this_consumer;
   }
 
-  if (VLOG_IS_ON(8)) {
+  if (VLOG_IS_ON(-1)) {
     LOG(INFO) << "Consumer count: " << fused_consumer_count;
     LOG(INFO) << "Utilization of producer output: "
               << total_producer_utilization;
@@ -720,7 +720,7 @@ void GpuPerformanceModel::RecordEstimatedRunTime(
   backend_config->mutable_reification_cost()->set_end_to_end_cycles(cycles);
   TF_CHECK_OK(instruction->set_backend_config(*backend_config));
 
-  VLOG(8) << "RecordEstimatedRunTime: " << instruction->ToString();
+  VLOG(-1) << "RecordEstimatedRunTime: " << instruction->ToString();
 }
 
 // Returns NVLink bw in GB/s

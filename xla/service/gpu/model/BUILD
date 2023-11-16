@@ -6,6 +6,7 @@ load("@tsl//tsl:tsl.default.bzl", "get_compatible_with_portable")
 load("@tsl//tsl/platform:build_config.bzl", "tf_proto_library")
 load("@tsl//tsl/platform:build_config_root.bzl", "tf_cuda_tests_tags")
 load("@tsl//tsl/platform/default:cuda_build_defs.bzl", "if_cuda_is_configured")
+load("@local_config_rocm//rocm:build_defs.bzl","if_rocm")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["//tensorflow:license"],
@@ -257,7 +258,7 @@ cc_library(
     testonly = True,
     srcs = ["hlo_op_profiler.cc"],
     hdrs = ["hlo_op_profiler.h"],
-    local_defines = if_cuda(["GOOGLE_CUDA"]),
+    local_defines = if_cuda(["GOOGLE_CUDA"]) + if_rocm(["TENSORFLOW_USE_ROCM"]),
     deps = [
         ":hlo_op_profile_proto_cc",
         "//xla:debug_options_flags",
@@ -319,7 +320,7 @@ xla_cc_test(
 xla_cc_test(
     name = "hlo_op_profiler_test",
     srcs = ["hlo_op_profiler_test.cc"],
-    local_defines = if_cuda(["GOOGLE_CUDA"]),
+    local_defines = if_cuda(["GOOGLE_CUDA"]) + if_rocm(["TENSORFLOW_USE_ROCM"]),
     tags = tf_cuda_tests_tags(),
     deps = [
         ":hlo_op_profiler_lib",

@@ -50,9 +50,13 @@ class GpuPerformanceModelTest : public HloTestBase {
   GpuHloCostAnalysis::Options options_{ShapeSizeBytesFunction(),
                                        /*per_second_rates=*/{},
                                        /*count_multiple_input_accesses=*/true};
+#if GOOGLE_CUDA
   // The reference times in the test cases below are measured
   // on A6000 by profiling the execution of the HLOs.
   se::DeviceDescription dev_info_{TestGpuDeviceInfo::RTXA6000DeviceInfo()};
+#elif TENSORFLOW_USE_ROCM
+  se::DeviceDescription dev_info_{TestGpuDeviceInfo::AMDMI210DeviceInfo()};
+#endif
   GpuHloCostAnalysis analysis_{options_, &dev_info_};
   GpuPerformanceModelTest() : HloTestBase() {}
 };
