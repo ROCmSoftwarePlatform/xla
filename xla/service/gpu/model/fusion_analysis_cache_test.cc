@@ -27,7 +27,12 @@ namespace {
 class FusionAnalysisCacheTest : public HloTestBase {
  public:
   stream_executor::DeviceDescription device_{
-      TestGpuDeviceInfo::RTXA6000DeviceInfo()};
+#if GOOGLE_CUDA
+      TestGpuDeviceInfo::RTXA6000DeviceInfo()
+#elif TENSORFLOW_USE_ROCM
+      TestGpuDeviceInfo::AMDMI210DeviceInfo()
+#endif
+    };
   HloFusionAnalysisCache cache_{device_};
 };
 
