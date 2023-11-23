@@ -713,7 +713,8 @@ FusionDecision FusionFitsInBudget(const HloInstruction& instr1,
                                   bool is_consumer_producer_fusion,
                                   FusionInfoCache* cache /*=nullptr*/) {
   if (SharedMemoryUsage(instr1, cache) + SharedMemoryUsage(instr2, cache) >
-      device_info.shared_memory_per_block()) {
+      48 * 1024) {
+    VLOG(2) << "RB: device_info.shared_memory_per_block=" << device_info.shared_memory_per_block;
     return FusionDecision{}
            << "shared memory usage would be over the budget of "
            << device_info.shared_memory_per_block() << "B";
