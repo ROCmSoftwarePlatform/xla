@@ -112,7 +112,7 @@ namespace {
 int fpus_per_core(std::string gcn_arch_name) {
   // Source:
   // https://www.amd.com/content/dam/amd/en/documents/instinct-business-docs/white-papers/amd-cdna2-white-paper.pdf
-  int n = 128;  // gfx90a and gfx908 -> 128
+  int n = 512;  // gfx90a and gfx908 -> 128
   if (gcn_arch_name.substr(0, 6) == "gfx906") {
     n = 64;
   }
