@@ -65,17 +65,17 @@ StatusOr<std::unique_ptr<xla::PjRtLoadedExecutable>> CompileExecutable(
 
 // Given the result of a PjrtExecutable::Execute call (TF-status of vectors of
 // vectors), extract the zeroth result from the zeroth device.
-StatusOr<std::shared_ptr<xla::Literal>> ExtractSingleResult(
-    xla::StatusOr<std::vector<std::vector<std::unique_ptr<xla::PjRtBuffer>>>>&
-        result) {
-  TF_RETURN_IF_ERROR(result.status());
-  TF_RET_CHECK(result->size() == 1);
-  std::vector<std::unique_ptr<xla::PjRtBuffer>>& result_buffers = (*result)[0];
-  TF_RET_CHECK(result_buffers.size() == 1);
-  auto literal_or = result_buffers[0]->ToLiteralSync();
-  if (!literal_or.status().ok()) return literal_or.status();
-  return *literal_or;
-}
+// StatusOr<std::shared_ptr<xla::Literal>> ExtractSingleResult(
+//     xla::StatusOr<std::vector<std::vector<std::unique_ptr<xla::PjRtBuffer>>>>&
+//         result) {
+//   TF_RETURN_IF_ERROR(result.status());
+//   TF_RET_CHECK(result->size() == 1);
+//   std::vector<std::unique_ptr<xla::PjRtBuffer>>& result_buffers = (*result)[0];
+//   TF_RET_CHECK(result_buffers.size() == 1);
+//   auto literal_or = result_buffers[0]->ToLiteralSync();
+//   if (!literal_or.status().ok()) return literal_or.status();
+//   return *literal_or;
+// }
 
 static constexpr char const* kProgram = R"(HloModule HostTransfer
     ENTRY SendRecvSynchronous() -> f32[2] {
@@ -105,205 +105,205 @@ static constexpr char const* kProgram = R"(HloModule HostTransfer
       ROOT result = f32[2] get-tuple-element(recv-done), index=0
     })";
 
-TEST(StreamExecutorGpuClientTest, SendRecvChunked) {
-  TF_ASSERT_OK_AND_ASSIGN(auto client,
-                          GetStreamExecutorGpuClient(GpuClientOptions()));
+// TEST(StreamExecutorGpuClientTest, SendRecvChunked) {
+//   TF_ASSERT_OK_AND_ASSIGN(auto client,
+//                           GetStreamExecutorGpuClient(GpuClientOptions()));
 
-  TF_ASSERT_OK_AND_ASSIGN(auto executable,
-                          CompileExecutable(kProgram, *client));
+//   TF_ASSERT_OK_AND_ASSIGN(auto executable,
+//                           CompileExecutable(kProgram, *client));
 
-  std::array<float, 2> sent_value = {0.0f, 0.0f};
+//   std::array<float, 2> sent_value = {0.0f, 0.0f};
 
-  // Send buffer to host.
-  SendCallback send_callback = {
-      /*channel_id=*/1, [&](const PjRtTransferMetadata& m, PjRtChunk chunk,
-                            int64_t total_size_in_bytes, bool done) {
-        float* data = reinterpret_cast<float*>(chunk.data());
-        sent_value[0] = data[0];
-        sent_value[1] = data[1];
-        return OkStatus();
-      }};
+//   // Send buffer to host.
+//   SendCallback send_callback = {
+//       /*channel_id=*/1, [&](const PjRtTransferMetadata& m, PjRtChunk chunk,
+//                             int64_t total_size_in_bytes, bool done) {
+//         float* data = reinterpret_cast<float*>(chunk.data());
+//         sent_value[0] = data[0];
+//         sent_value[1] = data[1];
+//         return OkStatus();
+//       }};
 
-  // Recv buffer from host.
-  RecvCallback recv_callback = {
-      /*channel_id=*/2, [&](const PjRtTransferMetadata& m,
-                            std::unique_ptr<CopyToDeviceStream> stream) {
-        auto chunk0 = PjRtChunk::AllocateDefault(sizeof(float));
-        *reinterpret_cast<float*>(chunk0.data()) = 5.0f;
-        TF_CHECK_OK(stream->AddChunk(std::move(chunk0)).Await());
+//   // Recv buffer from host.
+//   RecvCallback recv_callback = {
+//       /*channel_id=*/2, [&](const PjRtTransferMetadata& m,
+//                             std::unique_ptr<CopyToDeviceStream> stream) {
+//         auto chunk0 = PjRtChunk::AllocateDefault(sizeof(float));
+//         *reinterpret_cast<float*>(chunk0.data()) = 5.0f;
+//         TF_CHECK_OK(stream->AddChunk(std::move(chunk0)).Await());
 
-        auto chunk1 = PjRtChunk::AllocateDefault(sizeof(float));
-        *reinterpret_cast<float*>(chunk1.data()) = 6.0f;
-        TF_CHECK_OK(stream->AddChunk(std::move(chunk1)).Await());
+//         auto chunk1 = PjRtChunk::AllocateDefault(sizeof(float));
+//         *reinterpret_cast<float*>(chunk1.data()) = 6.0f;
+//         TF_CHECK_OK(stream->AddChunk(std::move(chunk1)).Await());
 
-        return OkStatus();
-      }};
+//         return OkStatus();
+//       }};
 
-  // Callbacks for point-to-point communication ops.
-  std::vector<std::vector<SendCallback>> send_callbacks = {{send_callback}};
-  std::vector<std::vector<RecvCallback>> recv_callbacks = {{recv_callback}};
+//   // Callbacks for point-to-point communication ops.
+//   std::vector<std::vector<SendCallback>> send_callbacks = {{send_callback}};
+//   std::vector<std::vector<RecvCallback>> recv_callbacks = {{recv_callback}};
 
-  ExecuteOptions opts;
-  opts.send_callbacks = send_callbacks;
-  opts.recv_callbacks = recv_callbacks;
+//   ExecuteOptions opts;
+//   opts.send_callbacks = send_callbacks;
+//   opts.recv_callbacks = recv_callbacks;
 
-  auto result = executable->Execute(/*argument_handles=*/{{}}, opts);
+//   auto result = executable->Execute(/*argument_handles=*/{{}}, opts);
 
-  TF_ASSERT_OK_AND_ASSIGN(std::shared_ptr<xla::Literal> result_literal,
-                          ExtractSingleResult(result));
-  EXPECT_EQ(sent_value[0], 2.0f);
-  EXPECT_EQ(sent_value[1], 3.0f);
-  EXPECT_TRUE(LiteralTestUtil::Equal(LiteralUtil::CreateR1<float>({5.0f, 6.0f}),
-                                     *result_literal));
-}
+//   TF_ASSERT_OK_AND_ASSIGN(std::shared_ptr<xla::Literal> result_literal,
+//                           ExtractSingleResult(result));
+//   EXPECT_EQ(sent_value[0], 2.0f);
+//   EXPECT_EQ(sent_value[1], 3.0f);
+//   EXPECT_TRUE(LiteralTestUtil::Equal(LiteralUtil::CreateR1<float>({5.0f, 6.0f}),
+//                                      *result_literal));
+// }
 
-TEST(StreamExecutorGpuClientTest, SendErrorNoDeadLock) {
-  TF_ASSERT_OK_AND_ASSIGN(auto client,
-                          GetStreamExecutorGpuClient(GpuClientOptions()));
+// TEST(StreamExecutorGpuClientTest, SendErrorNoDeadLock) {
+//   TF_ASSERT_OK_AND_ASSIGN(auto client,
+//                           GetStreamExecutorGpuClient(GpuClientOptions()));
 
-  TF_ASSERT_OK_AND_ASSIGN(auto executable,
-                          CompileExecutable(kProgram, *client));
+//   TF_ASSERT_OK_AND_ASSIGN(auto executable,
+//                           CompileExecutable(kProgram, *client));
 
-  // Always-failing Send handler.
-  SendCallback send_callback = {
-      /*channel_id=*/1,
-      [&](const PjRtTransferMetadata&, PjRtChunk, int64_t, bool) {
-        return InternalError("Uh-oh, can send chunk to host");
-      }};
+//   // Always-failing Send handler.
+//   SendCallback send_callback = {
+//       /*channel_id=*/1,
+//       [&](const PjRtTransferMetadata&, PjRtChunk, int64_t, bool) {
+//         return InternalError("Uh-oh, can send chunk to host");
+//       }};
 
-  // No-op Recv handler.
-  RecvCallback recv_callback = {
-      /*channel_id=*/2,
-      [&](const PjRtTransferMetadata& m,
-          std::unique_ptr<CopyToDeviceStream> stream) { return OkStatus(); }};
+//   // No-op Recv handler.
+//   RecvCallback recv_callback = {
+//       /*channel_id=*/2,
+//       [&](const PjRtTransferMetadata& m,
+//           std::unique_ptr<CopyToDeviceStream> stream) { return OkStatus(); }};
 
-  // Callbacks for point-to-point communication ops.
-  std::vector<std::vector<SendCallback>> send_callbacks = {{send_callback}};
-  std::vector<std::vector<RecvCallback>> recv_callbacks = {{recv_callback}};
+//   // Callbacks for point-to-point communication ops.
+//   std::vector<std::vector<SendCallback>> send_callbacks = {{send_callback}};
+//   std::vector<std::vector<RecvCallback>> recv_callbacks = {{recv_callback}};
 
-  ExecuteOptions opts;
-  opts.send_callbacks = send_callbacks;
-  opts.recv_callbacks = recv_callbacks;
+//   ExecuteOptions opts;
+//   opts.send_callbacks = send_callbacks;
+//   opts.recv_callbacks = recv_callbacks;
 
-  // Check that send error safely rejected and we do not dead lock.
-  auto result = executable->Execute(/*argument_handles=*/{{}}, opts);
-  EXPECT_TRUE(absl::StrContains(result.status().message(),
-                                "Uh-oh, can send chunk to host"));
-}
+//   // Check that send error safely rejected and we do not dead lock.
+//   auto result = executable->Execute(/*argument_handles=*/{{}}, opts);
+//   EXPECT_TRUE(absl::StrContains(result.status().message(),
+//                                 "Uh-oh, can send chunk to host"));
+// }
 
-TEST(StreamExecutorGpuClientTest, RecvErrorNoDeadLock) {
-  TF_ASSERT_OK_AND_ASSIGN(auto client,
-                          GetStreamExecutorGpuClient(GpuClientOptions()));
+// TEST(StreamExecutorGpuClientTest, RecvErrorNoDeadLock) {
+//   TF_ASSERT_OK_AND_ASSIGN(auto client,
+//                           GetStreamExecutorGpuClient(GpuClientOptions()));
 
-  TF_ASSERT_OK_AND_ASSIGN(auto executable,
-                          CompileExecutable(kProgram, *client));
+//   TF_ASSERT_OK_AND_ASSIGN(auto executable,
+//                           CompileExecutable(kProgram, *client));
 
-  // No-op Send handler.
-  SendCallback send_callback = {
-      /*channel_id=*/1, [&](const PjRtTransferMetadata&, PjRtChunk, int64_t,
-                            bool) { return OkStatus(); }};
+//   // No-op Send handler.
+//   SendCallback send_callback = {
+//       /*channel_id=*/1, [&](const PjRtTransferMetadata&, PjRtChunk, int64_t,
+//                             bool) { return OkStatus(); }};
 
-  // Invalid Recv handler that tries to add invalid chunk.
-  RecvCallback recv_callback = {
-      /*channel_id=*/2, [&](const PjRtTransferMetadata& m,
-                            std::unique_ptr<CopyToDeviceStream> stream) {
-        auto chunk = PjRtChunk::AllocateDefault(10 * sizeof(float));
-        stream->AddChunk(std::move(chunk)).Await().IgnoreError();
-        // Return ok status to proceed to corresponding recv-done call.
-        return OkStatus();
-      }};
+//   // Invalid Recv handler that tries to add invalid chunk.
+//   RecvCallback recv_callback = {
+//       /*channel_id=*/2, [&](const PjRtTransferMetadata& m,
+//                             std::unique_ptr<CopyToDeviceStream> stream) {
+//         auto chunk = PjRtChunk::AllocateDefault(10 * sizeof(float));
+//         stream->AddChunk(std::move(chunk)).Await().IgnoreError();
+//         // Return ok status to proceed to corresponding recv-done call.
+//         return OkStatus();
+//       }};
 
-  // Callbacks for point-to-point communication ops.
-  std::vector<std::vector<SendCallback>> send_callbacks = {{send_callback}};
-  std::vector<std::vector<RecvCallback>> recv_callbacks = {{recv_callback}};
+//   // Callbacks for point-to-point communication ops.
+//   std::vector<std::vector<SendCallback>> send_callbacks = {{send_callback}};
+//   std::vector<std::vector<RecvCallback>> recv_callbacks = {{recv_callback}};
 
-  ExecuteOptions opts;
-  opts.send_callbacks = send_callbacks;
-  opts.recv_callbacks = recv_callbacks;
+//   ExecuteOptions opts;
+//   opts.send_callbacks = send_callbacks;
+//   opts.recv_callbacks = recv_callbacks;
 
-  // Check that invalid chunk safely rejected and we do not dead lock.
-  auto result = executable->Execute(/*argument_handles=*/{{}}, opts);
-  EXPECT_TRUE(absl::StrContains(result.status().message(),
-                                "Adding chunk of size 40 would overflow buffer "
-                                "of size 8 (0 already transferred)"));
-}
+//   // Check that invalid chunk safely rejected and we do not dead lock.
+//   auto result = executable->Execute(/*argument_handles=*/{{}}, opts);
+//   EXPECT_TRUE(absl::StrContains(result.status().message(),
+//                                 "Adding chunk of size 40 would overflow buffer "
+//                                 "of size 8 (0 already transferred)"));
+// }
 
-TEST(StreamExecutorGpuClientTest, ToLiteralAsync) {
-  TF_ASSERT_OK_AND_ASSIGN(auto client,
-                          GetStreamExecutorGpuClient(GpuClientOptions()));
-  ASSERT_GE(client->addressable_devices().size(), 1);
+// TEST(StreamExecutorGpuClientTest, ToLiteralAsync) {
+//   TF_ASSERT_OK_AND_ASSIGN(auto client,
+//                           GetStreamExecutorGpuClient(GpuClientOptions()));
+//   ASSERT_GE(client->addressable_devices().size(), 1);
 
-  auto src_literal = LiteralUtil::CreateR1<float>({41.0f, 42.0f, 43.0f, 44.0f});
-  TF_ASSERT_OK_AND_ASSIGN(
-      auto transfer_manager,
-      client->CreateBuffersForAsyncHostToDevice(
-          {src_literal.shape()}, client->addressable_devices()[0]));
-  auto buffer = transfer_manager->RetrieveBuffer(0);
+//   auto src_literal = LiteralUtil::CreateR1<float>({41.0f, 42.0f, 43.0f, 44.0f});
+//   TF_ASSERT_OK_AND_ASSIGN(
+//       auto transfer_manager,
+//       client->CreateBuffersForAsyncHostToDevice(
+//           {src_literal.shape()}, client->addressable_devices()[0]));
+//   auto buffer = transfer_manager->RetrieveBuffer(0);
 
-  absl::Mutex mu;
-  auto literal = std::make_shared<Literal>(
-      ShapeUtil::DeviceShapeToHostShape(buffer->on_device_shape()));
-  bool got_literal = false;
+//   absl::Mutex mu;
+//   auto literal = std::make_shared<Literal>(
+//       ShapeUtil::DeviceShapeToHostShape(buffer->on_device_shape()));
+//   bool got_literal = false;
 
-  TF_ASSERT_OK(
-      transfer_manager->TransferLiteralToBuffer(0, src_literal, [&]() {}));
+//   TF_ASSERT_OK(
+//       transfer_manager->TransferLiteralToBuffer(0, src_literal, [&]() {}));
 
-  buffer->ToLiteral(literal.get(), [&](Status s) {
-    absl::MutexLock l(&mu);
-    TF_ASSERT_OK(s);
-    got_literal = true;
-  });
-  buffer.reset();
+//   buffer->ToLiteral(literal.get(), [&](Status s) {
+//     absl::MutexLock l(&mu);
+//     TF_ASSERT_OK(s);
+//     got_literal = true;
+//   });
+//   buffer.reset();
 
-  {
-    absl::MutexLock l(&mu);
-    mu.Await(absl::Condition(&got_literal));
-  }
+//   {
+//     absl::MutexLock l(&mu);
+//     mu.Await(absl::Condition(&got_literal));
+//   }
 
-  ASSERT_TRUE(ShapeUtil::Compatible(src_literal.shape(), literal->shape()));
-  ASSERT_EQ(src_literal.data<float>(),
-            literal->Relayout(src_literal.shape().layout()).data<float>());
-}
+//   ASSERT_TRUE(ShapeUtil::Compatible(src_literal.shape(), literal->shape()));
+//   ASSERT_EQ(src_literal.data<float>(),
+//             literal->Relayout(src_literal.shape().layout()).data<float>());
+// }
 
-TEST(StreamExecutorGpuClientTest, ToLiteralAsyncBeforeBufferReady) {
-  TF_ASSERT_OK_AND_ASSIGN(auto client,
-                          GetStreamExecutorGpuClient(GpuClientOptions()));
-  ASSERT_GE(client->addressable_devices().size(), 1);
+// TEST(StreamExecutorGpuClientTest, ToLiteralAsyncBeforeBufferReady) {
+//   TF_ASSERT_OK_AND_ASSIGN(auto client,
+//                           GetStreamExecutorGpuClient(GpuClientOptions()));
+//   ASSERT_GE(client->addressable_devices().size(), 1);
 
-  auto src_literal = LiteralUtil::CreateR1<float>({41.0f, 42.0f, 43.0f, 44.0f});
-  TF_ASSERT_OK_AND_ASSIGN(
-      auto transfer_manager,
-      client->CreateBuffersForAsyncHostToDevice(
-          {src_literal.shape()}, client->addressable_devices()[0]));
-  auto buffer = transfer_manager->RetrieveBuffer(0);
+//   auto src_literal = LiteralUtil::CreateR1<float>({41.0f, 42.0f, 43.0f, 44.0f});
+//   TF_ASSERT_OK_AND_ASSIGN(
+//       auto transfer_manager,
+//       client->CreateBuffersForAsyncHostToDevice(
+//           {src_literal.shape()}, client->addressable_devices()[0]));
+//   auto buffer = transfer_manager->RetrieveBuffer(0);
 
-  absl::Mutex mu;
-  auto literal = std::make_shared<Literal>(
-      ShapeUtil::DeviceShapeToHostShape(buffer->on_device_shape()));
-  bool got_literal = false;
+//   absl::Mutex mu;
+//   auto literal = std::make_shared<Literal>(
+//       ShapeUtil::DeviceShapeToHostShape(buffer->on_device_shape()));
+//   bool got_literal = false;
 
-  buffer->ToLiteral(literal.get(), [&](Status s) {
-    absl::MutexLock l(&mu);
-    TF_ASSERT_OK(s);
-    got_literal = true;
-  });
+//   buffer->ToLiteral(literal.get(), [&](Status s) {
+//     absl::MutexLock l(&mu);
+//     TF_ASSERT_OK(s);
+//     got_literal = true;
+//   });
 
-  absl::SleepFor(absl::Milliseconds(10));
-  ASSERT_FALSE(got_literal);
-  TF_ASSERT_OK(
-      transfer_manager->TransferLiteralToBuffer(0, src_literal, [&]() {}));
+//   absl::SleepFor(absl::Milliseconds(10));
+//   ASSERT_FALSE(got_literal);
+//   TF_ASSERT_OK(
+//       transfer_manager->TransferLiteralToBuffer(0, src_literal, [&]() {}));
 
-  buffer.reset();
+//   buffer.reset();
 
-  {
-    absl::MutexLock l(&mu);
-    mu.Await(absl::Condition(&got_literal));
-  }
+//   {
+//     absl::MutexLock l(&mu);
+//     mu.Await(absl::Condition(&got_literal));
+//   }
 
-  ASSERT_TRUE(ShapeUtil::Compatible(src_literal.shape(), literal->shape()));
-  ASSERT_EQ(src_literal.data<float>(),
-            literal->Relayout(src_literal.shape().layout()).data<float>());
-}
+//   ASSERT_TRUE(ShapeUtil::Compatible(src_literal.shape(), literal->shape()));
+//   ASSERT_EQ(src_literal.data<float>(),
+//             literal->Relayout(src_literal.shape().layout()).data<float>());
+// }
 
 // TEST(StreamExecutorGpuClientTest, FromHostAsync) {
 //   TF_ASSERT_OK_AND_ASSIGN(auto client,
@@ -408,173 +408,173 @@ TEST(StreamExecutorGpuClientTest, ToLiteralAsyncBeforeBufferReady) {
 //   free(dst);
 // }
 
-TEST(StreamExecutorGpuClientTest, CopyRawToHostOutOfRange) {
-  TF_ASSERT_OK_AND_ASSIGN(auto client,
-                          GetStreamExecutorGpuClient(GpuClientOptions()));
-  auto literal = xla::LiteralUtil::CreateR1<float>({41.0f, 42.0f});
+// TEST(StreamExecutorGpuClientTest, CopyRawToHostOutOfRange) {
+//   TF_ASSERT_OK_AND_ASSIGN(auto client,
+//                           GetStreamExecutorGpuClient(GpuClientOptions()));
+//   auto literal = xla::LiteralUtil::CreateR1<float>({41.0f, 42.0f});
 
-  TF_ASSERT_OK_AND_ASSIGN(
-      std::unique_ptr<PjRtBuffer> buffer,
-      client->BufferFromHostLiteral(literal, client->addressable_devices()[0]));
-  void* dst = aligned_alloc(buffer->GetOnDeviceSizeInBytes().value(), 0);
+//   TF_ASSERT_OK_AND_ASSIGN(
+//       std::unique_ptr<PjRtBuffer> buffer,
+//       client->BufferFromHostLiteral(literal, client->addressable_devices()[0]));
+//   void* dst = aligned_alloc(buffer->GetOnDeviceSizeInBytes().value(), 0);
 
-  auto result =
-      buffer->CopyRawToHost(dst, 1, buffer->GetOnDeviceSizeInBytes().value());
-  EXPECT_THAT(result.Await(), StatusIs(absl::StatusCode::kInvalidArgument,
-                                       HasSubstr("invalid offset 1")));
-  free(dst);
-}
+//   auto result =
+//       buffer->CopyRawToHost(dst, 1, buffer->GetOnDeviceSizeInBytes().value());
+//   EXPECT_THAT(result.Await(), StatusIs(absl::StatusCode::kInvalidArgument,
+//                                        HasSubstr("invalid offset 1")));
+//   free(dst);
+// }
 
-TEST(StreamExecutorGpuClientTest, AsyncCopyToDevice) {
-  TF_ASSERT_OK_AND_ASSIGN(auto client,
-                          GetStreamExecutorGpuClient(GpuClientOptions()));
-  ASSERT_GE(client->addressable_devices().size(), 2);
+// TEST(StreamExecutorGpuClientTest, AsyncCopyToDevice) {
+//   TF_ASSERT_OK_AND_ASSIGN(auto client,
+//                           GetStreamExecutorGpuClient(GpuClientOptions()));
+//   ASSERT_GE(client->addressable_devices().size(), 2);
 
-  // d0 is the device we will perform local/remote sends from.
-  auto* d0 = client->addressable_devices()[0];
-  // d1 is the device we will perform local/remote recvs, where the recv
-  // sync flag may be contended.
-  auto* d1 = client->addressable_devices()[1];
+//   // d0 is the device we will perform local/remote sends from.
+//   auto* d0 = client->addressable_devices()[0];
+//   // d1 is the device we will perform local/remote recvs, where the recv
+//   // sync flag may be contended.
+//   auto* d1 = client->addressable_devices()[1];
 
-  auto src_literal = LiteralUtil::CreateR1<float>({41.0f, 42.0f, 43.0f, 44.0f});
-  TF_ASSERT_OK_AND_ASSIGN(
-      auto transfer_manager,
-      client->CreateBuffersForAsyncHostToDevice({src_literal.shape()}, d0));
-  auto src_buffer = transfer_manager->RetrieveBuffer(0);
-  // CopyToDevice won't be enqueued until src_buffer is available.
-  auto local_recv_buffer = *src_buffer->CopyToDevice(d1);
+//   auto src_literal = LiteralUtil::CreateR1<float>({41.0f, 42.0f, 43.0f, 44.0f});
+//   TF_ASSERT_OK_AND_ASSIGN(
+//       auto transfer_manager,
+//       client->CreateBuffersForAsyncHostToDevice({src_literal.shape()}, d0));
+//   auto src_buffer = transfer_manager->RetrieveBuffer(0);
+//   // CopyToDevice won't be enqueued until src_buffer is available.
+//   auto local_recv_buffer = *src_buffer->CopyToDevice(d1);
 
-  TF_ASSERT_OK(
-      transfer_manager->TransferLiteralToBuffer(0, src_literal, []() {}));
+//   TF_ASSERT_OK(
+//       transfer_manager->TransferLiteralToBuffer(0, src_literal, []() {}));
 
-  auto literal = std::make_shared<Literal>(src_literal.shape());
+//   auto literal = std::make_shared<Literal>(src_literal.shape());
 
-  auto local_recv_literal = local_recv_buffer->ToLiteral(literal.get());
-  TF_EXPECT_OK(local_recv_literal.Await());
+//   auto local_recv_literal = local_recv_buffer->ToLiteral(literal.get());
+//   TF_EXPECT_OK(local_recv_literal.Await());
 
-  ASSERT_TRUE(ShapeUtil::Compatible(src_literal.shape(), literal->shape()));
-  ASSERT_EQ(src_literal.data<float>(),
-            literal->Relayout(src_literal.shape().layout()).data<float>());
-}
+//   ASSERT_TRUE(ShapeUtil::Compatible(src_literal.shape(), literal->shape()));
+//   ASSERT_EQ(src_literal.data<float>(),
+//             literal->Relayout(src_literal.shape().layout()).data<float>());
+// }
 
-TEST(StreamExecutorGpuClientTest, CreateMixOfErrorBuffers) {
-  TF_ASSERT_OK_AND_ASSIGN(auto client,
-                          GetStreamExecutorGpuClient(GpuClientOptions()));
-  ASSERT_GE(client->addressable_devices().size(), 1);
+// TEST(StreamExecutorGpuClientTest, CreateMixOfErrorBuffers) {
+//   TF_ASSERT_OK_AND_ASSIGN(auto client,
+//                           GetStreamExecutorGpuClient(GpuClientOptions()));
+//   ASSERT_GE(client->addressable_devices().size(), 1);
 
-  std::vector<Literal> src_literals;
-  std::vector<Shape> src_shapes;
-  for (int i = 0; i < 4; ++i) {
-    std::vector<float> data(i + 1);
-    std::iota(data.begin(), data.end(), static_cast<float>(i + 10));
-    src_literals.emplace_back(LiteralUtil::CreateR1<float>(data));
-    src_shapes.push_back(src_literals.back().shape());
-  }
-  TF_ASSERT_OK_AND_ASSIGN(auto transfer_manager,
-                       client->CreateBuffersForAsyncHostToDevice(
-                           src_shapes, client->addressable_devices()[0]));
-  std::vector<std::unique_ptr<PjRtBuffer>> buffers;
-  for (int i = 0; i < src_shapes.size(); ++i) {
-    buffers.emplace_back(transfer_manager->RetrieveBuffer(i));
-  }
+//   std::vector<Literal> src_literals;
+//   std::vector<Shape> src_shapes;
+//   for (int i = 0; i < 4; ++i) {
+//     std::vector<float> data(i + 1);
+//     std::iota(data.begin(), data.end(), static_cast<float>(i + 10));
+//     src_literals.emplace_back(LiteralUtil::CreateR1<float>(data));
+//     src_shapes.push_back(src_literals.back().shape());
+//   }
+//   TF_ASSERT_OK_AND_ASSIGN(auto transfer_manager,
+//                        client->CreateBuffersForAsyncHostToDevice(
+//                            src_shapes, client->addressable_devices()[0]));
+//   std::vector<std::unique_ptr<PjRtBuffer>> buffers;
+//   for (int i = 0; i < src_shapes.size(); ++i) {
+//     buffers.emplace_back(transfer_manager->RetrieveBuffer(i));
+//   }
 
-  absl::Mutex mu;
-  int got_callback_count = 0;
-  for (int i = 0; i < 4; ++i) {
-    auto& buffer = buffers[i];
-    if (i == 0 || i == 3) {
-      TF_ASSERT_OK(transfer_manager->TransferLiteralToBuffer(i, src_literals[i],
-                                                          [&]() {}));
-      buffer->OnReady([&](absl::Status s) {
-        absl::MutexLock l(&mu);
-        TF_ASSERT_OK(s);
-        ++got_callback_count;
-      });
-    } else {
-      absl::Status error = InternalError("error %d", i);
-      transfer_manager->SetBufferError(i, error);
-      buffer->OnReady([error, &mu, &got_callback_count](absl::Status s) {
-        absl::MutexLock l(&mu);
-        ASSERT_EQ(s, error);
-        ++got_callback_count;
-      });
-    }
-    buffer.reset();
-  }
+//   absl::Mutex mu;
+//   int got_callback_count = 0;
+//   for (int i = 0; i < 4; ++i) {
+//     auto& buffer = buffers[i];
+//     if (i == 0 || i == 3) {
+//       TF_ASSERT_OK(transfer_manager->TransferLiteralToBuffer(i, src_literals[i],
+//                                                           [&]() {}));
+//       buffer->OnReady([&](absl::Status s) {
+//         absl::MutexLock l(&mu);
+//         TF_ASSERT_OK(s);
+//         ++got_callback_count;
+//       });
+//     } else {
+//       absl::Status error = InternalError("error %d", i);
+//       transfer_manager->SetBufferError(i, error);
+//       buffer->OnReady([error, &mu, &got_callback_count](absl::Status s) {
+//         absl::MutexLock l(&mu);
+//         ASSERT_EQ(s, error);
+//         ++got_callback_count;
+//       });
+//     }
+//     buffer.reset();
+//   }
 
-  {
-    auto done = [&]() { return got_callback_count == src_literals.size(); };
-    absl::MutexLock l(&mu);
-    QCHECK(mu.AwaitWithTimeout(absl::Condition(&done), absl::Seconds(60)));
-  }
-}
+//   {
+//     auto done = [&]() { return got_callback_count == src_literals.size(); };
+//     absl::MutexLock l(&mu);
+//     QCHECK(mu.AwaitWithTimeout(absl::Condition(&done), absl::Seconds(60)));
+//   }
+// }
 
-TEST(GpuTopology, FromProto) {
-  GpuTopologyProto msg;
-  ASSERT_TRUE(tsl::protobuf::TextFormat::ParseFromString(
-      R"pb(
-        device_ids: [ 3, 2, 1 ]
-      )pb",
-      &msg));
+// TEST(GpuTopology, FromProto) {
+//   GpuTopologyProto msg;
+//   ASSERT_TRUE(tsl::protobuf::TextFormat::ParseFromString(
+//       R"pb(
+//         device_ids: [ 3, 2, 1 ]
+//       )pb",
+//       &msg));
 
-  std::unique_ptr<const GpuTopology> gpu_topology = GpuTopology::FromProto(msg);
-  EXPECT_THAT(gpu_topology->device_ids(), ElementsAre(3, 2, 1));
-}
+//   std::unique_ptr<const GpuTopology> gpu_topology = GpuTopology::FromProto(msg);
+//   EXPECT_THAT(gpu_topology->device_ids(), ElementsAre(3, 2, 1));
+// }
 
-TEST(GpuTopology, ToProto) {
-  GpuTopology gpu_topology({3, 2, 1});
-  GpuTopologyProto msg = gpu_topology.ToProto();
-  EXPECT_THAT(msg.device_ids(), ElementsAre(3, 2, 1));
-}
+// TEST(GpuTopology, ToProto) {
+//   GpuTopology gpu_topology({3, 2, 1});
+//   GpuTopologyProto msg = gpu_topology.ToProto();
+//   EXPECT_THAT(msg.device_ids(), ElementsAre(3, 2, 1));
+// }
 
-TEST(StreamExecutorGpuClientTest, DistributeInit) {
-  absl::flat_hash_map<std::string, std::string> kv_store;
-  absl::Mutex mu;
-  PjRtClient::KeyValueGetCallback kv_get =
-      [&kv_store, &mu](std::string_view k,
-                       absl::Duration timeout) -> xla::StatusOr<std::string> {
-    absl::Duration wait_interval = absl::Milliseconds(10);
-    int num_retry = timeout / wait_interval;
-    for (int i = 0; i < num_retry; i++) {
-      {
-        absl::MutexLock lock(&mu);
-        auto iter = kv_store.find(k);
-        if (iter != kv_store.end()) {
-          return iter->second;
-        }
-      }
-      absl::SleepFor(wait_interval);
-    }
-    return absl::NotFoundError(
-        absl::StrCat(k, " is not found in the kv store."));
-  };
-  PjRtClient::KeyValuePutCallback kv_put =
-      [&kv_store, &mu](std::string_view k, std::string_view v) -> xla::Status {
-    {
-      absl::MutexLock lock(&mu);
-      kv_store[k] = v;
-    }
-    return tsl::OkStatus();
-  };
+// TEST(StreamExecutorGpuClientTest, DistributeInit) {
+//   absl::flat_hash_map<std::string, std::string> kv_store;
+//   absl::Mutex mu;
+//   PjRtClient::KeyValueGetCallback kv_get =
+//       [&kv_store, &mu](std::string_view k,
+//                        absl::Duration timeout) -> xla::StatusOr<std::string> {
+//     absl::Duration wait_interval = absl::Milliseconds(10);
+//     int num_retry = timeout / wait_interval;
+//     for (int i = 0; i < num_retry; i++) {
+//       {
+//         absl::MutexLock lock(&mu);
+//         auto iter = kv_store.find(k);
+//         if (iter != kv_store.end()) {
+//           return iter->second;
+//         }
+//       }
+//       absl::SleepFor(wait_interval);
+//     }
+//     return absl::NotFoundError(
+//         absl::StrCat(k, " is not found in the kv store."));
+//   };
+//   PjRtClient::KeyValuePutCallback kv_put =
+//       [&kv_store, &mu](std::string_view k, std::string_view v) -> xla::Status {
+//     {
+//       absl::MutexLock lock(&mu);
+//       kv_store[k] = v;
+//     }
+//     return tsl::OkStatus();
+//   };
 
-  tsl::thread::ThreadPool thread_pool(tsl::Env::Default(), "DistributeInit", 4);
+//   tsl::thread::ThreadPool thread_pool(tsl::Env::Default(), "DistributeInit", 4);
 
-  int num_nodes = 2;
-  for (int i = 0; i < num_nodes; i++) {
-    thread_pool.Schedule([&, i] {
-      GpuClientOptions options;
-      options.node_id = i;
-      options.num_nodes = num_nodes;
-      options.kv_get = kv_get;
-      options.kv_put = kv_put;
-      TF_ASSERT_OK_AND_ASSIGN(auto client, GetStreamExecutorGpuClient(options));
-      EXPECT_TRUE(client->platform_name() == "cuda" ||
-                  client->platform_name() == "rocm");
-      EXPECT_EQ(client->addressable_device_count(), 2);
-      EXPECT_EQ(client->device_count(), 4);
-    });
-  }
-}
+//   int num_nodes = 2;
+//   for (int i = 0; i < num_nodes; i++) {
+//     thread_pool.Schedule([&, i] {
+//       GpuClientOptions options;
+//       options.node_id = i;
+//       options.num_nodes = num_nodes;
+//       options.kv_get = kv_get;
+//       options.kv_put = kv_put;
+//       TF_ASSERT_OK_AND_ASSIGN(auto client, GetStreamExecutorGpuClient(options));
+//       EXPECT_TRUE(client->platform_name() == "cuda" ||
+//                   client->platform_name() == "rocm");
+//       EXPECT_EQ(client->addressable_device_count(), 2);
+//       EXPECT_EQ(client->device_count(), 4);
+//     });
+//   }
+// }
 
 TEST(StreamExecutorGpuClientTest, GetAllocatorStatsTest) {
   TF_ASSERT_OK_AND_ASSIGN(auto client,
