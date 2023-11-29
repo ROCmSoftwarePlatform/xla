@@ -1355,6 +1355,9 @@ bool IsTritonSupportedDataType(PrimitiveType type, GpuVersion gpu_version) {
         return cuda_compute_capability.IsAtLeast(
           stream_executor::CudaComputeCapability::AMPERE);
       }
+      if(std::holds_alternative<se::RocmComputeCapability>(gpu_version)) {
+        return true;
+      }
       return false;
     default:
       return false;
@@ -1560,8 +1563,11 @@ FusionDecision CanTritonHandleGEMM(const HloInstruction& dot,
             std::get<se::CudaComputeCapability>(gpu_version);
           return cuda_compute_capability.IsAtLeast(
             stream_executor::CudaComputeCapability::AMPERE);
+        }
+        if(std::holds_alternative<se::RocmComputeCapability>(gpu_version)) {
+          return true;
+        }
         return false;
-      }
       default:
         return false;
     }
