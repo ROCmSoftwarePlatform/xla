@@ -688,6 +688,7 @@ class GemmRewriterTritonVisitor : public DfsHloRewriteVisitor {
     // If a GEMM requiring padding for cuBLAS is encountered here this
     // happened because earlier ShouldTritonHandleGEMM() accepted it and padding
     // was skipped. Accept it ignoring profitability checks.
+    // TODO(rocm): check ROCM padding requirements.
     if(std::holds_alternative<se::CudaComputeCapability>(gpu_version_)) {
       if (!CublasRequiresPadding(
               *Cast<HloDotInstruction>(dot),
