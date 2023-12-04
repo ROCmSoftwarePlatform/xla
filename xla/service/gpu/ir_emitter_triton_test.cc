@@ -1208,6 +1208,9 @@ ENTRY e {
 }
 
 TEST_F(TritonGemmTestWithoutTritonGemmAny, SkipU8) {
+#ifdef TENSORFLOW_USE_ROCM
+  GTEST_SKIP() << "GEMM padding requirements for ROCM not included yet.";
+#endif
   const std::string hlo_text = R"(
 HloModule t
 
@@ -1226,6 +1229,9 @@ ENTRY e {
 }
 
 TEST_F(TritonGemmTestWithoutTritonGemmAny, SkipF32F32) {
+#ifdef TENSORFLOW_USE_ROCM
+  GTEST_SKIP() << "GEMM padding requirements for ROCM not included yet.";
+#endif
   const std::string hlo_text = R"(
 HloModule t
 
