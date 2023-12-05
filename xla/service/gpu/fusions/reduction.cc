@@ -36,8 +36,12 @@ limitations under the License.
 #include "llvm/IR/Value.h"
 #include "llvm/Support/AtomicOrdering.h"
 #include "llvm/Support/Casting.h"
-#include "mlir/IR/Value.h"  // from @llvm-project
+#include "mlir/IR/Value.h"      // from @llvm-project
 #include "mlir/Support/LLVM.h"  // from @llvm-project
+#include "tsl/platform/errors.h"
+#include "tsl/platform/logging.h"
+#include "tsl/platform/status.h"
+#include "tsl/platform/statusor.h"
 #include "xla/hlo/ir/hlo_casting_utils.h"
 #include "xla/hlo/ir/hlo_instruction.h"
 #include "xla/hlo/ir/hlo_instructions.h"
@@ -70,10 +74,6 @@ limitations under the License.
 #include "xla/status.h"
 #include "xla/status_macros.h"
 #include "xla/statusor.h"
-#include "tsl/platform/errors.h"
-#include "tsl/platform/logging.h"
-#include "tsl/platform/status.h"
-#include "tsl/platform/statusor.h"
 
 namespace xla {
 namespace gpu {
@@ -362,8 +362,7 @@ ReductionGroupEmitter::ReductionGroupEmitter(
 void ReductionEmitter::MaybeEmitFenceForAMDGPU() {
   auto* module = builder_->GetInsertBlock()->getModule();
   if (IsAMDGPU(module) &&
-      ir_emitter_context_.rocm_compute_capability().gcn_arch_name().substr(
-          0, 6) == "gfx90a") {
+      ir_emitter_context_.rocm_compute_capability().fence_before_barrier()) {
     builder_->CreateFence(
         llvm::AtomicOrdering::SequentiallyConsistent,
         builder_->getContext().getOrInsertSyncScopeID("workgroup"));

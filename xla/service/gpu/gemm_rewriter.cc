@@ -31,6 +31,9 @@ limitations under the License.
 #include "absl/algorithm/container.h"
 #include "absl/log/log.h"
 #include "absl/strings/string_view.h"
+#include "tsl/platform/errors.h"
+#include "tsl/platform/statusor.h"
+#include "tsl/protobuf/dnn.pb.h"
 #include "xla/hlo/evaluator/hlo_evaluator.h"
 #include "xla/hlo/ir/dfs_hlo_visitor_with_default.h"
 #include "xla/hlo/ir/hlo_casting_utils.h"
@@ -53,9 +56,6 @@ limitations under the License.
 #include "xla/stream_executor/device_description.h"
 #include "xla/stream_executor/gpu/gpu_blas_lt.h"
 #include "xla/xla_data.pb.h"
-#include "tsl/platform/errors.h"
-#include "tsl/platform/statusor.h"
-#include "tsl/protobuf/dnn.pb.h"
 
 #if GOOGLE_CUDA
 #include "third_party/gpus/cuda/include/cuda.h"
@@ -1217,10 +1217,9 @@ class GemmRewriterVisitor : public DfsHloRewriteVisitor {
                            const HloInstruction *gemm,
                            HloInstruction *bitcast = nullptr,
                            HloInstruction *slice = nullptr) {
-    TF_RET_CHECK(Shape::Equal().IgnoreElementType()(bias->shape(),
-                                                    bitcast ? bitcast->shape()
-                                                    : slice ? slice->shape()
-                                                            : gemm->shape()));
+    TF_RET_CHECK(Shape::Equal().IgnoreElementType()(
+        bias->shape(),
+        bitcast ? bitcast->shape() : slice ? slice->shape() : gemm->shape()));
 
     // Do not fuse bias into S32 GEMM, as for this datatype cuBLAS only
     // supports fixed values for alpha/beta.
@@ -1873,8 +1872,8 @@ class GemmRewriterVisitor : public DfsHloRewriteVisitor {
       auto rocm_compute_capability_ =
           std::get<se::RocmComputeCapability>(gpu_version_);
 
-      // as of ROCm 5.5, hipblaslt only supports MI200.
-      if (rocm_compute_capability_.gcn_arch_name().substr(0, 6) != "gfx90a") {
+      // as of ROCm 5.5, hipblaslt only supports MI200 or later.
+      if (!rocm_compute_capability_.gfx9_mi200_or_later()) {
         return false;
       }
     }
@@ -1979,10 +1978,11 @@ class GemmWorkspaceRewriteVisitor : public DfsHloRewriteVisitor {
     // Pass a user-managed workspace to legacy cuBLAS operations, as
     // otherwise cuBLAS will use its own internal pool which will be competing
     // with XLA allocator for device memory.
-    int64_t workspace = cuda_cc == nullptr ? GemmConfig::kDefaultWorkspace
-                        : cuda_cc->IsAtLeastHopper()
-                            ? GemmConfig::kHopperWorkspace
-                            : GemmConfig::kDefaultWorkspace;
+    int64_t workspace = cuda_cc == nullptr
+                            ? GemmConfig::kDefaultWorkspace
+                            : cuda_cc->IsAtLeastHopper()
+                                  ? GemmConfig::kHopperWorkspace
+                                  : GemmConfig::kDefaultWorkspace;
 
     // We do not know the workspace size required by cuBLAS, but we can guess
     // that in a worst case cuBLAS will transpose all operands into tiled

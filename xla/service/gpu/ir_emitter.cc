@@ -23,6 +23,7 @@ limitations under the License.
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Module.h"
+#include "tsl/platform/errors.h"
 #include "xla/hlo/ir/hlo_computation.h"
 #include "xla/primitive_util.h"
 #include "xla/service/elemental_ir_emitter.h"
@@ -35,7 +36,6 @@ limitations under the License.
 #include "xla/service/llvm_ir/tuple_ops.h"
 #include "xla/shape_util.h"
 #include "xla/util.h"
-#include "tsl/platform/errors.h"
 
 namespace xla {
 
@@ -263,8 +263,7 @@ void IrEmitter::BindFusionArguments(const HloInstruction* fusion,
 void IrEmitter::MaybeEmitFenceForAMDGPU(llvm::AtomicOrdering atomic_ordering,
                                         const char* sync_scope_id) {
   if (IsEmittingForAMDGPU() &&
-      ir_emitter_context_->rocm_compute_capability().gcn_arch_name().substr(
-          0, 6) == "gfx90a") {
+      ir_emitter_context_->rocm_compute_capability().fence_before_barrier()) {
     b_.CreateFence(atomic_ordering,
                    b_.getContext().getOrInsertSyncScopeID(sync_scope_id));
   }
