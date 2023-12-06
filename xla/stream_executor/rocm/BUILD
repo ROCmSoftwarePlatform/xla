@@ -14,6 +14,7 @@ load(
 load("@tsl//tsl:tsl.bzl", "set_external_visibility", "tsl_copts")
 load("@tsl//tsl/platform:build_config_root.bzl", "if_static")
 load("@tsl//tsl/platform:rules_cc.bzl", "cc_library")
+load("//xla/stream_executor/rocm:build_defs.bzl", "rocm_embedded_test_modules")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["//tensorflow:license"],
@@ -557,4 +558,9 @@ cc_library(
     ] + if_static(
         [":all_runtime"],
     ),
+)
+
+rocm_embedded_test_modules(
+    name = "add_i32_kernel",
+    srcs = if_rocm_is_configured(["add_i32_kernel.cu.cc"])
 )
