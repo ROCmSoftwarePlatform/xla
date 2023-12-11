@@ -109,6 +109,7 @@ limitations under the License.
 #include "tsl/platform/status.h"
 #include "tsl/platform/statusor.h"
 #include "tsl/platform/tensor_float_32_utils.h"
+#include "tsl/platform/rocm_rocdl_path.h"
 #include "triton/Conversion/TritonGPUToLLVM/TritonGPUToLLVMPass.h"
 #include "triton/Conversion/TritonToTritonGPU/TritonToTritonGPUPass.h"
 #include "triton/Dialect/Triton/IR/Dialect.h"
@@ -366,9 +367,15 @@ Value EmitElementwise(ImplicitLocOpBuilder& b, absl::string_view libdevice_path,
     if (dev_fn_id.ok()) {
       return b.create<mt::PureExternElementwiseOp>(
           inputs[0].getType(), inputs, "libdevice", libdevice_path,
+#ifdef TENSORFLOW_USE_ROCM
+          ObtainDeviceFunctionName(dev_fn_id.value(),
+                                   hlo.shape().element_type(),
+                                   llvm::Triple("amdgcn-unknown-unknown")));
+#else
           ObtainDeviceFunctionName(dev_fn_id.value(),
                                    hlo.shape().element_type(),
                                    llvm::Triple("nvptx64-unknown-unknown")));
+#endif
     }
   }
   const bool is_integer = ElementType(inputs[0]).isa<mlir::IntegerType>();
@@ -1503,12 +1510,23 @@ StatusOr<LaunchDimensions> TritonWrapper(
   fn.addEntryBlock();
   b.setInsertionPointToStart(&fn.front());
 
+#ifdef TENSORFLOW_USE_ROCM
+  auto compute_capability =
+      std::get_if<se::RocmComputeCapability>(&gpu_version);
+  if (!compute_capability) {
+    return xla::InternalError("Incompatible compute capability was specified.");
+  }
+  std::string libdevice_dir = tsl::RocdlRoot();
+
+  const std::string libdevice_path =
+    amdgpu::LibDevicePath(compute_capability->gcn_arch_name(), libdevice_dir);
+#else
   const std::string libdevice_path =
       nvptx::LibDevicePath(hlo_computation->parent()
                                ->config()
                                .debug_options()
                                .xla_gpu_cuda_data_dir());
-
+#endif
   TF_ASSIGN_OR_RETURN(LaunchDimensions launch_dimensions,
                       generator(b, libdevice_path, hlo_computation, fn, config,
                                 device_info.shared_memory_per_block_optin));

@@ -129,7 +129,7 @@ class RocmComputeCapability {
   RocmComputeCapability() = default;
   ~RocmComputeCapability() = default;
 
-  std::string gcn_arch_name() { return gcn_arch_name_; }
+  std::string gcn_arch_name() const { return gcn_arch_name_; }
 
   std::string gfx_version() {
     std::vector<std::string> tokens = absl::StrSplit(gcn_arch_name_, ':');

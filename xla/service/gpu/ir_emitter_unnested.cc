@@ -1766,7 +1766,11 @@ Status IrEmitterUnnested::EmitTritonFusion(
       TF_ASSIGN_OR_RETURN(
           launch_dimensions,
           TritonWrapper(impl_fn_name, hlo_computation, kTritonSoftmaxFusionKind,
+#ifdef TENSORFLOW_USE_ROCM
+                        ir_emitter_context_->rocm_compute_capability(),
+#else
                         ir_emitter_context_->cuda_compute_capability(),
+#endif
                         ir_emitter_context_->gpu_device_info(), config, module_,
                         &SoftMax, *ir_emitter_context_->mlir_context()));
     } else {  // Must be a MatMul
@@ -1774,7 +1778,11 @@ Status IrEmitterUnnested::EmitTritonFusion(
       TF_ASSIGN_OR_RETURN(
           launch_dimensions,
           TritonWrapper(impl_fn_name, hlo_computation, kTritonGemmFusionKind,
+#ifdef TENSORFLOW_USE_ROCM
+                        ir_emitter_context_->rocm_compute_capability(),
+#else
                         ir_emitter_context_->cuda_compute_capability(),
+#endif
                         ir_emitter_context_->gpu_device_info(), config, module_,
                         &MatMul, *ir_emitter_context_->mlir_context()));
     }

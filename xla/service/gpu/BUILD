@@ -508,6 +508,7 @@ cc_library(
         "@tsl//tsl/platform:status",
         "@tsl//tsl/platform:statusor",
         "@tsl//tsl/platform:tensor_float_32_hdr_lib",
+        "@tsl//tsl/platform:rocm_rocdl_path",
     ] + if_gpu_is_configured([
         "@triton//:TritonGPUToLLVM",
         "@triton//:TritonGPUTransforms",
