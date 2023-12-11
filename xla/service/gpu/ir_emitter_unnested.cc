@@ -2159,7 +2159,7 @@ StatusOr<FusionEmissionResult> IrEmitterUnnested::EmitTritonFusion(
           triton_wrapper_result,
           TritonWrapper(analysis, impl_fn_name, hlo_computation,
                         kTritonSoftmaxFusionKind,
-                        ir_emitter_context_->cuda_compute_capability(),
+                        ir_emitter_context_->gpu_compute_capability(),
                         ir_emitter_context_->gpu_device_info(), config, module_,
                         &EmitSoftMax, *ir_emitter_context_->mlir_context()));
       launch_dimensions =
@@ -2191,7 +2191,11 @@ StatusOr<FusionEmissionResult> IrEmitterUnnested::EmitTritonFusion(
           triton_wrapper_result,
           TritonWrapper(analysis, impl_fn_name, hlo_computation,
                         kTritonGemmFusionKind,
+#ifdef TENSORFLOW_USE_ROCM
+                        ir_emitter_context_->rocm_compute_capability(),
+#else
                         ir_emitter_context_->cuda_compute_capability(),
+#endif
                         ir_emitter_context_->gpu_device_info(), config, module_,
                         &EmitMatMul, *ir_emitter_context_->mlir_context()));
       launch_dimensions = GetMatMulLaunchDimensions(
@@ -2272,7 +2276,7 @@ Status IrEmitterUnnested::EmitFusion(
     case HloFusionAnalysis::EmitterFusionKind::kTriton: {
       TF_ASSIGN_OR_RETURN(auto backend_config,
                           instr->backend_config<FusionBackendConfig>());
-#if GOOGLE_CUDA
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
       TF_ASSIGN_OR_RETURN(emission_result,
                           EmitTritonFusion(fusion_analysis, instr, nullptr));
       break;

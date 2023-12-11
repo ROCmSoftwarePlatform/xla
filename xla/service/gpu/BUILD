@@ -515,6 +515,8 @@ cc_library(
         "@triton//:TritonGPUTransforms",
         "@triton//:TritonLLVMIR",
         "@triton//:TritonToTritonGPU",
+    ]) + if_rocm_is_configured([
+        "@tsl//tsl/platform:rocm_rocdl_path",
     ]),
 )
 
