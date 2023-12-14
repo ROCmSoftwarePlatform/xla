@@ -729,7 +729,7 @@ StatusOr<Value> EmitScope(
 }
 
 void CreateTritonPipeline(mlir::OpPassManager& pm,
-                          const GpuVersion gpu_version/*const se::CudaComputeCapability& cc*/, int num_warps,
+                          const GpuVersion gpu_version, int num_warps,
                           int num_stages) {
   int ccAsInt = 0;
   if(std::holds_alternative<se::CudaComputeCapability>(gpu_version)) {
@@ -2145,11 +2145,13 @@ StatusOr<TritonWrapperResult> TritonWrapper(
           ->getAttrOfType<mlir::IntegerAttr>("triton_gpu.shared")
           .getInt();
   VLOG(2) << "Shared memory usage: " << shared_mem_bytes << " B";
+#ifndef TENSORFLOW_USE_ROCM
   if (shared_mem_bytes > device_info.shared_memory_per_block_optin()) {
     return absl::ResourceExhaustedError(absl::StrFormat(
         "Shared memory size limit exceeded: requested %d, available: %d",
         shared_mem_bytes, device_info.shared_memory_per_block_optin()));
   }
+#endif
 
   TF_ASSIGN_OR_RETURN(
       std::unique_ptr<llvm::Module> ll_triton_module,

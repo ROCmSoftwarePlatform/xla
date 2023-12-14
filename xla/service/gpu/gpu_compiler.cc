@@ -559,6 +559,7 @@ Status GpuCompiler::OptimizeHloModule(HloModule* hlo_module,
 
   AlgebraicSimplifierOptions layout_insensitive_algsimp_opts({},
                                                              ConvIsLowerable);
+
   // GPU only supports canonical convolutions.
   layout_insensitive_algsimp_opts.set_supports_non_canonical_dots(false);
 
@@ -602,6 +603,7 @@ Status GpuCompiler::OptimizeHloModule(HloModule* hlo_module,
 
   const int64_t num_partitions = hlo_module->config().num_partitions();
   bool auto_sharding = hlo_module->config().use_auto_spmd_partitioning();
+
 #ifndef PLATFORM_GOOGLE
   if (auto_sharding) {
     LOG(ERROR) << "GPU autosharding is not yet available in open source.";
@@ -668,6 +670,7 @@ Status GpuCompiler::OptimizeHloModule(HloModule* hlo_module,
       spmd_pipeline.AddPass<AutoSharding>(option);
     }
 #endif  // PLATFORM_GOOGLE
+
     spmd_pipeline.AddPass<ShardingPropagation>(
         /*is_spmd=*/true, /*propagate_metadata=*/false,
         hlo_module->config().allow_spmd_sharding_propagation_to_output());
@@ -728,6 +731,7 @@ Status GpuCompiler::OptimizeHloModule(HloModule* hlo_module,
     }
     // Scatters unsupported on XLA:GPU are eliminated.
     pipeline.AddPass<GpuScatterExpander>();
+
     // TODO(phawkins): replace QR and Eigh decompositions with calls to
     // cuSOLVER.
     pipeline.AddPass<QrExpander>();
@@ -758,6 +762,7 @@ Status GpuCompiler::OptimizeHloModule(HloModule* hlo_module,
     pipeline.AddPass<DynamicDimensionSimplifier>();
 
     DynamicPadderOptions dynamic_padder_options;
+
     switch (hlo_module->config().debug_options().xla_gpu_shape_checks()) {
       case DebugOptions::IGNORE:
         dynamic_padder_options.shape_check_mode =
@@ -784,6 +789,7 @@ Status GpuCompiler::OptimizeHloModule(HloModule* hlo_module,
       default:
         LOG(FATAL) << "Unreachable";
     }
+
     pipeline.AddPass<DynamicPadder>(dynamic_padder_options);
 
     // Build simplification pipeline.  The passes in here are run to a fixed
@@ -795,6 +801,7 @@ Status GpuCompiler::OptimizeHloModule(HloModule* hlo_module,
       // BatchNormExpander can create zero-sized ops, so zero-sized HLO
       // elimination has to come after that pass.
       pipeline.AddPass<ZeroSizedHloElimination>();
+
       pipeline.AddPass<GatherSimplifier>();
       pipeline.AddPass<GatherExpander>(GatherExpander::kEliminateSimpleGathers);
       pipeline.AddPass<ScatterSimplifier>();
@@ -835,6 +842,7 @@ Status GpuCompiler::OptimizeHloModule(HloModule* hlo_module,
       pipeline.AddPass<ConvertMover>();
       pipeline.AddPass<AlgebraicSimplifier>(layout_insensitive_algsimp_opts);
     }();
+
     pipeline.AddPass<HloComputationDeduplicator>(
         /*mark_fusion_duplications=*/false);
     TF_RETURN_IF_ERROR(pipeline.Run(hlo_module).status());
@@ -906,6 +914,7 @@ Status GpuCompiler::OptimizeHloModule(HloModule* hlo_module,
           [](const HloInstruction*) { return false; }};
       collectives_pipeline.AddPass<CollectivePipeliner>(config);
     }
+
     // Run algebraic simplifier to reshape(broadcast) into a broadcast when
     // the reshape is just adding a unit dimension. This will help with the
     // AllGatherBroadcastReorder pass.
@@ -933,6 +942,7 @@ Status GpuCompiler::OptimizeHloModule(HloModule* hlo_module,
 
     TF_RETURN_IF_ERROR(collectives_pipeline.Run(hlo_module).status());
   }
+
   // Run target-specific HLO optimization passes for convolution
   // canonicalization.
   se::GpuComputeCapability gpu_version =
@@ -948,6 +958,7 @@ Status GpuCompiler::OptimizeHloModule(HloModule* hlo_module,
     }
     TF_ASSIGN_OR_RETURN(dnn_version, dnn->GetVersion());
   }
+
   TF_RETURN_IF_ERROR(OptimizeHloConvolutionCanonicalization(
       hlo_module, gpu_version, dnn_version, options.device_allocator));
 
@@ -973,6 +984,7 @@ Status GpuCompiler::OptimizeHloModule(HloModule* hlo_module,
     pipeline.AddPass<OptimizeInputOutputBufferAlias>(true);
     TF_RETURN_IF_ERROR(pipeline.Run(hlo_module).status());
   }
+
   // Run target-specific HLO optimization passes after layout assignment.
   TF_RETURN_IF_ERROR(OptimizeHloPostLayoutAssignment(
       hlo_module, stream_exec, options, gpu_target_config, thread_pool.get()));
@@ -1233,6 +1245,7 @@ Status GpuCompiler::OptimizeHloPostLayoutAssignment(
 
     // Rewrite GEMMs with broadcasted inputs as strided GEMMs.
     pipeline.AddPass<GemmBroadcastFoldingRewriter>();
+
     if (debug_options.xla_gpu_normalize_layouts()) {
       pipeline.AddPass<LayoutNormalization>(&NormalizeLayoutForGpuCustomCalls);
       pipeline.AddPass<HloPassFix<AlgebraicSimplifier>>(simplifier_options);
