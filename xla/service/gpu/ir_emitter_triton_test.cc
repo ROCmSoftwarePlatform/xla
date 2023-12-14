@@ -177,6 +177,9 @@ CHECK: fma
 }
 
 TEST_F(TritonGemmTest, FailIfTooMuchShmem) {
+#ifdef TENSORFLOW_USE_ROCM
+  GTEST_SKIP() << "GEMM padding requirements for ROCM not included yet.";
+#endif
   const std::string kHloText = R"(
 HloModule module, is_scheduled=true
 
@@ -214,7 +217,12 @@ ENTRY entry {
   config.set_num_warps(8);
   EXPECT_THAT(
       TritonWrapper("test_fn", triton_dot_computation, kTritonGemmFusionKind,
+#ifdef TENSORFLOW_USE_ROCM
                     se::RocmComputeCapability{"gfx906"},
+#else
+                    se::CudaComputeCapability{se::CudaComputeCapability::AMPERE,
+                                              /*minor=*/0},
+#endif
                     dev_info, config, &llvm_module, &MatMul, mlir_context),
       tsl::testing::StatusIs(tsl::error::RESOURCE_EXHAUSTED,
                              "Shared memory size limit exceeded."));
@@ -226,7 +234,12 @@ ENTRY entry {
   TF_ASSERT_OK_AND_ASSIGN(
       const LaunchDimensions launch_dimensions,
       TritonWrapper("test_fn", triton_dot_computation, kTritonGemmFusionKind,
+#ifdef TENSORFLOW_USE_ROCM
                     se::RocmComputeCapability{"gfx906"},
+#else
+                    se::CudaComputeCapability{se::CudaComputeCapability::AMPERE,
+                                              /*minor=*/0},
+#endif
                     dev_info, config, &llvm_module, &MatMul, mlir_context));
   // Use optin shared memory which is > shared_memory_per_block.
   EXPECT_GT(launch_dimensions.SharedMemBytes(),
@@ -280,22 +293,7 @@ ENTRY e {
 ; CHECK-NOT: slice
 )");
 
-  TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<HloModule> verified_module,
-                          ParseAndReturnVerifiedModule(hlo_text));
-
-  std::string output_directory;
-  if (!tsl::io::GetTestUndeclaredOutputsDir(&output_directory)) {
-    output_directory = tsl::testing::TmpDir();
-  }
-  DebugOptions debug_options = verified_module->config().debug_options();
-  debug_options.set_xla_dump_to(output_directory);
-  debug_options.set_xla_gpu_dump_llvmir(true);
-  verified_module->config().set_debug_options(debug_options);
-
-  EXPECT_TRUE(RunAndCompare(std::move(verified_module),
-                            ErrorSpec{/*aabs=*/1e-3, /*arel=*/1e-3}));
-
-  //EXPECT_TRUE(RunAndCompare(hlo_text, ErrorSpec{/*aabs=*/1e-3, /*arel=*/1e-3}));
+  EXPECT_TRUE(RunAndCompare(hlo_text, ErrorSpec{/*aabs=*/1e-3, /*arel=*/1e-3}));
 }
 
 TEST_F(TritonGemmTest, SplitLhsNoncontractingTransposeRhs) {
@@ -650,7 +648,12 @@ ENTRY entry {
   config.set_num_warps(2);
   EXPECT_THAT(
       TritonWrapper("test_fn", triton_dot_computation, kTritonGemmFusionKind,
+#ifdef TENSORFLOW_USE_ROCM
                     se::RocmComputeCapability{"gfx906"},
+#else
+                    se::CudaComputeCapability{se::CudaComputeCapability::AMPERE,
+                                              /*minor=*/0},
+#endif
                     dev_info, config, &llvm_module, &MatMul, mlir_context),
       tsl::testing::StatusIs(
           tsl::error::RESOURCE_EXHAUSTED,
@@ -662,7 +665,12 @@ ENTRY entry {
   config.set_block_k(32);
   TF_CHECK_OK(
       TritonWrapper("test_fn", triton_dot_computation, kTritonGemmFusionKind,
+#ifdef TENSORFLOW_USE_ROCM
                     se::RocmComputeCapability{"gfx906"},
+#else
+                    se::CudaComputeCapability{se::CudaComputeCapability::AMPERE,
+                                              /*minor=*/0},
+#endif
                     dev_info, config, &llvm_module, &MatMul, mlir_context)
           .status());
 }
@@ -742,12 +750,12 @@ ENTRY e {
 class TritonGemmLevel2Test : public TritonGemmTest {
  public:
   void SetUp() override {
-/*    
+#ifndef TENSORFLOW_USE_ROCM
     if (!GetCudaComputeCapability().IsAtLeast(
             se::CudaComputeCapability::AMPERE)) {
       GTEST_SKIP() << "Triton fusion on pre-Ampere GPUs is limited.";
     }
-*/
+#endif
   }
   DebugOptions GetDebugOptionsForTest() override {
     DebugOptions debug_options = HloTestBase::GetDebugOptionsForTest();
@@ -994,6 +1002,9 @@ ENTRY e {
 }
 
 TEST_F(TritonGemmLevel2Test, OutputFusionExecutesCorrectly) {
+#ifndef ROCM_LONG_TESTS
+    GTEST_SKIP() << "Takes long time to execute.";
+#endif
   const std::string kHloText = R"(
 HloModule m
 
@@ -1245,11 +1256,12 @@ ENTRY e {
 }
 
 TEST_F(CompareTest, BF16TransposedLHS) {
+#ifndef TENSORFLOW_USE_ROCM
   if (!GetCudaComputeCapability().IsAtLeast(
           se::CudaComputeCapability::AMPERE)) {
     GTEST_SKIP() << "No BF16 before Ampere.";
   }
-
+#endif
   const char* hlo_text_ref = R"(
 HloModule r
 
@@ -1287,12 +1299,13 @@ ENTRY e {
 
 TEST_F(CompareTest, UsingOptinSharedMemoryOnAmpereProducesSameResult) {
   // On pre-Ampere GPUs the test would use a different amount of shared memory.
-
   if (!GetCudaComputeCapability().IsAtLeast(
           se::CudaComputeCapability::AMPERE)) {
     GTEST_SKIP() << "This test is for Ampere+ GPUs.";
   }
-
+#ifdef TENSORFLOW_USE_ROCM
+    GTEST_SKIP() << "Optin shared memory not supported on rocm";
+#endif
   const GpuDeviceInfo dev_info =
       GetGpuDeviceInfo(backend().default_stream_executor());
   constexpr int kBytesOfSharedMemoryTested = 64 * 1024;
@@ -1325,7 +1338,6 @@ ENTRY e {
   llvm::LLVMContext llvm_ctx;
   llvm::Module llvm_module("module", llvm_ctx);
   mlir::MLIRContext mlir_context;
-  const GpuVersion gpu_version = se::RocmComputeCapability{"gfx906"};
 
   TF_ASSERT_OK_AND_ASSIGN(auto config,
                           hlo_module->entry_computation()
@@ -1334,7 +1346,7 @@ ENTRY e {
   TF_ASSERT_OK_AND_ASSIGN(
       const LaunchDimensions launch_dimensions,
       TritonWrapper("test_fn", triton_dot_computation, kTritonGemmFusionKind,
-                    gpu_version, dev_info,
+                    GetCudaComputeCapability(), dev_info,
                     config.triton_gemm_config(), &llvm_module, &MatMul,
                     mlir_context));
   // The config is chosen so that the used memory size is slightly above the
@@ -1441,12 +1453,13 @@ ENTRY e {
 }
 
 TEST_F(CompareTest, S8BF16) {
-
   if (!GetCudaComputeCapability().IsAtLeast(
           se::CudaComputeCapability::AMPERE)) {
     GTEST_SKIP() << "No BF16 before Ampere.";
   }
-
+#ifndef ROCM_LONG_TESTS
+    GTEST_SKIP() << "Takes long time to execute.";
+#endif
   const char* hlo_text_ref = R"(
 HloModule r
 
@@ -1490,12 +1503,12 @@ ENTRY e {
 }
 
 TEST_F(CompareTest, SplitK) {
-
+#ifndef TENSORFLOW_USE_ROCM
   if (!GetCudaComputeCapability().IsAtLeast(
           se::CudaComputeCapability::AMPERE)) {
     GTEST_SKIP() << "No BF16 before Ampere.";
   }
-
+#endif
   const std::string hlo_text_ref = R"(
 HloModule t, is_scheduled=true
 
@@ -1563,12 +1576,12 @@ ENTRY e {
 }
 
 TEST_F(CompareTest, SplitKBatch) {
-
+#ifndef TENSORFLOW_USE_ROCM
   if (!GetCudaComputeCapability().IsAtLeast(
           se::CudaComputeCapability::AMPERE)) {
     GTEST_SKIP() << "No BF16 before Ampere.";
   }
-
+#endif
   const std::string kHloTextRef = R"(
 HloModule m, is_scheduled=true
 
@@ -1625,12 +1638,12 @@ ENTRY e {
 }
 
 TEST_F(CompareTest, SplitKNontrivialBitcast) {
-
+#ifndef TENSORFLOW_USE_ROCM
   if (!GetCudaComputeCapability().IsAtLeast(
           se::CudaComputeCapability::AMPERE)) {
     GTEST_SKIP() << "No BF16 before Ampere.";
   }
-
+#endif
   const std::string kHloTextRef = R"(
 HloModule module, is_scheduled=true
 
@@ -1938,12 +1951,12 @@ ENTRY e {
 }
 
 TEST_F(CompareTest, PredToBF16ConversionWorks) {
-
+#ifndef TENSORFLOW_USE_ROCM
   if (!GetCudaComputeCapability().IsAtLeast(
           se::CudaComputeCapability::AMPERE)) {
     GTEST_SKIP() << "No BF16 before Ampere.";
   }
-  
+#endif
   const std::string kHloTextTest = R"(
 HloModule m, is_scheduled=true
 

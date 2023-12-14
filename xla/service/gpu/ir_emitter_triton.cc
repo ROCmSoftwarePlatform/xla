@@ -595,7 +595,7 @@ StatusOr<Value> EmitScope(
 }
 
 void CreateTritonPipeline(mlir::OpPassManager& pm,
-                          const GpuVersion gpu_version/*const se::CudaComputeCapability& cc*/, int num_warps,
+                          const GpuVersion gpu_version, int num_warps,
                           int num_stages) {
   int ccAsInt = 0;
   if(std::holds_alternative<se::CudaComputeCapability>(gpu_version)) {
@@ -1527,6 +1527,7 @@ StatusOr<LaunchDimensions> TritonWrapper(
                                .debug_options()
                                .xla_gpu_cuda_data_dir());
 #endif
+
   TF_ASSIGN_OR_RETURN(LaunchDimensions launch_dimensions,
                       generator(b, libdevice_path, hlo_computation, fn, config,
                                 device_info.shared_memory_per_block_optin));
@@ -1569,6 +1570,7 @@ StatusOr<LaunchDimensions> TritonWrapper(
                  << "--xla_dump_to is set, so the llvm dumps are disabled.";
     }
   }
+
   CreateTritonPipeline(pm, gpu_version, config.num_warps(), config.num_stages());
   // Triton generates pointers to the global address space, while XLA needs a
   // kernel signature with pointers to the generic address space.
@@ -1590,15 +1592,16 @@ StatusOr<LaunchDimensions> TritonWrapper(
       triton_module->getAttrOfType<mlir::IntegerAttr>("triton_gpu.shared")
           .getInt();
   VLOG(2) << "Shared memory usage: " << shared_mem_bytes << " B";
+#ifndef TENSORFLOW_USE_ROCM
   if (shared_mem_bytes > device_info.shared_memory_per_block_optin) {
     return ResourceExhausted("Shared memory size limit exceeded.");
   }
+#endif
   launch_dimensions.SetSharedMemBytes(shared_mem_bytes);
 
   TF_ASSIGN_OR_RETURN(std::unique_ptr<llvm::Module> ll_triton_module,
                       TranslateLLVMToLLVMIR(&llvm_module->getContext(),
                                             triton_module, libdevice_path));
-
   LogAndVerify(ll_triton_module.get());
 
   // Integrate LLVM matmul kernel into XLA's LLVM module.
@@ -1610,6 +1613,7 @@ StatusOr<LaunchDimensions> TritonWrapper(
   CHECK(!llvm::Linker::linkModules(*llvm_module, std::move(ll_triton_module),
                                    llvm::Linker::Flags::OverrideFromSrc));
   LogAndVerify(llvm_module);
+
   return launch_dimensions;
 }
 

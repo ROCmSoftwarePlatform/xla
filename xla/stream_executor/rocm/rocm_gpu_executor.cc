@@ -285,9 +285,6 @@ tsl::Status GpuExecutor::Launch(Stream* stream, const ThreadDim& thread_dims,
   while (iter.has_next()) {
     KernelArg arg = iter.next();
     if (!arg.is_shared) {
-      VLOG(2) << "*(arg.address): "
-              << reinterpret_cast<void*>(
-                    *static_cast<const uint64_t*>(arg.address));
       kernargs.push_back(
           reinterpret_cast<void*>(*static_cast<const uint64_t*>(arg.address)));
     }
@@ -875,9 +872,6 @@ GpuExecutor::CreateDeviceDescription(int device_ordinal) {
   builder.set_shared_memory_per_core(
       GpuDriver::GetMaxSharedMemoryPerCore(device).value());
   builder.set_shared_memory_per_block(
-      GpuDriver::GetMaxSharedMemoryPerBlock(device).value());
-  // Setting to the same value as for set_shared_memory_per_block
-  builder.set_shared_memory_per_block_optin(
       GpuDriver::GetMaxSharedMemoryPerBlock(device).value());
   int core_count = GpuDriver::GetMultiprocessorCount(device).value();
   builder.set_core_count(core_count);

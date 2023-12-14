@@ -1022,6 +1022,7 @@ class GemmRewriterTritonVisitor : public DfsHloRewriteVisitor {
         return OkStatus();
       }
     }
+
     HloComputation* computation =
         dot->GetModule()->AddComputationAndUnifyNamesAndIds(builder.Build(),
                                                             /*is_entry=*/false);
