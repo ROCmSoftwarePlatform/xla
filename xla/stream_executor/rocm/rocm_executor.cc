@@ -1044,9 +1044,6 @@ GpuExecutor::CreateDeviceDescription(int device_ordinal) {
       GpuDriver::GetMaxSharedMemoryPerCore(device).value());
   builder.set_shared_memory_per_block(
       GpuDriver::GetMaxSharedMemoryPerBlock(device).value());
-  // Setting to the same value as for set_shared_memory_per_block
-  builder.set_shared_memory_per_block_optin(
-      GpuDriver::GetMaxSharedMemoryPerBlock(device).value());
   int core_count = GpuDriver::GetMultiprocessorCount(device).value();
   builder.set_core_count(core_count);
   builder.set_fpus_per_core(fpus_per_core(gcn_arch_name));
