@@ -10017,7 +10017,7 @@ bool CudnnSupport::DoMatMul(Stream* stream,
              ->ThenBlasGemm(blas::Transpose::kNoTranspose,
                             blas::Transpose::kNoTranspose, m, n, k, weights, m,
                             input_data, k, output_data, m, NumericOptions{},
-                            blas::CallContext::kNone)
+                            blas::CallContext::kNone, 0)
 
              .ok()) {
       return false;

@@ -354,7 +354,7 @@ StatusOr<AutotuneResult> DoGemmAutotuneNoCache(
               // ProfileResult::is_valid.
               TF_RETURN_IF_ERROR(RunGemm(config, lhs_buffer, rhs_buffer,
                                          output_buffer, workspace_buffer,
-                                         deterministic_ops, stream, algorithm,
+                                         deterministic_ops, stream, 0, algorithm,
                                          &profile_result));
               return std::move(profile_result);
             }));

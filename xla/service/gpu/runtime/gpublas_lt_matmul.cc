@@ -32,6 +32,7 @@ limitations under the License.1
 #include "xla/stream_executor/scratch_allocator.h"
 #include "xla/xla.pb.h"
 #include "tsl/platform/status.h"
+#include <hip/hip_runtime.h>
 
 #if TENSORFLOW_USE_ROCM
 #include "rocm/rocm_config.h"
@@ -93,6 +94,13 @@ absl::Status DoMatmul(
     absl::Span<const int32_t> precision) {
   se::Stream* stream = run_options->stream();
 
+  //int deviceId;
+  //hipGetDevice(&deviceId);
+
+  //auto blas_support = stream->parent()->AsBlas();
+
+  //LOG(ERROR) << "DoMatmul deviceId:" << deviceId << " blas_support:" << blas_support;
+
   // Find the gemm config for this instance of matmul.
   TF_ASSIGN_OR_RETURN(GemmConfig * config, gemm_config.GetOrCreate([&] {
     return ToAbsl(GetGemmConfig(
@@ -141,6 +149,13 @@ absl::Status DoMatmul(
 
 }  // namespace
 
+se::blas::Transpose AsBlasTranspose(MatrixLayout::Order order) {
+  // BLAS is column-major by default.
+  return (order == MatrixLayout::Order::kColumnMajor)
+             ? se::blas::Transpose::kNoTranspose
+             : se::blas::Transpose::kTranspose;
+}
+
 static absl::Status CublasLtMatmulImpl(
     const ServiceExecutableRunOptions* run_options,
     const DebugOptions* debug_options, State<GemmConfig> gemm_config,
@@ -150,12 +165,102 @@ static absl::Status CublasLtMatmulImpl(
     int64_t algorithm, double alpha_real, double alpha_imag, double beta,
     DotDimensionNumbers dot_dims, se::gpu::BlasLt::Epilogue epilogue,
     absl::Span<const int32_t> precision) {
-  VLOG(3) << "Running CublasLtMatmul";
-  std::optional<StridedMemrefView> a_scale, b_scale, c_scale, d_scale, d_amax;
-  return DoMatmul(run_options, debug_options, gemm_config, matmul_plan, a, b, c,
+  //VLOG(3) << "Running CublasLtMatmul";
+  //std::optional<StridedMemrefView> a_scale, b_scale, c_scale, d_scale, d_amax;
+  //return DoMatmul(run_options, debug_options, gemm_config, matmul_plan, a, b, c,
+  //                d, bias, aux, a_scale, b_scale, c_scale, d_scale, d_amax,
+  //                algorithm, alpha_real, alpha_imag, beta, dot_dims, epilogue,
+  //                precision);
+
+  se::DeviceMemoryBase lhs_data = GetDeviceAddress(a);
+  se::DeviceMemoryBase rhs_data = GetDeviceAddress(b);
+  se::DeviceMemoryBase output_data = GetDeviceAddress(d);
+  const bool deterministic_ops = debug_options->xla_gpu_deterministic_ops();
+  
+  VLOG(3) << "Running GEMM";
+  se::Stream* stream = run_options->stream();
+  Shape output_shape = ToShape(d);
+  auto blas_support = stream->parent()->AsBlas();
+
+  
+  TF_ASSIGN_OR_RETURN(GemmConfig * config, gemm_config.GetOrCreate([&] {
+    return ToAbsl(GetGemmConfig(
+        a, b, d, algorithm, alpha_real, alpha_imag, beta, dot_dims.lhs_batch,
+        dot_dims.lhs_contract, dot_dims.rhs_batch, dot_dims.rhs_contract,
+        precision.empty() ? se::blas::kDefaultComputePrecision
+                          : *absl::c_max_element(precision), c, bias,
+                          /*grad_x=*/false,/*grad_y=*/ false));
+  }));
+  
+  auto lhs_layout = MatrixLayout{config->lhs_layout};
+  auto rhs_layout = MatrixLayout{config->rhs_layout};
+  auto output_layout = MatrixLayout{config->output_layout};
+  
+  int64_t m = output_layout.num_rows;
+  int64_t n = output_layout.num_cols;
+  int64_t k = lhs_layout.num_cols;
+  
+  se::blas::Transpose ta = AsBlasTranspose(lhs_layout.order);
+  se::blas::Transpose tb = AsBlasTranspose(rhs_layout.order);
+  
+  //LOG(ERROR) << " ta:" << static_cast<int>(ta) << " tb:" << static_cast<int>(tb) << " m:" << m << " n:" << n << " k:" << k;
+  
+  std::string s_ta = "T";
+  std::string s_tb = "N";
+  
+  if (output_layout.order != MatrixLayout::Order::kColumnMajor) {
+      int64_t tmp = m;
+      m = n;
+      n = tmp;
+  
+      se::blas::Transpose tmp_trans = ta;
+  
+      if (tb == se::blas::Transpose::kTranspose) {
+          ta = se::blas::Transpose::kNoTranspose;
+      } else {
+          ta = se::blas::Transpose::kTranspose;
+      }
+  
+      if (tmp_trans== se::blas::Transpose::kTranspose) {
+          tb = se::blas::Transpose::kNoTranspose;
+      } else {
+          tb = se::blas::Transpose::kTranspose;
+      }
+  }
+
+  if (ta == se::blas::Transpose::kTranspose) {
+      s_ta = "T";
+  } else {
+      s_ta = "N";
+  }
+
+  if (tb == se::blas::Transpose::kTranspose) {
+      s_tb = "T";
+  } else {
+      s_tb = "N";
+  }
+
+  std::stringstream sstm;
+  sstm << s_ta << "_" << s_tb << "_" << m << "_" << n << "_" << k; 
+
+  int soltype = 1;
+  int solidx = 0;
+
+  blas_support->findsol(sstm.str(), soltype, solidx);
+  
+  if (soltype == 2) {
+      //LOG(ERROR) << "Running rocblas";
+      return RunGemm(*config, lhs_data, rhs_data, output_data, output_data,
+                 deterministic_ops, stream, solidx);
+  } else {
+      //VLOG(3) << "Running CublasLtMatmul";
+      //LOG(ERROR) << "Running CublasLtMatmul";
+      std::optional<StridedMemrefView> a_scale, b_scale, c_scale, d_scale, d_amax;
+      return DoMatmul(run_options, debug_options, gemm_config, matmul_plan, a, b, c,
                   d, bias, aux, a_scale, b_scale, c_scale, d_scale, d_amax,
                   algorithm, alpha_real, alpha_imag, beta, dot_dims, epilogue,
                   precision);
+  }
 }
 
 static absl::Status CublasLtMatmulF8Impl(

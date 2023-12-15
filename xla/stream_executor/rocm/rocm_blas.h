@@ -37,6 +37,10 @@ limitations under the License.
 #include "xla/stream_executor/rocm/hip_blas_lt.h"
 #endif
 
+#include <map>
+#include <tuple>
+#include <string>
+
 namespace stream_executor {
 
 class Stream;
@@ -101,6 +105,9 @@ class ROCMBlas : public blas::BlasSupport {
     return nullptr;
 #endif
   }
+
+  void loadGtunTbl();
+  //void findsol(std::string key, int& soltype, int& solidx); 
 
  private:
   // Tells rocBLAS to enqueue the BLAS operation onto a particular Stream.
@@ -192,6 +199,7 @@ class ROCMBlas : public blas::BlasSupport {
       DeviceMemorySlice<T> c_ptrs_to_wrappers, int ldc, int batch_count,
       ScratchAllocator *scratch_allocator);
 
+
   // mutex that guards the rocBLAS handle for this device.
   absl::Mutex mu_;
 
@@ -205,6 +213,7 @@ class ROCMBlas : public blas::BlasSupport {
 #if TF_HIPBLASLT
   rocm::BlasLt blas_lt_;
 #endif
+  std::map<std::string, std::tuple<int,int>> gtun_tbl;
 
   ROCMBlas(const ROCMBlas &) = delete;
   void operator=(const ROCMBlas &) = delete;

@@ -47,7 +47,7 @@ Status GemmThunk::ExecuteOnStream(const ExecuteParams& params) {
   return RunGemm(config_, allocs.GetDeviceAddress(lhs_buffer_),
                  allocs.GetDeviceAddress(rhs_buffer_),
                  allocs.GetDeviceAddress(output_buffer_), workspace,
-                 deterministic_, params.stream);
+                 deterministic_, params.stream, 0);
 }
 
 Status GemmThunk::Initialize(se::StreamExecutor* executor,

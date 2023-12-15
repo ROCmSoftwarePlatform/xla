@@ -97,7 +97,7 @@ Status DoRuntimeAutotuning(se::Stream* stream, GemmConfig& config,
             // ProfileResult::is_valid.
             TF_RETURN_IF_ERROR(
                 RunGemm(config, lhs, rhs, out, se::DeviceMemoryBase(nullptr, 0),
-                        deterministic_ops, stream, algorithm, &profile_result));
+                        deterministic_ops, stream, 0, algorithm, &profile_result));
             return std::move(profile_result);
           }));
 
@@ -158,7 +158,7 @@ static absl::Status GemmImpl(const ServiceExecutableRunOptions* run_options,
   }
 
   return RunGemm(*gemm_config, lhs_data, rhs_data, output_data, workspace_data,
-                 deterministic_ops, stream);
+                 deterministic_ops, stream, 0);
 }
 
 static absl::Status InitCuBLASImpl(

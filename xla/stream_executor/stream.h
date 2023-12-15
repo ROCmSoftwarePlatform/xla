@@ -745,11 +745,11 @@ class Stream {
                            const DeviceMemory<InputType> &b, int ldb,
                            DeviceMemory<OutputType> *c, int ldc,
                            const NumericOptions &numeric_options,
-                           blas::CallContext context) {
+                           blas::CallContext context, int solidx) {
     InputType alpha{1.0};
     InputType beta{0.0};
     return ThenBlasGemm(transa, transb, m, n, k, alpha, a, lda, b, ldb, beta, c,
-                        ldc, numeric_options, context);
+                        ldc, numeric_options, context, solidx);
   }
 
   template <typename InputType, typename OutputType, typename ConstantType>
@@ -759,7 +759,7 @@ class Stream {
                            const DeviceMemory<InputType> &b, int ldb,
                            ConstantType beta, DeviceMemory<OutputType> *c,
                            int ldc, const NumericOptions &numeric_options,
-                           blas::CallContext context) {
+                           blas::CallContext context, int solidx) {
     static_assert(
         detail::is_any_of<InputType, int8_t, Eigen::half, Eigen::bfloat16,
                           float, double, std::complex<float>,
@@ -790,7 +790,7 @@ class Stream {
 
     return blas->DoBlasGemm(
         this, transa, transb, m, n, k, blas::ToDataType<InputType>::value,
-        alpha_ptr, a, lda, b, ldb, beta_ptr, c, ldc, numeric_options, context);
+        alpha_ptr, a, lda, b, ldb, beta_ptr, c, ldc, numeric_options, context, solidx);
   }
 
   // TODO(reedwm): Update all callers to pass correct NumericOptions.
@@ -800,9 +800,9 @@ class Stream {
                            const DeviceMemory<InputType> &a, int lda,
                            const DeviceMemory<InputType> &b, int ldb,
                            ConstantType beta, DeviceMemory<OutputType> *c,
-                           int ldc, blas::CallContext context) {
+                           int ldc, blas::CallContext context, int solidx) {
     return ThenBlasGemm(transa, transb, m, n, k, alpha, a, lda, b, ldb, beta, c,
-                        ldc, NumericOptions{}, context);
+                        ldc, NumericOptions{}, context, solidx);
   }
 
   template <typename InputType, typename OutputType>

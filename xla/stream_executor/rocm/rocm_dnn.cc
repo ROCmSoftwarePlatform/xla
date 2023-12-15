@@ -4102,7 +4102,7 @@ tsl::Status ROCmFusedMatmulRunner::gemm(Stream* stream, DeviceMemoryBase a_data,
       tb, ta, _n, _m, _k, static_cast<DeviceMemory<T>>(b_data), _ldb,
       static_cast<DeviceMemory<T>>(a_data), _lda,
       static_cast<DeviceMemory<T>*>(&c_data), _ldc, NumericOptions{},
-      blas::CallContext::kNone);
+      blas::CallContext::kNone, 0);
 }
 
 template <typename T>
@@ -4270,7 +4270,7 @@ bool MIOpenSupport::DoMatMul(Stream* stream,
              ->ThenBlasGemm(blas::Transpose::kNoTranspose,
                             blas::Transpose::kNoTranspose, m, n, k, weights, m,
                             input_data, k, output_data, m, NumericOptions{},
-                            blas::CallContext::kNone)
+                            blas::CallContext::kNone, 0)
 
              .ok()) {
       return false;

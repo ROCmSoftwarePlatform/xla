@@ -563,7 +563,7 @@ Status DoGemm(int64_t batch_size, int64_t m, int64_t n, int64_t k,
               se::blas::ComputePrecision compute_precision,
               const se::NumericOptions& numeric_options,
               se::blas::ProfileResult* profile_result,
-              se::blas::CallContext context) {
+              se::blas::CallContext context, int solidx) {
   CHECK(output.transpose == se::blas::Transpose::kNoTranspose);
   se::DeviceMemory<Output> output_data(output.data);
 
@@ -592,7 +592,7 @@ Status DoGemm(int64_t batch_size, int64_t m, int64_t n, int64_t k,
   return stream->ThenBlasGemm(
       lhs.transpose, rhs.transpose, m, n, k, alpha, lhs.cast<Input>(),
       lhs.leading_dim_stride, rhs.cast<Input>(), rhs.leading_dim_stride, beta,
-      &output_data, output.leading_dim_stride, numeric_options, context);
+      &output_data, output.leading_dim_stride, numeric_options, context, solidx);
 }
 
 }  // namespace
@@ -601,7 +601,7 @@ Status RunGemm(const GemmConfig& config, se::DeviceMemoryBase lhs_buffer,
                se::DeviceMemoryBase rhs_buffer,
                se::DeviceMemoryBase output_buffer,
                se::DeviceMemoryBase workspace_buffer, bool deterministic_ops,
-               se::Stream* stream,
+               se::Stream* stream, int solidx,
                std::optional<se::blas::AlgorithmType> algorithm,
                se::blas::ProfileResult* profile_result) {
   VLOG(2) << "Executing a GemmThunk";
@@ -662,7 +662,8 @@ Status RunGemm(const GemmConfig& config, se::DeviceMemoryBase lhs_buffer,
         batch_size, m, n, k, lhs, rhs, output, workspace_buffer,             \
         static_cast<NativeScaleType>(config.alpha.real()),                   \
         static_cast<NativeScaleType>(config.beta), stream, algorithm,        \
-        config.compute_precision, numeric_options, profile_result, context); \
+        config.compute_precision, numeric_options, profile_result, context,  \
+        solidx);                                                             \
   }
 
 #define TYPED_GEMM_COMPLEX(SCALENTYPE, ATYPE, BTYPE, CTYPE)                  \
@@ -675,7 +676,8 @@ Status RunGemm(const GemmConfig& config, se::DeviceMemoryBase lhs_buffer,
         batch_size, m, n, k, lhs, rhs, output, workspace_buffer,             \
         static_cast<NativeScaleType>(config.alpha),                          \
         static_cast<NativeScaleType>(config.beta), stream, algorithm,        \
-        config.compute_precision, numeric_options, profile_result, context); \
+        config.compute_precision, numeric_options, profile_result, context,  \
+        solidx);                                                             \
   }
 
   if (output_layout.dtype == S32) {

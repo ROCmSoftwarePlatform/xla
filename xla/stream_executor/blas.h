@@ -334,7 +334,7 @@ class BlasSupport {
                                  const DeviceMemoryBase &b, int ldb,
                                  const void *beta, DeviceMemoryBase *c, int ldc,
                                  const NumericOptions &numeric_options,
-                                 blas::CallContext context) = 0;
+                                 blas::CallContext context, int solidx) = 0;
 
   // Gets a list of supported algorithms for DoBlasGemmWithAlgorithm.
   virtual bool GetBlasGemmAlgorithms(
@@ -512,6 +512,7 @@ class BlasSupport {
   };
 
   virtual tsl::Status GetVersion(std::string *version) = 0;
+  virtual void findsol(std::string key, int& soltype, int& solidx) = 0;
 
  protected:
   DeviceMemoryBase *GetWorkspace();
@@ -612,7 +613,8 @@ class BlasSupport {
       uint64_t m, uint64 n, uint64 k, blas::DataType dtype, const void *alpha, \
       const DeviceMemoryBase &a, int lda, const DeviceMemoryBase &b, int ldb,  \
       const void *beta, DeviceMemoryBase *c, int ldc,                          \
-      const NumericOptions &numeric_options, blas::CallContext context)        \
+      const NumericOptions &numeric_options, blas::CallContext context,        \
+      int solidx)                                                              \
       override;                                                                \
   bool GetBlasGemmAlgorithms(Stream *stream,                                   \
                              std::vector<blas::AlgorithmType> *out_algorithms) \
@@ -740,7 +742,8 @@ class BlasSupport {
                          const DeviceMemory<std::complex<double> *> &as,       \
                          int lda, DeviceMemory<std::complex<double> *> *bs,    \
                          int ldb, int batch_count) override;                   \
-  tsl::Status GetVersion(std::string *version) override;
+  tsl::Status GetVersion(std::string *version) override;                       \
+  void findsol(std::string key, int& soltype, int& solidx) override;
 
 }  // namespace blas
 }  // namespace stream_executor

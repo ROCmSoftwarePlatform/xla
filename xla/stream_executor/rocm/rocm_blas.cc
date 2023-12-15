@@ -21,6 +21,8 @@ limitations under the License.
 #include <assert.h>
 
 #include <complex>
+#include <fstream>
+#include <sstream>
 
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
@@ -110,6 +112,8 @@ bool ROCMBlas::Init() {
     return false;
   }
 #endif
+
+  loadGtunTbl();
   return true;
 }
 
@@ -427,7 +431,7 @@ tsl::Status ROCMBlas::DoBlasGemm(Stream *stream, blas::Transpose transa,
                                  int lda, const DeviceMemoryBase &b, int ldb,
                                  const void *beta, DeviceMemoryBase *c, int ldc,
                                  const NumericOptions &numeric_options,
-                                 blas::CallContext context) {
+                                 blas::CallContext context, int solidx) {
   blas_log("DoBlasGemm");
   VLOG(1) << absl::StreamFormat(
       "doing rocBLAS GEMM: at=%d bt=%d m=%u n=%u "
@@ -481,7 +485,7 @@ tsl::Status ROCMBlas::DoBlasGemm(Stream *stream, blas::Transpose transa,
             rocblas_datatype_f16_r, lda, b.opaque(), rocblas_datatype_f16_r,
             ldb, beta, c->opaque(), rocblas_datatype_f16_r, ldc, c->opaque(),
             rocblas_datatype_f16_r, ldc, rocblas_datatype_f32_r,
-            rocblas_gemm_algo_standard, 0, flags);
+            rocblas_gemm_algo_solution_index, solidx, flags);
       } else {
         VLOG(1) << "Using rocblas_hgemm";
         const Eigen::half alpha_half(*static_cast<const float *>(alpha));
@@ -504,7 +508,7 @@ tsl::Status ROCMBlas::DoBlasGemm(Stream *stream, blas::Transpose transa,
           rocblas_datatype_bf16_r, lda, b.opaque(), rocblas_datatype_bf16_r,
           ldb, beta, c->opaque(), rocblas_datatype_bf16_r, ldc, c->opaque(),
           rocblas_datatype_bf16_r, ldc, rocblas_datatype_f32_r,
-          rocblas_gemm_algo_standard, 0, 0);
+          rocblas_gemm_algo_solution_index, solidx, 0);
     case blas::DataType::kFloat:
       return DoBlasInternalStatus(
           wrap::rocblas_sgemm, stream, /* pointer_mode_host = */ true,
@@ -1191,6 +1195,64 @@ tsl::Status ROCMBlas::DoBlasGemmStridedBatched(
 
 tsl::Status ROCMBlas::GetVersion(string *version) {
   return tsl::errors::Unimplemented("");
+}
+
+void ROCMBlas::loadGtunTbl() {
+    const char* file = std::getenv("GTUN_FILE");
+
+    std::fstream fin;
+
+    fin.open(file, std::ios::in);
+
+    std::vector<char *> items;
+    char* word;
+    char* psave;
+    std::string line;
+
+    bool titleRow = true;
+
+    if (fin.is_open()) {
+      while (getline(fin, line)) {
+          if (titleRow == false) {
+              items.clear();
+              word = strtok_r(line.data(), ",", &psave);
+              while( word != NULL) {
+                  items.push_back(word);
+                  word = strtok_r(NULL, ",", &psave);
+              }
+
+              int soltype = 1;
+              std::stringstream sstm;
+              sstm << items[1] << "_" << items[2] << "_" << items[3] << "_" << items[4] << "_" << items[5];
+
+              if (strcmp(items[6], "rocblas") == 0) {
+                  soltype = 2;
+              } else {
+                  soltype = 1;
+              }
+
+              std::tuple<int,int> sol_data(soltype, atoi(items[7])); 
+              std::pair<std::string, std::tuple<int,int>> gtun_data(sstm.str(), sol_data); 
+
+              gtun_tbl.insert(gtun_data);
+          }
+          titleRow = false;
+      }
+      fin.close();
+    } 
+
+    LOG(ERROR) << "gtun_tbl.size:" << gtun_tbl.size();
+}
+
+void ROCMBlas::findsol(std::string key, int& soltype, int& solidx) {
+    if (gtun_tbl.count(key) == 0) {
+        soltype = 1;
+        solidx = 0;
+    } else {
+        auto data = gtun_tbl[key];
+        soltype = std::get<0>(data);
+        solidx = std::get<1>(data);
+    }
 }
 
 }  // namespace gpu

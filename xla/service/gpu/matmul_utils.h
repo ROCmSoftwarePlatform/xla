@@ -165,7 +165,7 @@ Status RunGemm(const GemmConfig& config, se::DeviceMemoryBase lhs_buffer,
                se::DeviceMemoryBase rhs_buffer,
                se::DeviceMemoryBase output_buffer,
                se::DeviceMemoryBase workspace_buffer, bool deterministic_ops,
-               se::Stream* stream,
+               se::Stream* stream, int solidx,
                std::optional<se::blas::AlgorithmType> algorithm = std::nullopt,
                se::blas::ProfileResult* profile_result = nullptr);
 
