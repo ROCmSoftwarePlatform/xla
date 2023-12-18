@@ -204,6 +204,12 @@ void BM_SmallTopk(benchmark::State& state) {
     return;
   }
 
+  if(input_buffer.is_null() || output_values.is_null() || 
+      output_indices.is_null()) {
+    state.SkipWithError("Unable to allocate GPU memory: aborting benchmark");
+    return;
+  }
+
   auto source = RandomVec<T>(n);
   // use the same random vector for all batches (otherwise it takes too much
   // time to generate random data)
