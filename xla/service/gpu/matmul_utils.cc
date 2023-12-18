@@ -508,6 +508,15 @@ auto GemmConfig::MatrixDescriptors(se::DeviceMemoryBase lhs_buf,
   // but maybe we can modify them once instead during creation ?
   auto lhs = lhs_layout, rhs = rhs_layout, out = output_layout;
 
+  if(lhs.num_cols == 1) {
+    lhs.order = MatrixLayout::Order::kColumnMajor;
+  }
+  if(rhs.num_cols == 1) {
+    rhs.order = MatrixLayout::Order::kColumnMajor;
+  }
+  if(out.num_cols == 1) {
+    out.order = MatrixLayout::Order::kColumnMajor;
+  }
   bool must_swap_operands = MakeOutputColumnMajor(lhs, rhs, out);
   if (must_swap_operands) {
     std::swap(lhs_buf, rhs_buf);

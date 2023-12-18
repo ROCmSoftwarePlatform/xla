@@ -646,9 +646,6 @@ tsl::Status ROCMBlas::DoBlasGemmWithAlgorithm(
         "datatypes for the inputs a (%d) and b (%d) are unsupported",
         static_cast<int>(type_a), static_cast<int>(type_b)));
   }
-  // NOTE: currently we always use default algorithm!
-  algorithm = blas::kDefaultAlgorithm;
-
   TF_ASSIGN_OR_RETURN(auto timer, 
         GpuTimer::CreateIfNeeded(AsGpuStream(stream), 
               profile_result != nullptr));
@@ -710,9 +707,6 @@ tsl::Status ROCMBlas::DoBlasGemmStridedBatchedWithAlgorithm(
         "datatypes for the inputs a (%d) and b (%d) are unsupported",
         static_cast<int>(type_a), static_cast<int>(type_b)));
   }
-  // NOTE: currently we always use default algorithm!
-  algorithm = blas::kDefaultAlgorithm;
-
   TF_ASSIGN_OR_RETURN(auto timer, 
         GpuTimer::CreateIfNeeded(AsGpuStream(stream), 
               profile_result != nullptr));
@@ -787,10 +781,10 @@ bool ROCMBlas::GetBlasGemmAlgorithms(Stream* stream,
         return ret;
       }
       // NOTE: this is currently disabled due to stability issues
-      //out_algorithms->resize(num_sols);
-      // for(rocblas_int i = 0; i < num_sols; i++) {
-      //   (*out_algorithms)[i] = solutions_[i];
-      // }
+      out_algorithms->resize(num_sols);
+      for(rocblas_int i = 0; i < num_sols; i++) {
+        (*out_algorithms)[i] = solutions_[i];
+      }
       return rocblas_status_success;
     };
 
