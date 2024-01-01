@@ -35,9 +35,9 @@ void PopulateCublasLtMatmulAttrEncoding(
 // Registers XLA Gpu runtime cuBLASLt custom calls.
 void RegisterMatmulCustomCalls(runtime::DirectCustomCallRegistry& registry);
 
+using MatmulPlanVec = std::vector< se::gpu::BlasLt::MatmulPlanPtr >;
 // Keep cublas_lt::MatmulPlan's for all matmul instances in the executable.
-class MatmulPlans
-    : public runtime::StateVector<se::gpu::BlasLt::MatmulPlanPtr> {};
+using MatmulPlans = runtime::StateVector<MatmulPlanVec>;
 #endif  // GOOGLE_CUDA || TF_HIPBLASLT
 
 }  // namespace gpu

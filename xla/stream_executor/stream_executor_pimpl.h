@@ -465,6 +465,8 @@ class StreamExecutor {
   // and sets the `peak_bytes_in_use` to be equal to the `bytes_in_use`.
   bool ClearAllocatorStats();
 
+  DeviceMemoryAllocator *BFCAllocatorHack = nullptr;
+
   // Return an allocator which delegates to this stream executor for memory
   // allocation.
   StreamExecutorMemoryAllocator* GetAllocator() { return &allocator_; }

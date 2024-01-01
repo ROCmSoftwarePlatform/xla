@@ -81,7 +81,7 @@ namespace {
 absl::Status DoMatmul(
     const ServiceExecutableRunOptions* run_options,
     const DebugOptions* debug_options, State<GemmConfig> gemm_config,
-    State<se::gpu::BlasLt::MatmulPlanPtr> matmul_plan, StridedMemrefView a,
+    State<MatmulPlanVec> matmul_plan, StridedMemrefView a,
     StridedMemrefView b, StridedMemrefView c, StridedMemrefView d,
     std::optional<StridedMemrefView> bias, std::optional<StridedMemrefView> aux,
     std::optional<StridedMemrefView> a_scale,
@@ -94,13 +94,6 @@ absl::Status DoMatmul(
     absl::Span<const int32_t> precision) {
   se::Stream* stream = run_options->stream();
 
-  //int deviceId;
-  //hipGetDevice(&deviceId);
-
-  //auto blas_support = stream->parent()->AsBlas();
-
-  //LOG(ERROR) << "DoMatmul deviceId:" << deviceId << " blas_support:" << blas_support;
-
   // Find the gemm config for this instance of matmul.
   TF_ASSIGN_OR_RETURN(GemmConfig * config, gemm_config.GetOrCreate([&] {
     return ToAbsl(GetGemmConfig(
@@ -111,12 +104,33 @@ absl::Status DoMatmul(
         c, bias));
   }));
 
-  // Get the matmul plan for this instance of matmul.
-  TF_ASSIGN_OR_RETURN(auto plan, matmul_plan.GetOrCreate([&] {
-    return ToAbsl(se::gpu::BlasLt::GetMatmulPlan(stream, *config, epilogue));
+  // Get the matmul plan for this instance of matmul:
+  // by default we create it for 8 devices (which should be enough).
+  TF_ASSIGN_OR_RETURN(auto planVec, matmul_plan.GetOrCreate([] {
+    return MatmulPlanVec(8); 
   }));
 
-  TF_ASSIGN_OR_RETURN(auto algos, (*plan)->GetAlgorithms());
+  size_t devID = stream->parent()->device_ordinal();
+  if(devID >= planVec->size()) {
+    planVec->resize(devID + 1);
+  }
+  auto& plan = (*planVec)[devID];
+  if(plan.get() == nullptr) {
+    VLOG(2) << "Creating new plan for deviceID: " << devID;
+    TF_ASSIGN_OR_RETURN(plan, se::gpu::BlasLt::GetMatmulPlan(stream, 
+            *config, epilogue));
+  } else {
+    VLOG(2) << "Reusing plan for deviceID: " << devID;
+  }
+
+  TF_ASSIGN_OR_RETURN(auto algos, plan->GetAlgorithms());
+  if (static_cast<size_t>(algorithm) >= algos.size()) {
+    return absl::InternalError(
+        absl::StrFormat("The requested gpublas-lt matmul "
+                        "algorithm is not found. Total algorithms available: "
+                        "%zu; requested: %zu",
+                        algos.size(), static_cast<size_t>(algorithm)));
+  }
 
   se::DeviceMemoryBase a_data = GetDeviceAddress(a);
   se::DeviceMemoryBase b_data = GetDeviceAddress(b);
@@ -138,10 +152,12 @@ absl::Status DoMatmul(
   se::DeviceMemoryBase d_amax_data;
   if (d_amax.has_value()) d_amax_data = GetDeviceAddress(*d_amax);
 
+  // if we can add BFC allocator here: since it also implements
+  // DeviceMemoryAllocator interface: see GetStreamExecutorGpuDeviceAllocator
   se::OwningScratchAllocator<> scratch_allocator(
-      stream->parent()->device_ordinal(), stream->parent()->GetAllocator());
+      stream->parent()->device_ordinal(), stream->parent()->BFCAllocatorHack);
 
-  return (*plan)->ExecuteOnStream(
+  return plan->ExecuteOnStream(
       stream, a_data, b_data, c_data, d_data, bias_data, aux_data, a_scale_data,
       b_scale_data, c_scale_data, d_scale_data, d_amax_data, algos[algorithm],
       scratch_allocator);
@@ -159,7 +175,7 @@ se::blas::Transpose AsBlasTranspose(MatrixLayout::Order order) {
 static absl::Status CublasLtMatmulImpl(
     const ServiceExecutableRunOptions* run_options,
     const DebugOptions* debug_options, State<GemmConfig> gemm_config,
-    State<se::gpu::BlasLt::MatmulPlanPtr> matmul_plan, StridedMemrefView a,
+    State<MatmulPlanVec> matmul_plan, StridedMemrefView a,
     StridedMemrefView b, StridedMemrefView c, StridedMemrefView d,
     std::optional<StridedMemrefView> bias, std::optional<StridedMemrefView> aux,
     int64_t algorithm, double alpha_real, double alpha_imag, double beta,
@@ -266,7 +282,7 @@ static absl::Status CublasLtMatmulImpl(
 static absl::Status CublasLtMatmulF8Impl(
     const ServiceExecutableRunOptions* run_options,
     const DebugOptions* debug_options, State<GemmConfig> gemm_config,
-    State<se::gpu::BlasLt::MatmulPlanPtr> matmul_plan, StridedMemrefView a,
+    State<MatmulPlanVec> matmul_plan, StridedMemrefView a,
     StridedMemrefView b, StridedMemrefView c, StridedMemrefView a_scale,
     StridedMemrefView b_scale, StridedMemrefView c_scale,
     StridedMemrefView d_scale, StridedMemrefView d,
@@ -331,7 +347,7 @@ auto CublasLtMatmulCall(const char* name) {
       .UserData<const ServiceExecutableRunOptions*>()
       .UserData<const DebugOptions*>()
       .State<GemmConfig>("uid")
-      .State<se::gpu::BlasLt::MatmulPlanPtr>("uid")
+      .State<MatmulPlanVec>("uid")
       .Arg<StridedMemrefView>()   // a
       .Arg<StridedMemrefView>()   // b
       .Arg<StridedMemrefView>()   // c
@@ -371,7 +387,7 @@ auto CublasLtMatmulF8Call(const char* name) {
       .UserData<const ServiceExecutableRunOptions*>()
       .UserData<const DebugOptions*>()
       .State<GemmConfig>("uid")
-      .State<se::gpu::BlasLt::MatmulPlanPtr>("uid")
+      .State<MatmulPlanVec>("uid")
       .Arg<StridedMemrefView>()   // a
       .Arg<StridedMemrefView>()   // b
       .Arg<StridedMemrefView>()   // c
