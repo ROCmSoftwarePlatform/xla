@@ -990,6 +990,10 @@ StatusOr<std::unique_ptr<PjRtClient>> GetStreamExecutorGpuClient(
       auto allocator,
       GetStreamExecutorGpuDeviceAllocator(
           xla_client->platform(), allocator_config, local_device_states));
+  for(auto exec : xla_client->backend().stream_executors()) {
+    exec->BFCAllocatorHack = allocator.get();
+  }
+
   auto host_memory_allocator =
       GetGpuHostAllocator(local_device_states.begin()->second->executor());
 
