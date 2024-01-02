@@ -65,16 +65,17 @@ Status DoRuntimeAutotuning(se::Stream* stream, GemmConfig *config,
                                 &config->alpha, &config->beta, &algorithms);
   const bool deterministic_ops = debug_options->xla_gpu_deterministic_ops();
 
-  AutotuneConfig autotune_config{
-      DeviceConfig{stream->parent(), stream->parent()->GetAllocator()},
+  auto exec = stream->parent();  
+  auto allocator = exec->UserProvidedAllocator ?  
+          exec->UserProvidedAllocator : exec->GetAllocator(); 
+  AutotuneConfig autotune_config{DeviceConfig{exec, allocator},
       *debug_options};
 
   // TODO(jlebar): We should not use stream->parent()->GetAllocator() here;
   // that's the global CUDA allocator.  There may not be any free space in
   // there, because TF usually gobbles it all up for its own BFCAllocator.  We
   // should use the allocator the user passed when running the XLA program.
-  se::RedzoneAllocator buffer_allocator(
-      stream, stream->parent()->GetAllocator(),
+  se::RedzoneAllocator buffer_allocator(stream, allocator,
       PtxOptsFromDebugOptions(*debug_options),
       /*memory_limit=*/std::numeric_limits<int64_t>::max(),
       /*redzone_size=*/autotune_config.should_check_correctness()

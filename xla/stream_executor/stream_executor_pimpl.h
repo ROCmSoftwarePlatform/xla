@@ -467,7 +467,9 @@ class StreamExecutor {
   // and sets the `peak_bytes_in_use` to be equal to the `bytes_in_use`.
   bool ClearAllocatorStats();
 
-  DeviceMemoryAllocator *BFCAllocatorHack = nullptr;
+  // Allocator provided by the user when running XLA program
+  // (defaults to BFC Allocator: see GpuAllocatorConfig in xla.cc)
+  DeviceMemoryAllocator *UserProvidedAllocator = nullptr;
 
   // Return an allocator which delegates to this stream executor for memory
   // allocation.
