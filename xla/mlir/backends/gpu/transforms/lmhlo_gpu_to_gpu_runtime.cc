@@ -112,11 +112,14 @@ class GemmOpLowering : public OpRewritePattern<GEMMOp> {
     call->setAttr(b.getStringAttr("uid"), b.getI64IntegerAttr(uid_.uid()));
 
     // Copy backend specific attributes.
-    auto algorithm_attr =
-        op.getAlgorithm()
-            ? op.getAlgorithmAttr()
+    auto algorithm_attr = op.getAlgorithm() ? op.getAlgorithmAttr()
             : b.getI64IntegerAttr(stream_executor::blas::kDefaultGemmAlgo);
     call->setAttr(b.getStringAttr("algorithm"), algorithm_attr);
+    call->setAttr(b.getStringAttr("grad_x"), 
+          op.getGradX() ? op.getGradXAttr() : b.getBoolAttr(false));
+    call->setAttr(b.getStringAttr("grad_y"), 
+          op.getGradY() ? op.getGradYAttr() : b.getBoolAttr(false));
+
     call->setAttr(b.getStringAttr("alpha_imag"), op.getAlphaImagAttr());
     call->setAttr(b.getStringAttr("alpha_real"), op.getAlphaRealAttr());
     call->setAttr(b.getStringAttr("beta"), op.getBetaAttr());
@@ -205,6 +208,10 @@ class CublasLtMatmulOpLowering : public OpRewritePattern<CublasLtMatmulOp> {
 
     // Copy backend specific attributes.
     call->setAttr(b.getStringAttr("algorithm"), op.getAlgorithmAttr());
+    call->setAttr(b.getStringAttr("grad_x"), 
+          op.getGradX() ? op.getGradXAttr() : b.getBoolAttr(false));
+    call->setAttr(b.getStringAttr("grad_y"), 
+          op.getGradY() ? op.getGradYAttr() : b.getBoolAttr(false));
     call->setAttr(b.getStringAttr("alpha_imag"), op.getAlphaImagAttr());
     call->setAttr(b.getStringAttr("alpha_real"), op.getAlphaRealAttr());
     call->setAttr(b.getStringAttr("beta"), op.getBetaAttr());
@@ -264,6 +271,10 @@ class CublasLtMatmulF8OpLowering : public OpRewritePattern<CublasLtMatmulF8Op> {
 
     // Copy backend specific attributes.
     call->setAttr(b.getStringAttr("algorithm"), op.getAlgorithmAttr());
+    call->setAttr(b.getStringAttr("grad_x"), 
+          op.getGradX() ? op.getGradXAttr() : b.getBoolAttr(false));
+    call->setAttr(b.getStringAttr("grad_y"), 
+          op.getGradY() ? op.getGradYAttr() : b.getBoolAttr(false));
     call->setAttr(b.getStringAttr("alpha_imag"), op.getAlphaImagAttr());
     call->setAttr(b.getStringAttr("alpha_real"), op.getAlphaRealAttr());
     call->setAttr(b.getStringAttr("beta"), op.getBetaAttr());

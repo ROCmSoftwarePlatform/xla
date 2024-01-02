@@ -124,7 +124,8 @@ static absl::Status GemmImpl(const ServiceExecutableRunOptions* run_options,
                              StridedMemrefView workspace, int64_t algorithm,
                              double alpha_real, double alpha_imag, double beta,
                              DotDimensionNumbers dot_dims,
-                             absl::Span<const int32_t> precision) {
+                             absl::Span<const int32_t> precision, 
+                             bool grad_x, bool grad_y) {
   se::DeviceMemoryBase lhs_data = GetDeviceAddress(lhs);
   se::DeviceMemoryBase rhs_data = GetDeviceAddress(rhs);
   se::DeviceMemoryBase output_data = GetDeviceAddress(out);
@@ -142,7 +143,8 @@ static absl::Status GemmImpl(const ServiceExecutableRunOptions* run_options,
                       dot_dims.lhs_batch, dot_dims.lhs_contract,
                       dot_dims.rhs_batch, dot_dims.rhs_contract,
                       precision.empty() ? se::blas::kDefaultComputePrecision
-                                        : *absl::c_max_element(precision));
+                                        : *absl::c_max_element(precision),
+                       std::nullopt, std::nullopt, grad_x, grad_y);
     return ToAbsl(gemm_config);
   }));
 
@@ -162,7 +164,6 @@ static absl::Status GemmImpl(const ServiceExecutableRunOptions* run_options,
         "Failed to run runtime autotuner because GPU support is not enabled");
 #endif
   }
-
   return RunGemm(*gemm_config, lhs_data, rhs_data, output_data, workspace_data,
                  deterministic_ops, stream);
 }
@@ -194,7 +195,9 @@ XLA_RUNTIME_DEFINE_CUSTOM_CALL(
         .Attr<double>("alpha_imag")
         .Attr<double>("beta")
         .Attr<DotDimensionNumbers>("dot_dims")
-        .Attr<absl::Span<const int32_t>>("precision"));
+        .Attr<absl::Span<const int32_t>>("precision")
+        .Attr<bool>("grad_x")
+        .Attr<bool>("grad_y"));
 
 XLA_RUNTIME_DEFINE_CUSTOM_CALL(
     InitCuBLAS, FunctionWrapper<InitCuBLASImpl>(), checks,

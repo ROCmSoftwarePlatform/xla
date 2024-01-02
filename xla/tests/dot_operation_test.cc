@@ -356,6 +356,11 @@ void ParametricDotTest::TestImpl() {
 
   XlaBuilder builder(TestName());
   auto prim_type = primitive_util::NativeToPrimitiveType<NativeT>();
+
+  FrontendAttributes attributes;
+  (*attributes.mutable_map())["grad_x"] = "true";
+  builder.SetFrontendAttributes(attributes);
+
   auto result =
       Dot(Parameter(&builder, 0,
                     ShapeUtil::MakeShapeWithDenseLayout(
@@ -367,6 +372,7 @@ void ParametricDotTest::TestImpl() {
                         prim_type, {param.k, param.n},
                         MinorToMajorForIsRowMajor(param.dot_rhs_row_major)),
                     "dot_rhs"));
+  builder.ClearFrontendAttributes();
 
   if (param.has_addend) {
     result =

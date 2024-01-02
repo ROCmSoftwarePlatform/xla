@@ -90,7 +90,7 @@ absl::Status DoMatmul(
     std::optional<StridedMemrefView> d_amax, int64_t algorithm,
     double alpha_real, double alpha_imag, double beta,
     DotDimensionNumbers dot_dims, se::gpu::BlasLt::Epilogue epilogue,
-    absl::Span<const int32_t> precision) {
+    absl::Span<const int32_t> precision, bool grad_x, bool grad_y) {
   se::Stream* stream = run_options->stream();
 
   // Find the gemm config for this instance of matmul.
@@ -156,13 +156,13 @@ static absl::Status CublasLtMatmulImpl(
     std::optional<StridedMemrefView> bias, std::optional<StridedMemrefView> aux,
     int64_t algorithm, double alpha_real, double alpha_imag, double beta,
     DotDimensionNumbers dot_dims, se::gpu::BlasLt::Epilogue epilogue,
-    absl::Span<const int32_t> precision) {
+    absl::Span<const int32_t> precision, bool grad_x, bool grad_y) {
   VLOG(3) << "Running CublasLtMatmul";
   std::optional<StridedMemrefView> a_scale, b_scale, c_scale, d_scale, d_amax;
   return DoMatmul(run_options, debug_options, gemm_config, matmul_plan, a, b, c,
                   d, bias, aux, a_scale, b_scale, c_scale, d_scale, d_amax,
                   algorithm, alpha_real, alpha_imag, beta, dot_dims, epilogue,
-                  precision);
+                  precision, grad_x, grad_y);
 }
 
 static absl::Status CublasLtMatmulF8Impl(
@@ -175,7 +175,7 @@ static absl::Status CublasLtMatmulF8Impl(
     CustomCall::RemainingArgs remaining_args, int64_t algorithm,
     double alpha_real, double alpha_imag, double beta,
     DotDimensionNumbers dot_dims, se::gpu::BlasLt::Epilogue epilogue,
-    absl::Span<const int32_t> precision) {
+    absl::Span<const int32_t> precision, bool grad_x, bool grad_y) {
   VLOG(3) << "Running CublasLtMatmulF8";
   std::optional<StridedMemrefView> bias, d_amax, aux;
   int current_remaining_arg = 0;
@@ -209,7 +209,7 @@ static absl::Status CublasLtMatmulF8Impl(
   return DoMatmul(run_options, debug_options, gemm_config, matmul_plan, a, b, c,
                   d, bias, aux, a_scale, b_scale, c_scale, d_scale, d_amax,
                   algorithm, alpha_real, alpha_imag, beta, dot_dims, epilogue,
-                  precision);
+                  precision, grad_x, grad_y);
 }
 
 //===----------------------------------------------------------------------===//
@@ -225,7 +225,9 @@ auto BindMatmulAttributes(runtime::CustomCallBinding<Ts...> binding) {
       .template Attr<double>("beta")
       .template Attr<DotDimensionNumbers>("dot_dims")
       .template Attr<se::gpu::BlasLt::Epilogue>("epilogue")
-      .template Attr<absl::Span<const int32_t>>("precision");
+      .template Attr<absl::Span<const int32_t>>("precision")
+      .template Attr<double>("grad_x")
+      .template Attr<double>("grad_y");
 }
 
 auto CublasLtMatmulCall(const char* name) {

@@ -506,6 +506,15 @@ static void CheckPreconditions(blas::Transpose transa, blas::Transpose transb,
   }
 }
 
+static uint32_t GemmFloat16Flags(blas::DataType dtype, blas::CallContext context) 
+{
+  bool is_backprop = (context == blas::CallContext::kBackpropInput1 ||
+                      context == blas::CallContext::kBackpropInput2);
+        
+  return dtype == blas::DataType::kHalf && is_backprop ? 
+          rocblas_gemm_flags_fp16_alt_impl : rocblas_gemm_flags_none;
+}
+
 tsl::Status ROCMBlas::DoBlasGemm(Stream *stream, blas::Transpose transa,
                                  blas::Transpose transb, uint64_t m, uint64_t n,
                                  uint64_t k, blas::DataType dtype,
@@ -529,15 +538,6 @@ tsl::Status ROCMBlas::DoBlasGemm(Stream *stream, blas::Transpose transa,
       tsl::StatusOr<bool> maybe_hasXDLOPS = GpuDriver::GetMFMASupport();
       if (maybe_hasXDLOPS.ok() && maybe_hasXDLOPS.value()) {
         VLOG(1) << "Using rocblas_gemm_ex";
-        bool is_backprop = (context == blas::CallContext::kBackpropInput1) ||
-                           (context == blas::CallContext::kBackpropInput2);
-        
-        uint32_t flags = rocblas_gemm_flags_none;
-#if TF_ROCM_VERSION >= 50000
-        if (is_backprop) {
-          flags = rocblas_gemm_flags_fp16_alt_impl;
-        }
-#endif
         return DoBlasInternalStatus(
             wrap::rocblas_gemm_ex, stream, /* pointer_mode_host = */ true,
             ROCMBlasTranspose(transa), ROCMBlasTranspose(transb),
@@ -545,7 +545,7 @@ tsl::Status ROCMBlas::DoBlasGemm(Stream *stream, blas::Transpose transa,
             rocblas_datatype_f16_r, lda, b.opaque(), rocblas_datatype_f16_r,
             ldb, beta, c->opaque(), rocblas_datatype_f16_r, ldc, c->opaque(),
             rocblas_datatype_f16_r, ldc, rocblas_datatype_f32_r,
-            rocblas_gemm_algo_standard, 0, flags);
+            rocblas_gemm_algo_standard, 0, GemmFloat16Flags(dtype, context));
       } else {
         VLOG(1) << "Using rocblas_hgemm";
         const Eigen::half alpha_half(*static_cast<const float *>(alpha));
@@ -657,7 +657,7 @@ tsl::Status ROCMBlas::DoBlasGemmWithAlgorithm(
       alpha, a, lda, b, ldb, beta, c, ldc, numeric_options, context));
   
   } else {
-  
+
     CheckPreconditions(transa, transb, m, n, k, type_a, lda, ldb);
     TF_ASSIGN_OR_RETURN(auto roc_type_a, AsRocBlasType(type_a));
     TF_ASSIGN_OR_RETURN(auto roc_type_c, AsRocBlasType(type_c));
@@ -682,7 +682,8 @@ tsl::Status ROCMBlas::DoBlasGemmWithAlgorithm(
           roc_type_a, lda, b.opaque(), roc_type_a,
           ldb, beta, c->opaque(), roc_type_c, ldc, c->opaque(),
           roc_type_c, ldc, roc_comp_type,
-          rocblas_gemm_algo_solution_index, algorithm, 0));
+          rocblas_gemm_algo_solution_index, algorithm, 
+          GemmFloat16Flags(type_a, context))); 
   }
   TF_RETURN_IF_ERROR(
       PopulateProfileFromTimer(timer, algorithm, profile_result));
@@ -741,7 +742,8 @@ tsl::Status ROCMBlas::DoBlasGemmStridedBatchedWithAlgorithm(
           b.opaque(), roc_type_a,  ldb, stride_b, beta, 
           c->opaque(), roc_type_c, ldc, stride_c, 
           c->opaque(), roc_type_c, ldc, stride_c, batch_count, roc_comp_type,
-          rocblas_gemm_algo_solution_index, algorithm, 0));
+          rocblas_gemm_algo_solution_index, algorithm, 
+          GemmFloat16Flags(type_a, context)));
   }
   TF_RETURN_IF_ERROR(
       PopulateProfileFromTimer(timer, algorithm, profile_result));
@@ -812,6 +814,7 @@ bool ROCMBlas::GetBlasGemmAlgorithms(Stream* stream,
   ASSIGN_OR_FALSE(auto roc_comp_type, AsRocBlasComputeType(c->compute_type));
 
   if(c->batch_size == 1) {
+    // TODO: we should possibly use GemmFloat16Flags(type_a, context) here..
     return DoBlasInternalFailureOK(NameWrap{blas_lambda}, stream, true,
           wrap::rocblas_gemm_ex_get_solutions, 
           ROCMBlasTranspose(a.transpose), ROCMBlasTranspose(b.transpose),
