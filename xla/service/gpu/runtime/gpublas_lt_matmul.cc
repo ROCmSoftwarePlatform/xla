@@ -154,8 +154,10 @@ absl::Status DoMatmul(
 
   // if we can add BFC allocator here: since it also implements
   // DeviceMemoryAllocator interface: see GetStreamExecutorGpuDeviceAllocator
+  auto allocator = stream->parent()->UserProvidedAllocator;
   se::OwningScratchAllocator<> scratch_allocator(
-      stream->parent()->device_ordinal(), stream->parent()->BFCAllocatorHack);
+      stream->parent()->device_ordinal(), allocator ? allocator : 
+            stream->parent()->GetAllocator());
 
   return plan->ExecuteOnStream(
       stream, a_data, b_data, c_data, d_data, bias_data, aux_data, a_scale_data,
