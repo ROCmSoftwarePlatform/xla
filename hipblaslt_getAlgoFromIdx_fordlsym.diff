@@ -1,0 +1,58 @@
+diff --git a/install.sh b/install.sh
+index f33b637b..fa46f4bd 100755
+--- a/install.sh
++++ b/install.sh
+@@ -657,7 +657,7 @@ pushd .
+       install_blis
+       popd
+ 
+-      cmake_client_options="${cmake_client_options} -DBUILD_CLIENTS_SAMPLES=ON -DBUILD_CLIENTS_TESTS=ON -DLINK_BLIS=${LINK_BLIS} -DBUILD_CLIENTS_BENCHMARKS=ON"
++      cmake_client_options="${cmake_client_options} -DBUILD_CLIENTS_SAMPLES=ON -DBUILD_CLIENTS_TESTS=OFF -DLINK_BLIS=${LINK_BLIS} -DBUILD_CLIENTS_BENCHMARKS=ON"
+ 
+       #
+       # Add matrices_dir if exists.
+diff --git a/library/include/hipblaslt-ext.hpp b/library/include/hipblaslt-ext.hpp
+index 6ef58a0d..6601fb19 100644
+--- a/library/include/hipblaslt-ext.hpp
++++ b/library/include/hipblaslt-ext.hpp
+@@ -1005,4 +1005,9 @@ namespace hipblaslt_ext
+      */
+     HIPBLASLT_EXPORT
+     hipblasStatus_t copyMatmul(hipblasLtMatmulDesc_t src, hipblasLtMatmulDesc_t dst);
++
++    HIPBLASLT_EXPORT
++    hipblasLtMatmulHeuristicResult_t getAlgosFromIndex_fordlsym(hipblasLtHandle_t         handle,
++                          std::vector<int>&                              algoIndex,
++                          std::vector<hipblasLtMatmulHeuristicResult_t>& heuristicResults);
+ } // End of namespace hipblasltext
+diff --git a/library/src/amd_detail/hipblaslt-ext.cpp b/library/src/amd_detail/hipblaslt-ext.cpp
+index ca4ff99f..9273625e 100644
+--- a/library/src/amd_detail/hipblaslt-ext.cpp
++++ b/library/src/amd_detail/hipblaslt-ext.cpp
+@@ -983,8 +983,26 @@ namespace hipblaslt_ext
+         auto results
+             = reinterpret_cast<std::vector<rocblaslt_matmul_heuristic_result>*>(&heuristicResults);
+         results->clear();
++
+         return RocBlasLtStatusToHIPStatus(rocblaslt_matmul_get_algos_from_index_cpp(
+             (rocblaslt_handle)handle, algoIndex, *results));
++	//auto status = rocblaslt_matmul_get_algos_from_index_cpp(
++        //    (rocblaslt_handle)handle, algoIndex, *results);
++
++        //std::cout << "[getAlgosFromIndex] algoIndex:" << algoIndex[0] << " getIndexFromAlgo:" << getIndexFromAlgo(heuristicResults[0].algo) << " " <<getKernelNameFromAlgo(handle, heuristicResults[0].algo) << std::endl;
++
++	//return RocBlasLtStatusToHIPStatus(status);
++    }
++
++    hipblasLtMatmulHeuristicResult_t getAlgosFromIndex_fordlsym(hipblasLtHandle_t   handle,
++                          std::vector<int>&                        algoIndex,
++                          std::vector<hipblasLtMatmulHeuristicResult_t>& heuristicResults)
++    {
++       getAlgosFromIndex(handle, algoIndex, heuristicResults);
++
++       //std::cout << "[getAlgosFromIndex_fordlsym] algoIndex:" << algoIndex[0] << " getIndexFromAlgo:" << getIndexFromAlgo(heuristicResults[0].algo) << " " << getKernelNameFromAlgo(handle, heuristicResults[0].algo) << std::endl;
++
++       return heuristicResults[0];
+     }
+ 
+     hipblasStatus_t copyMatmul(hipblasLtMatmulDesc_t src, hipblasLtMatmulDesc_t dst)
