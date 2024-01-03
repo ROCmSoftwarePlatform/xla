@@ -1,0 +1,263 @@
+diff --git a/xla/service/gpu/gpublas_lt_matmul_thunk.cc b/xla/service/gpu/gpublas_lt_matmul_thunk.cc
+index 4b3d4f1fc..e2ffff11f 100644
+--- a/xla/service/gpu/gpublas_lt_matmul_thunk.cc
++++ b/xla/service/gpu/gpublas_lt_matmul_thunk.cc
+@@ -91,7 +91,7 @@ Status CublasLtMatmulThunk::ExecuteOnStream(const ExecuteParams& params) {
+       params.stream, allocs.GetDeviceAddress(a_buffer_),
+       allocs.GetDeviceAddress(b_buffer_), allocs.GetDeviceAddress(c_buffer_),
+       allocs.GetDeviceAddress(d_buffer_), bias, aux, a_scale, b_scale, c_scale,
+-      d_scale, d_amax, *algorithm, scratch_allocator);
++      d_scale, d_amax, *algorithm, scratch_allocator, 0);
+ }
+ 
+ StatusOr<se::gpu::BlasLt::MatmulPlan*> CublasLtMatmulThunk::GetMatmulPlan(
+diff --git a/xla/service/gpu/runtime/gpublas_lt_matmul.cc b/xla/service/gpu/runtime/gpublas_lt_matmul.cc
+index bb868faa5..feb141e05 100644
+--- a/xla/service/gpu/runtime/gpublas_lt_matmul.cc
++++ b/xla/service/gpu/runtime/gpublas_lt_matmul.cc
+@@ -91,7 +91,7 @@ absl::Status DoMatmul(
+     std::optional<StridedMemrefView> d_amax, int64_t algorithm,
+     double alpha_real, double alpha_imag, double beta,
+     DotDimensionNumbers dot_dims, se::gpu::BlasLt::Epilogue epilogue,
+-    absl::Span<const int32_t> precision) {
++    absl::Span<const int32_t> precision, int solidx) {
+   se::Stream* stream = run_options->stream();
+ 
+   // Find the gemm config for this instance of matmul.
+@@ -162,7 +162,7 @@ absl::Status DoMatmul(
+   return plan->ExecuteOnStream(
+       stream, a_data, b_data, c_data, d_data, bias_data, aux_data, a_scale_data,
+       b_scale_data, c_scale_data, d_scale_data, d_amax_data, algos[algorithm],
+-      scratch_allocator);
++      scratch_allocator, solidx);
+ }
+ 
+ }  // namespace
+@@ -277,7 +277,7 @@ static absl::Status CublasLtMatmulImpl(
+       return DoMatmul(run_options, debug_options, gemm_config, matmul_plan, a, b, c,
+                   d, bias, aux, a_scale, b_scale, c_scale, d_scale, d_amax,
+                   algorithm, alpha_real, alpha_imag, beta, dot_dims, epilogue,
+-                  precision);
++                  precision, solidx);
+   }
+ }
+ 
+@@ -325,7 +325,7 @@ static absl::Status CublasLtMatmulF8Impl(
+   return DoMatmul(run_options, debug_options, gemm_config, matmul_plan, a, b, c,
+                   d, bias, aux, a_scale, b_scale, c_scale, d_scale, d_amax,
+                   algorithm, alpha_real, alpha_imag, beta, dot_dims, epilogue,
+-                  precision);
++                  precision, 0);
+ }
+ 
+ //===----------------------------------------------------------------------===//
+diff --git a/xla/stream_executor/gpu/gpu_blas_lt.h b/xla/stream_executor/gpu/gpu_blas_lt.h
+index 40adeec90..f314c3e9c 100644
+--- a/xla/stream_executor/gpu/gpu_blas_lt.h
++++ b/xla/stream_executor/gpu/gpu_blas_lt.h
+@@ -133,6 +133,7 @@ struct BlasLt {
+                          const DeviceMemory<C>& c, DeviceMemory<D>& d,
+                          const MatmulAlgorithm& algorithm,
+                          ScratchAllocator& scratch_allocator,
++			 int solidx,
+                          const DeviceMemory<C>& bias = {},
+                          const DeviceMemoryBase& aux = DeviceMemory<uint8_t>{},
+                          const DeviceMemory<Scale>& a_scale = {},
+@@ -147,7 +148,7 @@ struct BlasLt {
+           blas::ToDataType<C>::value, blas::ToDataType<D>::value));
+ 
+       return DoMatmul(stream, alpha.opaque(), a, b, beta.opaque(), c, d,
+-                      algorithm, scratch_allocator, bias, aux, a_scale, b_scale,
++                      algorithm, scratch_allocator, solidx, bias, aux, a_scale, b_scale,
+                       c_scale, d_scale, d_amax, profile_result);
+     }
+ 
+@@ -158,11 +159,12 @@ struct BlasLt {
+                          const DeviceMemory<C>& c, DeviceMemory<D>& d,
+                          const MatmulAlgorithm& algorithm,
+                          ScratchAllocator& scratch_allocator,
++			 int solidx,
+                          const DeviceMemory<C>& bias = {},
+                          const DeviceMemoryBase& aux = DeviceMemory<uint8_t>{},
+                          blas::ProfileResult* profile_result = nullptr) const {
+       return DoMatmul(stream, alpha, a, b, beta, c, d, algorithm,
+-                      scratch_allocator, bias, aux, {}, {}, {}, {}, {},
++                      scratch_allocator, solidx, bias, aux, {}, {}, {}, {}, {},
+                       profile_result);
+     }
+ 
+@@ -175,6 +177,7 @@ struct BlasLt {
+         DeviceMemoryBase c_scale_buffer, DeviceMemoryBase d_scale_buffer,
+         DeviceMemoryBase d_amax_buffer, const MatmulAlgorithm& algorithm,
+         ScratchAllocator& scratch_allocator,
++	int solidx,
+         blas::ProfileResult* profile_result = nullptr) const = 0;
+ 
+     // Returns a list of supported algorithms for DoMatmul. The algorithms are
+@@ -199,6 +202,7 @@ struct BlasLt {
+                          DeviceMemoryBase d_amax,
+                          const MatmulAlgorithm& algorithm,
+                          ScratchAllocator& scratch_allocator,
++			 int solidx,
+                          blas::ProfileResult* profile_result) const {
+       Scale salpha;
+       if constexpr (std::is_same_v<Scale, xla::complex64> ||
+@@ -214,6 +218,7 @@ struct BlasLt {
+           stream, HostOrDeviceScalar<Scale>(salpha), DeviceMemory<A>(a),
+           DeviceMemory<B>(b), HostOrDeviceScalar<Scale>(sbeta),
+           DeviceMemory<C>(c), output, algorithm, scratch_allocator,
++	  solidx,
+           DeviceMemory<C>(bias), aux, DeviceMemory<Scale>(a_scale),
+           DeviceMemory<Scale>(b_scale), DeviceMemory<Scale>(c_scale),
+           DeviceMemory<Scale>(d_scale), DeviceMemory<Scale>(d_amax),
+@@ -230,7 +235,7 @@ struct BlasLt {
+         Stream* stream, const void* alpha, DeviceMemoryBase a,
+         DeviceMemoryBase b, const void* beta, DeviceMemoryBase c,
+         DeviceMemoryBase d, const MatmulAlgorithm& algorithm,
+-        ScratchAllocator& scratch_allocator, DeviceMemoryBase bias,
++        ScratchAllocator& scratch_allocator, int solidx, DeviceMemoryBase bias,
+         DeviceMemoryBase aux, DeviceMemoryBase a_scale,
+         DeviceMemoryBase b_scale, DeviceMemoryBase c_scale,
+         DeviceMemoryBase d_scale, DeviceMemoryBase d_amax,
+diff --git a/xla/stream_executor/rocm/hip_blas_lt.cc b/xla/stream_executor/rocm/hip_blas_lt.cc
+index e25a0a946..ff17202bb 100644
+--- a/xla/stream_executor/rocm/hip_blas_lt.cc
++++ b/xla/stream_executor/rocm/hip_blas_lt.cc
+@@ -32,6 +32,7 @@ limitations under the License.
+ #include "xla/stream_executor/rocm/rocm_blas.h"
+ #include "xla/stream_executor/scratch_allocator.h"
+ #include "xla/stream_executor/stream.h"
++#include <hipblaslt/hipblaslt-ext.hpp>
+ 
+ #define SET_ATTR(setter, handle, attr, value) \
+   ToStatus(setter(handle, attr, &value, sizeof(decltype(value))), #setter)
+@@ -357,6 +358,7 @@ tsl::Status BlasLt::MatmulPlan::DoMatmul(
+     Stream* stream, const void* alpha, DeviceMemoryBase a, DeviceMemoryBase b,
+     const void* beta, DeviceMemoryBase c, DeviceMemoryBase d,
+     const MatmulAlgorithm& algorithm, ScratchAllocator& scratch_allocator,
++    int solidx,
+     DeviceMemoryBase bias, DeviceMemoryBase aux, DeviceMemoryBase a_scale,
+     DeviceMemoryBase b_scale, DeviceMemoryBase c_scale,
+     DeviceMemoryBase d_scale, DeviceMemoryBase d_amax,
+@@ -401,10 +403,22 @@ tsl::Status BlasLt::MatmulPlan::DoMatmul(
+ 
+     if (auto palgo =
+             std::any_cast<hipblasLtMatmulAlgo_t>(&algorithm.opaque_algo)) {
++      std::vector<int> algoIndex(1);
++      std::vector<hipblasLtMatmulHeuristicResult_t> heuristicResult(1);
++      algoIndex[0]=solidx;
++
++      //LOG(ERROR) << "solidx:" << solidx;
++
++      SE_HIPBLAS_RETURN_IF_ERROR(wrap::getAlgosFromIndex(
++			      blas_lt_ref_.blas_lt_.get(), algoIndex,
++			      heuristicResult));
++
++      //hipblaslt_ext::getAlgosFromIndex(blas_lt_ref_.blas_lt_.get(), algoIndex, heuristicResult);
++
+       SE_HIPBLAS_RETURN_IF_ERROR(wrap::hipblasLtMatmul(
+           blas_lt_ref_.blas_lt_.get(), op_desc_.get(), alpha, a.opaque(),
+           a_desc_.get(), b.opaque(), b_desc_.get(), beta, c.opaque(),
+-          c_desc_.get(), d.opaque(), d_desc_.get(), palgo, workspace,
++          c_desc_.get(), d.opaque(), d_desc_.get(), &heuristicResult[0].algo, workspace,
+           algorithm.workspace_size, gpu::AsGpuStreamValue(stream)));
+     } else {
+       return tsl::errors::Internal("hipblaslt: Invalid algorithm type");
+@@ -456,7 +470,7 @@ tsl::Status BlasLt::MatmulPlan::ExecuteOnStream(
+     DeviceMemoryBase d, DeviceMemoryBase bias, DeviceMemoryBase aux,
+     DeviceMemoryBase a_scale, DeviceMemoryBase b_scale,
+     DeviceMemoryBase c_scale, DeviceMemoryBase d_scale, DeviceMemoryBase d_amax,
+-    const MatmulAlgorithm& algorithm, ScratchAllocator& scratch_allocator,
++    const MatmulAlgorithm& algorithm, ScratchAllocator& scratch_allocator, int solidx,
+     blas::ProfileResult* profile_result) const {
+   if (must_swap_operands_) {
+     std::swap(a, b);
+@@ -471,7 +485,7 @@ tsl::Status BlasLt::MatmulPlan::ExecuteOnStream(
+         SCALENTYPE, HipToNativeT<ATYPE>::type, HipToNativeT<BTYPE>::type, \
+         HipToNativeT<CTYPE>::type, HipToNativeT<DTYPE>::type>(            \
+         stream, alpha_, a, b, beta_, c, d, bias, aux, a_scale, b_scale,   \
+-        c_scale, d_scale, d_amax, algorithm, scratch_allocator,           \
++        c_scale, d_scale, d_amax, algorithm, scratch_allocator, solidx,   \
+         profile_result);                                                  \
+   }
+ 
+diff --git a/xla/stream_executor/rocm/hip_blas_lt.h b/xla/stream_executor/rocm/hip_blas_lt.h
+index 0ab58918a..9e0c80b52 100644
+--- a/xla/stream_executor/rocm/hip_blas_lt.h
++++ b/xla/stream_executor/rocm/hip_blas_lt.h
+@@ -107,7 +107,7 @@ class BlasLt : public gpu::BlasLt {
+         DeviceMemoryBase a_scale_buffer, DeviceMemoryBase b_scale_buffer,
+         DeviceMemoryBase c_scale_buffer, DeviceMemoryBase d_scale_buffer,
+         DeviceMemoryBase d_amax_buffer, const MatmulAlgorithm& algorithm,
+-        ScratchAllocator& scratch_allocator,
++        ScratchAllocator& scratch_allocator, int solidx,
+         blas::ProfileResult* profile_result = nullptr) const override;
+ 
+     tsl::StatusOr<std::vector<MatmulAlgorithm>> GetAlgorithms(
+@@ -124,6 +124,7 @@ class BlasLt : public gpu::BlasLt {
+                          DeviceMemoryBase c, DeviceMemoryBase d,
+                          const MatmulAlgorithm& algorithm,
+                          ScratchAllocator& scratch_allocator,
++			 int solidx,
+                          DeviceMemoryBase bias, DeviceMemoryBase aux,
+                          DeviceMemoryBase a_scale, DeviceMemoryBase b_scale,
+                          DeviceMemoryBase c_scale, DeviceMemoryBase d_scale,
+diff --git a/xla/stream_executor/rocm/hipblaslt_wrapper.h b/xla/stream_executor/rocm/hipblaslt_wrapper.h
+index 326280b9a..df86d25ab 100644
+--- a/xla/stream_executor/rocm/hipblaslt_wrapper.h
++++ b/xla/stream_executor/rocm/hipblaslt_wrapper.h
+@@ -24,6 +24,7 @@ limitations under the License.
+ #if TF_HIPBLASLT
+ #if TF_ROCM_VERSION >= 50500
+ #include "rocm/include/hipblaslt/hipblaslt.h"
++#include "rocm/include/hipblaslt/hipblaslt-ext.hpp"
+ #else
+ #include "rocm/include/hipblaslt.h"
+ #endif
+@@ -65,8 +66,28 @@ namespace wrap {
+     return loaded(args...);                                                   \
+   }
+ 
++#define HIPBLASLT_EXT_API_WRAPPER(api_name)                                       \
++  template <typename... Args>                                                 \
++  auto api_name(Args... args) -> decltype(hipblaslt_ext::api_name(args...)) {              \
++    using FuncPtrT = std::add_pointer<decltype(hipblaslt_ext::api_name)>::type;            \
++    static FuncPtrT loaded = []() -> FuncPtrT {                               \
++      static const char* kName = TO_STR(_ZN13hipblaslt_ext17getAlgosFromIndexEPvRSt6vectorIiSaIiEERS1_I33_hipblasLtMatmulHeuristicResult_tSaIS5_EE);                            \
++      void* f;                                                                \
++      auto s = tsl::Env::Default() -> GetSymbolFromLibrary(                   \
++          stream_executor::internal::CachedDsoLoader::GetHipblasltDsoHandle() \
++              .value(),                                                       \
++          kName, &f);                                                         \
++      CHECK(s.ok()) << "could not find " << kName                             \
++                    << " in hipblaslt lib; dlerror: " << s.message();         \
++      return reinterpret_cast<FuncPtrT>(f);                                   \
++    }();                                                                      \
++    return loaded(args...);                                                   \
++  }
++
+ #endif
+ 
++
++
+ // clang-format off
+ #define FOREACH_HIPBLASLT_API(__macro)      \
+   __macro(hipblasLtCreate) \
+@@ -86,12 +107,17 @@ namespace wrap {
+   __macro(hipblasLtMatmul) \
+   __macro(hipblasStatusToString)
+ // clang-format on
++#define FOREACH_HIPBLASLT_EXT_API(__macro)      \
++  __macro(getAlgosFromIndex)
+ 
+ FOREACH_HIPBLASLT_API(HIPBLASLT_API_WRAPPER)
++FOREACH_HIPBLASLT_EXT_API(HIPBLASLT_EXT_API_WRAPPER)
+ 
+ #undef TO_STR_
+ #undef TO_STR
++#undef FOREACH_HIPBLASLT_EXT_API
+ #undef FOREACH_HIPBLASLT_API
++#undef HIPBLASLT_EXT_API_WRAPPER
+ #undef HIPBLASLT_API_WRAPPER
+ 
+ }  // namespace wrap
