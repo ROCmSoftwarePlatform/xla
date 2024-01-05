@@ -893,7 +893,7 @@ static hipMemAllocationType ToHipAllocationType(
 
   RETURN_IF_ROCM_ERROR(wrap::hipGraphAddMemAllocNode(node, graph, deps.data(),
                                                      deps.size(), &params),
-                       "Failed to add memory allocation node to a CUDA graph");
+                       "Failed to add memory allocation node to a HIP graph");
 
   VLOG(2) << "Add MemAllocNode to a graph " << graph << " size " << size
           << " address " << reinterpret_cast<void*>(params.dptr);
@@ -922,10 +922,10 @@ GpuDriver::GraphGetMemAllocNodeParams(GpuGraphNodeHandle node) {
   hipMemcpy3DParms params{
       .srcArray = {},
       .srcPos = {},
-      .srcPtr = {.ptr = gpu_src},
+      .srcPtr = {.ptr = gpu_src, .pitch=size, .xsize=0, .ysize=0},
       .dstArray = {},
       .dstPos = {},
-      .dstPtr = {.ptr = gpu_dst},
+      .dstPtr = {.ptr = gpu_dst, .pitch=size, .xsize=0, .ysize=0},
       .extent = hipExtent{.width = size, .height = 1, .depth = 1},
       .kind = hipMemcpyDeviceToDevice};
 
@@ -947,10 +947,10 @@ GpuDriver::GraphGetMemAllocNodeParams(GpuGraphNodeHandle node) {
   hipMemcpy3DParms params{
       .srcArray = {},
       .srcPos = {},
-      .srcPtr = {.ptr = gpu_src},
+      .srcPtr = {.ptr = gpu_src, .pitch=size, .xsize=0, .ysize=0},
       .dstArray = {},
       .dstPos = {},
-      .dstPtr = {.ptr = gpu_dst},
+      .dstPtr = {.ptr = gpu_dst, .pitch=size, .xsize=0, .ysize=0},
       .extent = hipExtent{.width = size, .height = 1, .depth = 1},
       .kind = hipMemcpyDeviceToDevice};
 
@@ -1017,7 +1017,7 @@ struct BitPatternToValue {
 
   RETURN_IF_ROCM_ERROR(wrap::hipGraphAddMemsetNode(node, graph, deps.data(),
                                                    deps.size(), &params),
-                       "Failed to add memset node to a CUDA graph");
+                       "Failed to add memset node to a HIP graph");
 
   return ::tsl::OkStatus();
 }
