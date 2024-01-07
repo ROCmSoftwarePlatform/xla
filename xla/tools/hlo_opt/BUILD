@@ -139,14 +139,6 @@ glob_lit_tests(
         "gpu_hlo_ptx.hlo": ["no_rocm"],
     },
     test_file_exts = ["hlo"],
-    tags_override = {
-        "gpu_hlo_ptx.hlo": ["no_rocm"],
-    },
-    features = if_cuda_is_configured([
-        "--param=GPU=a100",
-    ]) + if_rocm_is_configured([
-        "--param=GPU=mi200",
-    ])
 )
 
 # Bundle together all of the test utilities that are used by tests.
