@@ -697,8 +697,11 @@ FusionDecision CanTritonHandleGEMM(
             std::get<se::CudaComputeCapability>(gpu_version);
           return cuda_compute_capability.IsAtLeast(
             stream_executor::CudaComputeCapability::AMPERE);
+        }
+        if(std::holds_alternative<se::RocmComputeCapability>(gpu_version)) {
+          return true;
+        }
         return false;
-      }
       default:
         return false;
     }
