@@ -561,7 +561,7 @@ StatusOr<bool> CommandBufferScheduling::Run(
                      },
                      [](const se::RocmComputeCapability&) {  // TODO: check for
                                                              // ROCM support
-                       return false;
+                       return true;
                      }},
       gpu_compute_comp_);
   if (do_erase) {
