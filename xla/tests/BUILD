@@ -1291,6 +1291,7 @@ xla_test(
     name = "convolution_cudnn_test",
     timeout = "long",
     srcs = ["convolution_cudnn_test.cc"],
+    tags = ["no_rocm"], # No int8
     backend_tags = {"gpu": [
         "gpu",
         "requires-gpu-sm80",

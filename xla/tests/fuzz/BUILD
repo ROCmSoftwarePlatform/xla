@@ -1,5 +1,5 @@
 load("//xla/tests/fuzz:build_defs.bzl", "hlo_test")
-
+load("@local_config_rocm//rocm:build_defs.bzl", "if_rocm_is_configured")
 # copybara:uncomment package(default_applicable_licenses = ["//tensorflow:license"])
 
 cc_library(
@@ -16,6 +16,8 @@ cc_library(
 [hlo_test(
     name = hlo + "_test",
     hlo = hlo,
+    tags = (["no_rocm"] if hlo == "rand_000079.hlo"
+            else []), # No int8
 ) for hlo in glob(
     include = ["rand_*.hlo"],
     exclude = [
