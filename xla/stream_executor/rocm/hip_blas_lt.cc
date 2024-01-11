@@ -110,8 +110,17 @@ static tsl::StatusOr<hipblasLtEpilogue_t> AsHipblasLtEpilogue(
       return HIPBLASLT_EPILOGUE_RELU_BIAS;
     case gpu::BlasLt::Epilogue::kGELU:
       return HIPBLASLT_EPILOGUE_GELU;
+#if TF_ROCM_VERSION >= 60000
+    case gpu::BlasLt::Epilogue::kGELUWithAux:
+      return HIPBLASLT_EPILOGUE_GELU_AUX;
+    case gpu::BlasLt::Epilogue::kBiasThenGELU:
+      return HIPBLASLT_EPILOGUE_GELU_BIAS;
+    case gpu::BlasLt::Epilogue::kBiasThenGELUWithAux:
+      return HIPBLASLT_EPILOGUE_GELU_AUX_BIAS;
+#endif
     default:
-      return tsl::errors::Internal("Unsupported epilogue");
+      return tsl::errors::Internal(absl::StrFormat("Unsupported epilogue: %d",
+          (int)epilogue));
   }
 }
 
