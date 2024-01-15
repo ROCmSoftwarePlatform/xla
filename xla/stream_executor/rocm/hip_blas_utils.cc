@@ -32,36 +32,36 @@ tsl::Status ToStatus(hipblasStatus_t status, const char* prefix) {
   return tsl::OkStatus();
 }
 
-hipDataType AsHipblasDataType(blas::DataType type) {
+hipblasltDatatype_t AsHipblasDataType(blas::DataType type) {
   switch (type) {
     case blas::DataType::kF8E5M2:
     case blas::DataType::kF8E4M3FN:
       LOG(FATAL) << "hipblaslt does not support F8 yet";
     case blas::DataType::kHalf:
-      return HIP_R_16F;
+      return HIPBLASLT_R_16F;
     case blas::DataType::kBF16:
-      return HIP_R_16BF;
+      return HIPBLASLT_R_16B;
     case blas::DataType::kFloat:
-      return HIP_R_32F;
+      return HIPBLASLT_R_32F;
     case blas::DataType::kDouble:
-      return HIP_R_64F;
+      return HIPBLASLT_R_64F;
     case blas::DataType::kInt8:
-      return HIP_R_8I;
+      return HIPBLASLT_R_8I;
     case blas::DataType::kInt32:
-      return HIP_R_32I;
+      return HIPBLASLT_R_32I;
     case blas::DataType::kComplexFloat:
-      return HIP_C_32F;
+      return HIPBLASLT_C_32F;
     case blas::DataType::kComplexDouble:
-      return HIP_C_64F;
+      return HIPBLASLT_C_64F;
     default:
       LOG(FATAL) << "unknown data type";
   }
 }
 
-hipblasComputeType_t AsHipblasComputeType(blas::ComputationType type) {
+hipblasLtComputeType_t AsHipblasComputeType(blas::ComputationType type) {
   if (type == blas::ComputationType::kF32 ||
       type == blas::ComputationType::kTF32AsF32)
-    return HIPBLAS_COMPUTE_32F;
+    return HIPBLASLT_COMPUTE_F32;
   else
     LOG(FATAL) << "unsupported hipblaslt computation type";
 }

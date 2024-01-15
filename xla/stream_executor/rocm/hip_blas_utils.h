@@ -49,8 +49,8 @@ namespace rocm {
   TF_RETURN_IF_ERROR(::stream_executor::rocm::ToStatus(expr, #expr))
 
 tsl::Status ToStatus(hipblasStatus_t status, const char* prefix);
-hipDataType AsHipblasDataType(blas::DataType type);
-hipblasComputeType_t AsHipblasComputeType(blas::ComputationType type);
+hipblasltDatatype_t AsHipblasDataType(blas::DataType type);
+hipblasLtComputeType_t AsHipblasComputeType(blas::ComputationType type);
 hipblasOperation_t AsHipblasOperation(blas::Transpose trans);
 
 }  // namespace rocm
