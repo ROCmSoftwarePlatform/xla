@@ -27,6 +27,7 @@ limitations under the License.
 #include "xla/service/gpu/conv_algorithm_picker.h"
 #include "xla/service/gpu/cublas_pad_for_gemms.h"
 #include "xla/service/gpu/cublas_padding_requirements.h"
+#include "xla/service/gpu/cudnn_simplify_padding.h"
 #include "xla/service/gpu/cusolver_rewriter.h"
 #include "xla/service/gpu/gemm_algorithm_picker.h"
 #include "xla/service/gpu/gemm_rewriter.h"
@@ -48,6 +49,11 @@ limitations under the License.
 #include "xla/service/hlo_verifier.h"
 #include "xla/service/llvm_ir/llvm_util.h"
 #include "xla/service/tuple_simplifier.h"
+#include "xla/service/convert_mover.h"
+#include "xla/service/reshape_mover.h"
+#include "xla/service/reshape_decomposer.h"
+#include "xla/service/layout_normalization.h"
+#include "xla/service/gpu/move_copy_to_users.h"
 #include "xla/stream_executor/rocm/rocm_platform_id.h"
 
 namespace xla {
@@ -59,13 +65,25 @@ absl::Status AMDGPUCompiler::OptimizeHloConvolutionCanonicalization(
     se::DeviceMemoryAllocator* device_allocator) {
   // Convert convolutions into CustomCalls to MIOpen, then canonicalize them
   // (PadInsertion).
+
+  XLA_SCOPED_LOGGING_TIMER_LEVEL(__func__, 0);
+
   HloPassPipeline pipeline("conv_canonicalization");
   pipeline.AddInvariantCheckerDebug<HloVerifier>(
       /*layout_sensitive=*/false,
       /*allow_mixed_precision=*/false);
+
+  // Convert upsupported bf16 convolutions to f32.
+//!  ConvBfloat16Support conv_bf16_support(dnn_version, cuda_compute_capability);
+//!  pipeline.AddPass<FloatNormalization>(&conv_bf16_support);
+
   pipeline.AddPass<GpusolverRewriter>();
   pipeline.AddPass<GpuConvRewriter>();
+//! pipeline.AddPass<CudnnFusedConvRewriter>(cuda_compute_capability);
   pipeline.AddPass<GpuConvPaddingLegalization>();
+//!  pipeline.AddPass<CudnnPadForConvolutions>(cuda_compute_capability);
+//!  pipeline.AddPass<CudnnVectorizeConvolutions>(cuda_compute_capability,
+//!                                               dnn_version);
 
   // The conv padding/vectorization passes which we need to get rid of.  They
   // also leave behind unnecessary tuple/get-tuple-element pairs that
@@ -76,10 +94,39 @@ absl::Status AMDGPUCompiler::OptimizeHloConvolutionCanonicalization(
   // tf2xla bridge, DepthwiseConvolutionConverter and GpuConvRewriter
   // introduces reshapes and transposes that can be eliminated using
   // AlgebraicSimplifier  We run algsimp to a fixed point.
-  AlgebraicSimplifierOptions options;
-  options.set_enable_conv_operand_swap(false);
-  options.set_enable_unconditional_reduce_of_concat_replacement(false);
-  pipeline.AddPass<HloPassFix<AlgebraicSimplifier>>(options);
+  AlgebraicSimplifierOptions algsimp_options;
+  algsimp_options.set_enable_conv_operand_swap(false);
+  algsimp_options.set_enable_unconditional_reduce_of_concat_replacement(false);
+  pipeline.AddPass<HloPassFix<AlgebraicSimplifier>>(algsimp_options);
+
+  // CudnnSimplifyPadding gets rid of some padding introduced by
+  // CudnnPadForConvolutions and used by CudnnVectorizeConvolutions.  The
+  // pattern-matches in this pass need to be run after inlining and simplifying
+  // tuples from CudnnVectorizeConvolutions.  We also need to run algsimp to
+  // e.g. clean up unnecessary nop `convert`s.
+  pipeline.AddPass<CudnnSimplifyPadding>();
+
+  // tf2xla bridge, DepthwiseConvolutionConverter, GpuConvRewriter, and
+  // CudnnSimplifyPadding introduce reshapes and transposes.  Run ReshapeMover
+  // to a fixed point.  Include algsimp because ReshapeMover relies on it.
+  [&, &pipeline = pipeline.AddPass<HloPassFix<HloPassPipeline>>(
+          "reshape_mover_after_conv_canonicalization")] {
+    ReshapeMoverOptions reshape_mover_options;
+    reshape_mover_options.reshape_of_1d_broadcast_is_cheap = true;
+    pipeline.AddPass<HloPassFix<ReshapeMover>>(reshape_mover_options);
+    pipeline.AddPass<AlgebraicSimplifier>(algsimp_options);
+  }();
+
+  // The reshapes and transposes can possibly be eliminated using
+  // AlgebraicSimplifier. ConvertMover and ReshapeMover fight with each other.
+  // ConvertMover wants to move some converts down the graph, but ReshapeMover
+  // wants to move them up the graph. We run ConvertMover and algsimp to a fixed
+  // point.
+  [&, &pipeline = pipeline.AddPass<HloPassFix<HloPassPipeline>>(
+          "simplify_after_conv_canonicalization")] {
+    pipeline.AddPass<ConvertMover>();
+    pipeline.AddPass<AlgebraicSimplifier>(algsimp_options);
+  }();
 
   pipeline.AddPass<HloConstantFolding>();
   TF_RETURN_IF_ERROR(pipeline.Run(hlo_module).status());
@@ -91,11 +138,58 @@ absl::Status AMDGPUCompiler::OptimizeHloPostLayoutAssignment(
     HloModule* hlo_module, se::StreamExecutor* stream_exec,
     const CompileOptions& options, const TargetConfig& gpu_target_config,
     tsl::thread::ThreadPool* thread_pool) {
+
+  XLA_SCOPED_LOGGING_TIMER_LEVEL(__func__, 0);
   HloPassPipeline pre_pipeline("AMDGPU post-layout_assignment part 1");
 
   auto rocm_compute_capability = std::get<se::RocmComputeCapability>(
       gpu_target_config.device_description.gpu_compute_capability());
 
+#if 0
+  if (hlo_module->config().debug_options().xla_gpu_enable_cudnn_fmha()) 
+  {
+    HloPassPipeline mha_fusion_pipeline(
+        "nvptx cudnn multi-headed attention fusion");
+    const DebugOptions& debug_options = hlo_module->config().debug_options();
+    // The LayoutAssignment pass may leave behind kCopy instructions which are
+    // duplicate or NOPs, so remove them with algebraic simplification and CSE.
+    AlgebraicSimplifierOptions alg_sim_options;
+    alg_sim_options.set_supports_non_canonical_dots(false);
+    alg_sim_options.set_is_layout_sensitive(true);
+    alg_sim_options.set_enable_conv_operand_swap(false);
+    // "slow" minmax means we propagate nan.
+    alg_sim_options.set_minmax_propagate_nan(
+        !hlo_module->config().debug_options().xla_gpu_enable_fast_min_max());
+    alg_sim_options.set_enable_unconditional_reduce_of_concat_replacement(
+        false);
+    if (debug_options.xla_gpu_normalize_layouts()) {
+      mha_fusion_pipeline.AddPass<ReshapeDecomposer>();
+      mha_fusion_pipeline.AddPass<HloPassFix<MoveCopyToUsers>>();
+      mha_fusion_pipeline.AddPass<LayoutNormalization>();
+    }
+
+    mha_fusion_pipeline.AddPass<HloCSE>(/*is_layout_sensitive=*/true);
+    mha_fusion_pipeline.AddPass<HloPassFix<AlgebraicSimplifier>>(
+        alg_sim_options);
+    mha_fusion_pipeline.AddPass<HloCSE>(/*is_layout_sensitive=*/true);
+    // Rewrite Multi-Headed Attention modules to Fused MHA custom-calls.
+    if (stream_exec) {
+      mha_fusion_pipeline.AddPass<CudnnFusedMHARewriter>(
+          cuda_compute_capability, stream_exec);
+    } else {
+      mha_fusion_pipeline.AddPass<CudnnFusedMHARewriter>(
+          cuda_compute_capability, gpu_target_config.dnn_version_info);
+    }
+    mha_fusion_pipeline.AddPass<AlgebraicSimplifier>(alg_sim_options);
+    mha_fusion_pipeline.AddPass<CudnnFusedMHATransposeFusion>();
+    mha_fusion_pipeline.AddPass<HloDCE>();
+    mha_fusion_pipeline.AddPass<HloCSE>(/*is_layout_sensitive=*/true);
+    TF_RETURN_IF_ERROR(mha_fusion_pipeline.Run(hlo_module).status());
+  }
+  #endif
+
+// Rewrite normalization patterns into cuDNN Custom Calls.
+//!  pre_pipeline.AddPass<CudnnNormRewriter>(cuda_compute_capability);
   pre_pipeline.AddPass<DotDimensionMerger>();
 
   for (const auto& req : HipblasPaddingRequirements) {
@@ -148,6 +242,14 @@ absl::Status AMDGPUCompiler::AddConvAndGemmAutotuningPasses(
   pipeline->AddPass<GemmAlgorithmPicker>(autotune_config);
   return absl::OkStatus();
 }
+
+// TODO: enable this on ROCM plaftorm
+/*absl::Status AMDGPUCompiler::AddTritonGemmAutotuningPasses(
+    HloPassPipeline* pipeline, HloModule* hlo_module,
+    AutotuneConfig& autotune_config, tsl::thread::ThreadPool* thread_pool) {
+  pipeline->AddPass<TritonAutotuner>(autotune_config, thread_pool);
+  return absl::OkStatus();
+}*/
 
 absl::Status AMDGPUCompiler::AddCustomKernelReplacementPasses(
     HloPassPipeline* pipeline, const DebugOptions& debug_options) {

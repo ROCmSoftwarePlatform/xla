@@ -2327,7 +2327,7 @@ xla_cc_test(
 
 xla_test(
     name = "gpu_sort_rewriter_test",
-    srcs = if_cuda_is_configured(["gpu_sort_rewriter_test.cc"]),
+    srcs = if_gpu_is_configured(["gpu_sort_rewriter_test.cc"]),
     backends = ["gpu"],
     tags = ["no_oss"],
     deps = [
@@ -3712,6 +3712,7 @@ cc_library(
         ":conv_algorithm_picker",
         ":cublas_pad_for_gemms",
         ":cublas_padding_requirements",
+        ":cudnn_simplify_padding",
         ":cusolver_rewriter",
         ":gemm_algorithm_picker",
         ":gemm_rewriter",
