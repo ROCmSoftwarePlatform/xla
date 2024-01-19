@@ -13,8 +13,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#ifndef XLA_STREAM_EXECUTOR_GPU_GPU_CUDAMALLOCASYNC_ALLOCATOR_H_
-#define XLA_STREAM_EXECUTOR_GPU_GPU_CUDAMALLOCASYNC_ALLOCATOR_H_
+#ifndef XLA_STREAM_EXECUTOR_GPU_GPU_MALLOCASYNC_ALLOCATOR_H_
+#define XLA_STREAM_EXECUTOR_GPU_GPU_MALLOCASYNC_ALLOCATOR_H_
 
 #include <memory>
 #include <optional>
@@ -23,15 +23,20 @@ limitations under the License.
 #include "absl/base/thread_annotations.h"
 #include "absl/container/flat_hash_map.h"
 #include "xla/stream_executor/stream_executor.h"
+#include "xla/stream_executor/gpu/gpu_types.h"
 #include "tsl/framework/allocator.h"
 #include "tsl/framework/device_id.h"
 #include "tsl/platform/macros.h"
 #include "tsl/platform/mutex.h"
 
 #if GOOGLE_CUDA
-#include "third_party/gpus/cuda/include/cuda.h"
 
-#define TF_CUDA_MALLOC_ASYNC_SUPPORTED CUDA_VERSION >= 11020
+#define TF_GPU_MALLOC_ASYNC_SUPPORTED CUDA_VERSION >= 11020
+
+#elif TENSORFLOW_USE_ROCM
+
+#define TF_GPU_MALLOC_ASYNC_SUPPORTED TF_ROCM_VERSION >= 50300
+
 #endif  // GOOGLE_CUDA
 
 
@@ -55,8 +60,8 @@ namespace stream_executor {
 // current process. This is to speed up execution and prevent crashes
 // of long-running jobs. Use `reserve_memory=true` if you want to
 // preallocate the full pool_size. You can also use the environment
-// variable `TF_CUDA_MALLOC_ASYNC_SUPPORTED_PREALLOC=nb_bytes` to preallocate
-// that amount of memory. `TF_CUDA_MALLOC_ASYNC_SUPPORTED_PREALLOC=-1` is a
+// variable `TF_GPU_MALLOC_ASYNC_SUPPORTED_PREALLOC=nb_bytes` to preallocate
+// that amount of memory. `TF_GPU_MALLOC_ASYNC_SUPPORTED_PREALLOC=-1` is a
 // special value that preallocate all what the BFC memory allocator
 // would have allocated. This is useful when benchmarking as it doesn't
 // change when driver allocations are done.
@@ -64,13 +69,13 @@ namespace stream_executor {
 // Here, the pool_size isn't the absolute max as for [Gpu]BFCAllocator.
 // The pool can grow above that up to the total GPU memory.  But the
 // driver can return the excess memory to other processes.
-class GpuCudaMallocAsyncAllocator : public tsl::Allocator {
+class GpuMallocAsyncAllocator : public tsl::Allocator {
  public:
-  explicit GpuCudaMallocAsyncAllocator(tsl::PlatformDeviceId platform_device_id,
+  explicit GpuMallocAsyncAllocator(tsl::PlatformDeviceId platform_device_id,
                                        size_t pool_size,
                                        bool reserve_memory = false,
                                        bool compute_stats = true);
-  ~GpuCudaMallocAsyncAllocator() override;
+  ~GpuMallocAsyncAllocator() override;
   std::string Name() override { return name_; }
   void* AllocateRaw(size_t alignment,
                     size_t num_bytes) override ABSL_NO_THREAD_SAFETY_ANALYSIS;
@@ -97,7 +102,7 @@ class GpuCudaMallocAsyncAllocator : public tsl::Allocator {
  private:
   void PrintAllocatorStatisticsNoLock() ABSL_EXCLUSIVE_LOCKS_REQUIRED(lock_);
 
-#if TF_CUDA_MALLOC_ASYNC_SUPPORTED
+#if TF_GPU_MALLOC_ASYNC_SUPPORTED
   StreamExecutor* stream_exec_;  // Not owned.
 
   // cudaMallocAsync is stream aware. But TF StreamExecutor use only 1
@@ -105,13 +110,13 @@ class GpuCudaMallocAsyncAllocator : public tsl::Allocator {
   // stream. So we do not need to ask cudaMallocAsync to add extra
   // synchronization.
   // Not owned.
-  CUstream cuda_stream_;
+  GpuStreamHandle gpu_stream_;
 
   // Not owned. The default pool of the associated GPU.
   // If null, then the instanciation failed and the first allocation
   // will return an error.
   CUmemoryPool pool_;
-#endif  // TF_CUDA_MALLOC_ASYNC_SUPPORTED
+#endif  // TF_GPU_MALLOC_ASYNC_SUPPORTED
 
   // Just a counter for the number of time this class is instantiated.
   // Only useful for tests.
@@ -121,8 +126,8 @@ class GpuCudaMallocAsyncAllocator : public tsl::Allocator {
 
   bool reserve_memory_;
 
-  GpuCudaMallocAsyncAllocator(const GpuCudaMallocAsyncAllocator&) = delete;
-  void operator=(const GpuCudaMallocAsyncAllocator&) = delete;
+  GpuMallocAsyncAllocator(const GpuMallocAsyncAllocator&) = delete;
+  void operator=(const GpuMallocAsyncAllocator&) = delete;
 
   // Stats.
   // Structures mutable after construction
@@ -133,4 +138,4 @@ class GpuCudaMallocAsyncAllocator : public tsl::Allocator {
 
 }  // namespace stream_executor
 
-#endif  // XLA_STREAM_EXECUTOR_GPU_GPU_CUDAMALLOCASYNC_ALLOCATOR_H_
+#endif  // XLA_STREAM_EXECUTOR_GPU_GPU_MALLOCASYNC_ALLOCATOR_H_

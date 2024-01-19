@@ -22,8 +22,14 @@ limitations under the License.
 #include <vector>
 
 #ifdef GOOGLE_CUDA
+#define DRIVERVERSION 11030
 #include "third_party/gpus/cuda/include/cuda.h"
 #include "xla/stream_executor/cuda/cuda_activation.h"
+#elif TENSORFLOW_USE_ROCM
+
+#define DRIVERVERSION 50300
+#include "xla/stream_executor/cuda/cuda_activation.h"
+using cuuint64_t = uint64_t;
 #endif  // GOOGLE_CUDA
 
 #include "absl/strings/str_cat.h"
@@ -38,18 +44,7 @@ limitations under the License.
 
 namespace stream_executor {
 
-#if GOOGLE_CUDA
-static std::string GetCudaErrorMessage(CUresult result) {
-  const char* error;
-  cuGetErrorString(result, &error);
-  const char* name;
-  cuGetErrorName(result, &name);
-  return absl::StrCat("CUDA error: ", error ? error : "<unknown>", " (",
-                      name ? name : "Unknown", ")");
-}
-#endif  // GOOGLE_CUDA
-
-void GpuCudaMallocAsyncAllocator::PrintAllocatorStatisticsNoLock() {
+void GpuMallocAsyncAllocator::PrintAllocatorStatisticsNoLock() {
   std::map<size_t, int> size_map_histogram;
   std::vector<std::string> ptr_size_string;
   for (auto p : size_map_) {
@@ -68,42 +63,25 @@ void GpuCudaMallocAsyncAllocator::PrintAllocatorStatisticsNoLock() {
   VLOG(8) << "\nThe sorted list of (ptr,size):";
   VLOG(8) << absl::StrJoin(ptr_size_string, ",");
 
-#if CUDA_VERSION >= 11030
+#if CUDA_VERSION >= DRIVERVERSION || TF_ROCM_VERSION >= DRIVERVERSION
   cuuint64_t mem_reserved_current;
-  if (auto result = cuMemPoolGetAttribute(
-          pool_, CU_MEMPOOL_ATTR_RESERVED_MEM_CURRENT, &mem_reserved_current)) {
-    LOG(ERROR) << "Error while fetching extra cudaMallocAsync pool attribute: "
-               << GetCudaErrorMessage(result);
-  }
+  GpuDriver::GpuMemPoolGetAttribute(pool_, GpuDriver::MemPoolAttribute::kReservedMemCurrent, &mem_reserved_current)
   cuuint64_t mem_used_current;
-  if (auto result = cuMemPoolGetAttribute(
-          pool_, CU_MEMPOOL_ATTR_USED_MEM_CURRENT, &mem_used_current)) {
-    LOG(ERROR) << "Error while fetching extra cudaMallocAsync pool attribute: "
-               << GetCudaErrorMessage(result);
-  }
+  GpuDriver::GpuMemPoolGetAttribute(pool_, GpuDriver::MemPoolAttribute::kUsedMemCurrent, &mem_used_current);
   cuuint64_t mem_reserved_high;
-  if (auto result = cuMemPoolGetAttribute(
-          pool_, CU_MEMPOOL_ATTR_RESERVED_MEM_HIGH, &mem_reserved_high)) {
-    LOG(ERROR) << "Error while fetching extra cudaMallocAsync pool attribute: "
-               << GetCudaErrorMessage(result);
-  }
+  GpuDriver::GpuMemPoolGetAttribute(pool_, GpuDriver::MemPoolAttribute::kReservedMemHigh, &mem_reserved_high);
   cuuint64_t mem_used_high;
-  if (auto result = cuMemPoolGetAttribute(pool_, CU_MEMPOOL_ATTR_USED_MEM_HIGH,
-                                          &mem_used_high)) {
-    LOG(ERROR) << "Error while fetching extra cudaMallocAsync pool attribute: "
-               << GetCudaErrorMessage(result);
-  }
-  LOG(ERROR) << "CU_MEMPOOL_ATTR_RESERVED_MEM_CURRENT: "
-             << mem_reserved_current;
+  GpuDriver::GpuMemPoolGetAttribute(pool_, GpuDriver::MemPoolAttribute::kUsedMemHigh, &mem_used_high);
+  LOG(ERROR) << "CU_MEMPOOL_ATTR_RESERVED_MEM_CURRENT: " << mem_reserved_current;
   LOG(ERROR) << "CU_MEMPOOL_ATTR_USED_MEM_CURRENT: " << mem_used_current;
   LOG(ERROR) << "CU_MEMPOOL_ATTR_RESERVED_MEM_HIGH: " << mem_reserved_high;
   LOG(ERROR) << "CU_MEMPOOL_ATTR_USED_MEM_HIGH: " << mem_used_high;
 #endif
 }
 
-std::atomic<int> GpuCudaMallocAsyncAllocator::number_instantiated_(0);
+std::atomic<int> GpuMallocAsyncAllocator::number_instantiated_(0);
 
-GpuCudaMallocAsyncAllocator::GpuCudaMallocAsyncAllocator(
+GpuMallocAsyncAllocator::GpuMallocAsyncAllocator(
     tsl::PlatformDeviceId platform_device_id, size_t pool_size,
     bool reserve_memory, bool compute_stats)
     : name_(absl::StrCat("gpu_async_", platform_device_id.value())),
@@ -114,16 +92,15 @@ GpuCudaMallocAsyncAllocator::GpuCudaMallocAsyncAllocator(
   // TF_CUDA_MALLOC_ASYNC_SUPPORTED is not defined.
   (void)reserve_memory_;
 
-#if TF_CUDA_MALLOC_ASYNC_SUPPORTED
+#if TF_GPU_MALLOC_ASYNC_SUPPORTED
   stream_exec_ = GPUMachineManager()
                      ->ExecutorForDevice(platform_device_id.value())
                      .value();
   // Initialized here as it only exist if compiled with a recent
   // enough CUDA.
   pool_ = nullptr;
-  cuda_stream_ = nullptr;
-  int driverVersion;
-  cuDriverGetVersion(&driverVersion);
+  gpu_stream_ = nullptr;
+  auto driverVersion = GpuDriver::GetDriverVersion().value();
   VLOG(2) << "DRIVER VERSION: " << driverVersion;
   if (driverVersion < 11020) {
     LOG(FATAL)  // Crash OK.
@@ -135,45 +112,48 @@ GpuCudaMallocAsyncAllocator::GpuCudaMallocAsyncAllocator(
   // WAR an CUDA 11.2 driver bug for multiple-GPU. It currently
   // request that the context on GPU 0 is initialized. Which isn't the
   // case for TF+horovod.
-  if (platform_device_id.value() > 0 && driverVersion < 11030) {
-    CUcontext pctx;  // We loose track of it. But this is fine.
-    if (auto result = cuDevicePrimaryCtxRetain(&pctx, 0))
+  if (platform_device_id.value() > 0 && driverVersion < DRIVERVERSION) {
+    GpuContextHandle pctx;  // We loose track of it. But this is fine.
+    auto result = GpuDriver::DevicePrimaryCtxRetain(static_cast<GpuDeviceHandle>(0))
+	if (result){
       LOG(FATAL)  // Crash OK.
-          << "Failed to retain context: " << GetCudaErrorMessage(result);
+          << "Failed to retain context: " << result.message();
+	} else {
+	  pctx = results.value();
+	}
   }
 
-  cuda::ScopedActivateExecutorContext scoped_activation{stream_exec_};
-
   // Check the CUDA runtime is recent enough.
-  if (auto status2 = cuDriverGetVersion(&driverVersion)) {
+  auto status2 = GpuDriver::GetDriverVersion();
+  if (status2) {
     LOG(FATAL)  // Crash OK.
         << "Error while fetching driver version: "
-        << GetCudaErrorMessage(status2);
+        << status2.message();
   }
 
   // Check that cudaMallocAsync is supported.
-  int cuda_malloc_async_supported;
+  int gpu_malloc_async_supported;
   if (auto status =
-          cuDeviceGetAttribute(&cuda_malloc_async_supported,
+          GpuDriver::DeviceGetAttribute(&gpu_malloc_async_supported,
                                CU_DEVICE_ATTRIBUTE_MEMORY_POOLS_SUPPORTED,
                                platform_device_id.value())) {
     LOG(FATAL)  // Crash OK.
         << "On device: " << platform_device_id.value()
         << " Current driver: " << driverVersion
-        << ". Failed to get device attribute : " << GetCudaErrorMessage(status);
+        << ". Failed to get device attribute : " << status.message();
   }
-  if (!cuda_malloc_async_supported)
+  if (!gpu_malloc_async_supported)
     LOG(FATAL)  // Crash OK.
-        << "TF_GPU_ALLOCATOR=cuda_malloc_async isn't currently supported on "
+        << "TF_GPU_ALLOCATOR=gpu_malloc_async isn't currently supported on "
         << "GPU id " << platform_device_id.value() << ":"
         << " Possible causes: device not supported (request SM60+), driver too "
            "old, "
-        << " OS not supported, CUDA version too old(request CUDA11.2+).";
+        << " OS not supported, CUDA/ROCm version too old(request CUDA11.2+ or ROCm 5.3).";
 
   if (auto status =
-          cuDeviceGetDefaultMemPool(&pool_, platform_device_id.value()))
+          GpuDriver::DeviceGetDefaultMemPool(&pool_, platform_device_id.value()))
     LOG(FATAL) <<  // Crash OK.
-        "Failed to get default CUDA pool: " << GetCudaErrorMessage(status);
+        "Failed to get default CUDA pool: " << status.message();
 
   VLOG(1) << Name() << " CudaMallocAsync initialized on platform: "
           << platform_device_id.value() << " with pool size of: " << pool_size
@@ -338,8 +318,8 @@ void* GpuCudaMallocAsyncAllocator::AllocateRaw(size_t alignment,
   return nullptr;
 #endif  // TF_CUDA_MALLOC_ASYNC_SUPPORTED
 }
-void GpuCudaMallocAsyncAllocator::DeallocateRaw(void* ptr) {
-#if TF_CUDA_MALLOC_ASYNC_SUPPORTED
+void GpuMallocAsyncAllocator::DeallocateRaw(void* ptr) {
+#if TF_GPU_MALLOC_ASYNC_SUPPORTED
   if (ptr == nullptr) return;
   // The lock is only needed when stats are enabled, but it must be around
   // the cuMemFreeAsync call as well to ensure consistency of the stats update.
@@ -347,8 +327,8 @@ void GpuCudaMallocAsyncAllocator::DeallocateRaw(void* ptr) {
   if (stats_) {
     lock.lock();
   }
-  if (auto result = cuMemFreeAsync(reinterpret_cast<const CUdeviceptr&>(ptr),
-                                   cuda_stream_)) {
+  if (auto result = GpuDriver::MemFreeAsync(reinterpret_cast<const CUdeviceptr&>(ptr),
+                                   gpu_stream_)) {
     if (result == CUDA_ERROR_DEINITIALIZED) {
       // It happens with multi-GPU that TF free the GPU allocation after
       // the driver is unloaded. It is safe to ignore this error here.
@@ -376,32 +356,32 @@ void GpuCudaMallocAsyncAllocator::DeallocateRaw(void* ptr) {
   }
 
   VLOG(10) << Name() << " Freed ptr: " << ptr;
-#endif  // TF_CUDA_MALLOC_ASYNC_SUPPORTED
+#endif  // TF_GPU_MALLOC_ASYNC_SUPPORTED
 }
 
-bool GpuCudaMallocAsyncAllocator::TracksAllocationSizes() const {
+bool GpuMallocAsyncAllocator::TracksAllocationSizes() const {
   return static_cast<bool>(stats_);
 }
 
-size_t GpuCudaMallocAsyncAllocator::RequestedSize(const void* ptr) const {
+size_t GpuMallocAsyncAllocator::RequestedSize(const void* ptr) const {
   if (!stats_ || !ptr) return 0;
   tsl::mutex_lock l(lock_);
   return size_map_.at(ptr);
 }
 
-size_t GpuCudaMallocAsyncAllocator::AllocatedSize(const void* ptr) const {
+size_t GpuMallocAsyncAllocator::AllocatedSize(const void* ptr) const {
   if (!stats_ || !ptr) return 0;
   tsl::mutex_lock l(lock_);
   return size_map_.at(ptr);
 }
 
-std::optional<tsl::AllocatorStats> GpuCudaMallocAsyncAllocator::GetStats() {
+std::optional<tsl::AllocatorStats> GpuMallocAsyncAllocator::GetStats() {
   if (!stats_) return std::nullopt;
   tsl::mutex_lock l(lock_);
   return *stats_;
 }
 
-bool GpuCudaMallocAsyncAllocator::ClearStats() {
+bool GpuMallocAsyncAllocator::ClearStats() {
   if (!stats_) return false;
   tsl::mutex_lock l(lock_);
   stats_->num_allocs = 0;
@@ -410,27 +390,27 @@ bool GpuCudaMallocAsyncAllocator::ClearStats() {
   return true;
 }
 
-void GpuCudaMallocAsyncAllocator::SetStreamAndPreallocateMemory(void* stream) {
-#if TF_CUDA_MALLOC_ASYNC_SUPPORTED
-  auto new_cuda_stream = static_cast<CUstream>(stream);
+void GpuMallocAsyncAllocator::SetStreamAndPreallocateMemory(void* stream) {
+#if TF_GPU_MALLOC_ASYNC_SUPPORTED
+  auto new_gpu_stream = static_cast<GpuStreamHandle>(stream);
   // We don't need to re-set the CUDA stream if this is the same stream
-  if (cuda_stream_ != nullptr && new_cuda_stream != cuda_stream_) {
+  if (gpu_stream_ != nullptr && new_gpu_stream != gpu_stream_) {
     LOG(FATAL) <<  // Crash OK.
         "Trying to set the stream twice. This isn't supported. ";
   }
 
   uint64_t pool_size_64 = 0;
-  if (auto status = cuMemPoolGetAttribute(
-          pool_, CU_MEMPOOL_ATTR_RELEASE_THRESHOLD, &pool_size_64)) {
+  if (auto status = GpuDriver::GpuMemPoolGetAttribute(
+          pool_, GpuDriver::MemPoolAttribute::kReleaseThreshold, &pool_size_64)) {
     LOG(FATAL) <<  // Crash OK.
-        "Failed to get CUDA pool attribute: " << GetCudaErrorMessage(status);
+        "Failed to get GPU memory pool attribute: " << status.message();
   }
-  cuda_stream_ = new_cuda_stream;
+  gpu_stream_ = new_gpu_stream;
   int64_t prealloc_size = 0;
-  // TF_CUDA_MALLOC_ASYNC_SUPPORTED_PREALLOC=-1 is a special value that
+  // TF_GPU_MALLOC_ASYNC_SUPPORTED_PREALLOC=-1 is a special value that
   // preallocates the total pool size.
   TF_CHECK_OK(tsl::ReadInt64FromEnvVar(
-      "TF_CUDA_MALLOC_ASYNC_SUPPORTED_PREALLOC", 0, &prealloc_size));
+      "TF_GPU_MALLOC_ASYNC_SUPPORTED_PREALLOC", 0, &prealloc_size));
   if (prealloc_size == -1) {
     prealloc_size = pool_size_64;
   } else if (reserve_memory_) {
@@ -440,7 +420,7 @@ void GpuCudaMallocAsyncAllocator::SetStreamAndPreallocateMemory(void* stream) {
   if (prealloc_size != 0) {
     void* ptr = AllocateRaw(0, prealloc_size);
     DeallocateRaw(ptr);
-    VLOG(2) << Name() << " GpuCudaMallocAsyncAllocator reserved the pool for "
+    VLOG(2) << Name() << " GpuMallocAsyncAllocator reserved the pool for "
             << prealloc_size << " bytes"
             << ". First ptr: " << ptr;
     ClearStats();
