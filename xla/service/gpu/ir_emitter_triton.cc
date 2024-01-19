@@ -130,6 +130,7 @@ limitations under the License.
 #include "triton/Dialect/Triton/IR/Types.h"
 #include "triton/Dialect/Triton/Transforms/Passes.h"
 #include "triton/Dialect/TritonGPU/Transforms/Passes.h"
+#ifndef TENSORFLOW_USE_ROCM
 #include "triton/Dialect/TritonNvidiaGPU/Transforms/Passes.h"
 #include "triton/Target/PTX/TmaMetadata.h"
 
@@ -2032,13 +2033,25 @@ std::string GetLibdevicePath(const HloComputation* hlo_computation,
                              const se::DeviceDescription& device_info) {
 #ifdef TENSORFLOW_USE_ROCM
   std::string libdevice_dir = tsl::RocdlRoot();
+  const se::GpuComputeCapability gpu_version = device_info.gpu_compute_capability();
+/*
+  if(!std::holds_alternative<se::RocmComputeCapability>(gpu_version)) {
+    return InternalError("Incompatible compute capability was specified.");
+  }
+*/
+  auto compute_capability = std::get<se::RocmComputeCapability>(gpu_version);
+  const std::string libdevice_path =
+    amdgpu::LibDevicePath(compute_capability.gcn_arch_name(), libdevice_dir);
+    return libdevice_path;
+/*
   auto compute_capability =
-      std::get_if<se::RocmComputeCapability>(&gpu_version);
+      std::get_if<se::RocmComputeCapability>(gpu_version);
   if (!compute_capability) {
     return xla::InternalError("Incompatible compute capability was specified.");
   }
   const std::string libdevice_path =
     amdgpu::LibDevicePath(compute_capability->gcn_arch_name(), libdevice_dir);
+*/
 #else
   return nvptx::LibDevicePath(hlo_computation->parent()
                                   ->config()
