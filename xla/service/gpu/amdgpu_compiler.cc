@@ -24,6 +24,7 @@ limitations under the License.
 #include "xla/service/algebraic_simplifier.h"
 #include "xla/service/call_inliner.h"
 #include "xla/service/dot_dimension_merger.h"
+#include "xla/service/float_normalization.h"
 #include "xla/service/gpu/conv_algorithm_picker.h"
 #include "xla/service/gpu/cublas_pad_for_gemms.h"
 #include "xla/service/gpu/cublas_padding_requirements.h"
@@ -59,6 +60,36 @@ limitations under the License.
 namespace xla {
 namespace gpu {
 
+namespace {
+
+struct ConvBfloat16Support : public FloatSupport {
+ 
+  explicit ConvBfloat16Support(
+      const se::RocmComputeCapability& rocm)
+      : FloatSupport(BF16),
+      // TODO: MIOpen does not support bf16 convolutions yet
+        is_conv_bf16_supported_(rocm.has_bf16_dtype_support()) {}
+
+  bool SupportsLowPrecisionOperand(const HloInstruction& hlo,
+                                   int64_t operand_index) const override {
+    return (hlo.opcode() != HloOpcode::kConvolution) || is_conv_bf16_supported_;
+  }
+
+  bool SupportsLowPrecisionOutput(const HloInstruction& hlo) const override {
+    return (hlo.opcode() != HloOpcode::kConvolution) || is_conv_bf16_supported_;
+  }
+
+  bool SupportsMixedPrecisions(const HloInstruction& hlo) const override {
+    // Skip all HLOs other than convolutions.
+    return (hlo.opcode() != HloOpcode::kConvolution);
+  }
+
+ private:
+  bool is_conv_bf16_supported_;
+};
+
+}  // namespace
+
 absl::Status AMDGPUCompiler::OptimizeHloConvolutionCanonicalization(
     HloModule* hlo_module, se::GpuComputeCapability gpu_version,
     se::dnn::VersionInfo dnn_version,
@@ -74,8 +105,9 @@ absl::Status AMDGPUCompiler::OptimizeHloConvolutionCanonicalization(
       /*allow_mixed_precision=*/false);
 
   // Convert upsupported bf16 convolutions to f32.
-//!  ConvBfloat16Support conv_bf16_support(dnn_version, cuda_compute_capability);
-//!  pipeline.AddPass<FloatNormalization>(&conv_bf16_support);
+  ConvBfloat16Support conv_bf16_support(
+    std::get<se::RocmComputeCapability>(gpu_version)); 
+  pipeline.AddPass<FloatNormalization>(&conv_bf16_support);
 
   pipeline.AddPass<GpusolverRewriter>();
   pipeline.AddPass<GpuConvRewriter>();
@@ -144,8 +176,7 @@ absl::Status AMDGPUCompiler::OptimizeHloPostLayoutAssignment(
 
   auto rocm_compute_capability = std::get<se::RocmComputeCapability>(
       gpu_target_config.device_description.gpu_compute_capability());
-
-#if 0
+#if 0    
   if (hlo_module->config().debug_options().xla_gpu_enable_cudnn_fmha()) 
   {
     HloPassPipeline mha_fusion_pipeline(
@@ -164,6 +195,7 @@ absl::Status AMDGPUCompiler::OptimizeHloPostLayoutAssignment(
         false);
     if (debug_options.xla_gpu_normalize_layouts()) {
       mha_fusion_pipeline.AddPass<ReshapeDecomposer>();
+      // move_copy_to_users_test.cc
       mha_fusion_pipeline.AddPass<HloPassFix<MoveCopyToUsers>>();
       mha_fusion_pipeline.AddPass<LayoutNormalization>();
     }
@@ -172,6 +204,8 @@ absl::Status AMDGPUCompiler::OptimizeHloPostLayoutAssignment(
     mha_fusion_pipeline.AddPass<HloPassFix<AlgebraicSimplifier>>(
         alg_sim_options);
     mha_fusion_pipeline.AddPass<HloCSE>(/*is_layout_sensitive=*/true);
+
+
     // Rewrite Multi-Headed Attention modules to Fused MHA custom-calls.
     if (stream_exec) {
       mha_fusion_pipeline.AddPass<CudnnFusedMHARewriter>(
@@ -186,10 +220,11 @@ absl::Status AMDGPUCompiler::OptimizeHloPostLayoutAssignment(
     mha_fusion_pipeline.AddPass<HloCSE>(/*is_layout_sensitive=*/true);
     TF_RETURN_IF_ERROR(mha_fusion_pipeline.Run(hlo_module).status());
   }
-  #endif
+#endif
 
-// Rewrite normalization patterns into cuDNN Custom Calls.
-//!  pre_pipeline.AddPass<CudnnNormRewriter>(cuda_compute_capability);
+  // Rewrite normalization patterns into cuDNN Custom Calls.
+  // TODO: check test: xla/service/gpu/cudnn_norm_rewriter_test
+  //pre_pipeline.AddPass<CudnnNormRewriter>(cuda_compute_capability);
   pre_pipeline.AddPass<DotDimensionMerger>();
 
   for (const auto& req : HipblasPaddingRequirements) {
