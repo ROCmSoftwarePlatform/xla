@@ -176,7 +176,7 @@ absl::Status AMDGPUCompiler::OptimizeHloPostLayoutAssignment(
 
   auto rocm_compute_capability = std::get<se::RocmComputeCapability>(
       gpu_target_config.device_description.gpu_compute_capability());
-#if 0    
+
   if (hlo_module->config().debug_options().xla_gpu_enable_cudnn_fmha()) 
   {
     HloPassPipeline mha_fusion_pipeline(
@@ -205,7 +205,7 @@ absl::Status AMDGPUCompiler::OptimizeHloPostLayoutAssignment(
         alg_sim_options);
     mha_fusion_pipeline.AddPass<HloCSE>(/*is_layout_sensitive=*/true);
 
-
+#if 0
     // Rewrite Multi-Headed Attention modules to Fused MHA custom-calls.
     if (stream_exec) {
       mha_fusion_pipeline.AddPass<CudnnFusedMHARewriter>(
@@ -218,9 +218,9 @@ absl::Status AMDGPUCompiler::OptimizeHloPostLayoutAssignment(
     mha_fusion_pipeline.AddPass<CudnnFusedMHATransposeFusion>();
     mha_fusion_pipeline.AddPass<HloDCE>();
     mha_fusion_pipeline.AddPass<HloCSE>(/*is_layout_sensitive=*/true);
+#endif
     TF_RETURN_IF_ERROR(mha_fusion_pipeline.Run(hlo_module).status());
   }
-#endif
 
   // Rewrite normalization patterns into cuDNN Custom Calls.
   // TODO: check test: xla/service/gpu/cudnn_norm_rewriter_test
