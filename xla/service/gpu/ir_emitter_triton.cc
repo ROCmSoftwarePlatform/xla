@@ -128,7 +128,9 @@ limitations under the License.
 #include "triton/Dialect/Triton/IR/Types.h"
 #include "triton/Dialect/Triton/Transforms/Passes.h"
 #include "triton/Dialect/TritonGPU/Transforms/Passes.h"
+#ifndef TENSORFLOW_USE_ROCM
 #include "triton/Dialect/TritonNvidiaGPU/Transforms/Passes.h"
+#endif
 
 namespace xla {
 namespace gpu {
@@ -729,7 +731,7 @@ StatusOr<Value> EmitScope(
 }
 
 void CreateTritonPipeline(mlir::OpPassManager& pm,
-                          const GpuVersion gpu_version, int num_warps,
+                          const se::GpuComputeCapability gpu_version, int num_warps,
                           int num_stages) {
   int ccAsInt = 0;
   if(std::holds_alternative<se::CudaComputeCapability>(gpu_version)) {
@@ -756,9 +758,9 @@ void CreateTritonPipeline(mlir::OpPassManager& pm,
   // Based on make_ttgir() under "# optimize TTGIR" in
   // @triton//:python/triton/compiler/backends/cuda.py
   pm.addPass(mlir::createTritonGPUCoalescePass());
-  pm.addPass(mlir::createTritonNvidiaGPUPlanCTAPass(/*clusterInfo=*/));
-  pm.addPass(mlir::createTritonGPURewriteTensorPointerPass(ccAsInt));
-  pm.addPass(mlir::createTritonNvidiaGPUPlanCTAPass(/*clusterInfo=*/));
+  //pm.addPass(mlir::createTritonNvidiaGPUPlanCTAPass(/*clusterInfo=*/));
+  //pm.addPass(mlir::createTritonGPURewriteTensorPointerPass(ccAsInt));
+  //pm.addPass(mlir::createTritonNvidiaGPUPlanCTAPass(/*clusterInfo=*/));
   pm.addPass(mlir::createTritonGPURemoveLayoutConversionsPass());
   pm.addPass(mlir::createTritonGPUAccelerateMatmulPass(ccAsInt));
   pm.addPass(mlir::createTritonGPURemoveLayoutConversionsPass());
@@ -766,22 +768,22 @@ void CreateTritonPipeline(mlir::OpPassManager& pm,
   pm.addPass(mlir::createCSEPass());
   pm.addPass(mlir::createTritonGPUPipelinePass(num_stages, num_warps, numCTAs,
                                                ccAsInt));
-  pm.addPass(
-      mlir::createTritonNvidiaGPUMaterializeLoadStorePass(num_warps, ccAsInt));
+  //pm.addPass(
+  //    mlir::createTritonNvidiaGPUMaterializeLoadStorePass(num_warps, ccAsInt));
   if (ccAsInt <= 80) {
     pm.addPass(mlir::createTritonGPUPrefetchPass());
   }
   pm.addPass(mlir::createTritonGPUOptimizeDotOperandsPass());
   pm.addPass(mlir::createTritonGPURemoveLayoutConversionsPass());
   pm.addPass(mlir::createTritonGPUDecomposeConversionsPass());
-  pm.addPass(mlir::createTritonNvidiaGPUWSFixupMissingAttrs());
+  //pm.addPass(mlir::createTritonNvidiaGPUWSFixupMissingAttrs());
   pm.addPass(mlir::createTritonGPUReorderInstructionsPass());
   pm.addPass(mlir::createCSEPass());
   pm.addPass(mlir::createSymbolDCEPass());
-  if (ccAsInt >= 90) {
-    pm.addPass(mlir::createTritonNvidiaGPUFenceInsertionPass(ccAsInt));
-  }
-  pm.addPass(mlir::createTritonNvidiaGPUWSFixupMissingAttrs());
+  //if (ccAsInt >= 90) {
+    //pm.addPass(mlir::createTritonNvidiaGPUFenceInsertionPass(ccAsInt));
+  //}
+  //pm.addPass(mlir::createTritonNvidiaGPUWSFixupMissingAttrs());
   pm.addPass(mlir::createTritonGPUOptimizeThreadLocalityPass());
   pm.addPass(mlir::createCanonicalizerPass());
   // Based on translateTritonGPUToLLVMIR() in
@@ -1955,13 +1957,25 @@ std::string GetLibdevicePath(const HloComputation* hlo_computation,
                              const se::DeviceDescription& device_info) {
 #ifdef TENSORFLOW_USE_ROCM
   std::string libdevice_dir = tsl::RocdlRoot();
+  const se::GpuComputeCapability gpu_version = device_info.gpu_compute_capability();
+/*
+  if(!std::holds_alternative<se::RocmComputeCapability>(gpu_version)) {
+    return InternalError("Incompatible compute capability was specified.");
+  }
+*/
+  auto compute_capability = std::get<se::RocmComputeCapability>(gpu_version);
+  const std::string libdevice_path =
+    amdgpu::LibDevicePath(compute_capability.gcn_arch_name(), libdevice_dir);
+    return libdevice_path;
+/*
   auto compute_capability =
-      std::get_if<se::RocmComputeCapability>(&gpu_version);
+      std::get_if<se::RocmComputeCapability>(gpu_version);
   if (!compute_capability) {
     return xla::InternalError("Incompatible compute capability was specified.");
   }
   const std::string libdevice_path =
     amdgpu::LibDevicePath(compute_capability->gcn_arch_name(), libdevice_dir);
+*/
 #else
   return nvptx::LibDevicePath(hlo_computation->parent()
                                   ->config()

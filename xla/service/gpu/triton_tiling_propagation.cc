@@ -1032,7 +1032,8 @@ GetPropagatedDimOrdersAndRequirementsIfProfitablyFusible(
       std::move(std::get<DimOrdersAndReqs>(result_or_error));
   int fusion_level =
       hlo.GetModule()->config().debug_options().xla_gpu_triton_fusion_level();
-  if (!std::get<se::CudaComputeCapability>(gpu_version)
+  if (std::holds_alternative<se::CudaComputeCapability>(gpu_version)
+      && !std::get<se::CudaComputeCapability>(gpu_version)
            .IsAtLeast(se::CudaComputeCapability::AMPERE)) {
     fusion_level = std::min(fusion_level, 1);
   }
