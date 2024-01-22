@@ -748,10 +748,10 @@ FusionDecision CanTritonHandleGEMM(
     return "Non-default precision.";
   }
 
-  auto cuda_compute_capability =
-      std::get_if<se::CudaComputeCapability>(&gpu_version);
-
-  if (!cuda_compute_capability) return "Non CUDA device.";
+  if(!std::holds_alternative<se::CudaComputeCapability>(gpu_version) &&
+     !std::holds_alternative<se::RocmComputeCapability>(gpu_version)) {
+    return "Non CUDA or ROCM device.";
+  }
 
   auto supported_output_type = [&](const PrimitiveType t) {
     switch (t) {
