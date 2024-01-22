@@ -651,7 +651,7 @@ namespace {
 
 #if defined(GOOGLE_CUDA) && CUDA_VERSION >= 11020
 
-StatusOr<std::unique_ptr<se::MultiDeviceAdapter>> CreateCudaAsyncAllocator(
+StatusOr<std::unique_ptr<se::MultiDeviceAdapter>> CreateGpuAsyncAllocator(
     se::Platform* platform,
     const std::map<int, std::unique_ptr<LocalDeviceState>>& addressable_devices,
     double memory_fraction, bool preallocate) {
@@ -683,7 +683,7 @@ StatusOr<std::unique_ptr<se::MultiDeviceAdapter>> CreateCudaAsyncAllocator(
                 << " for CudaAsyncAllocator.";
     }
 
-    auto allocator = std::make_unique<se::GpuCudaMallocAsyncAllocator>(
+    auto allocator = std::make_unique<se::GpuMallocAsyncAllocator>(
         tsl::PlatformDeviceId(device_ordinal), allocator_memory, preallocate);
     allocator->SetStreamAndPreallocateMemory(
         ordinal_and_device.second->compute_stream()
@@ -698,7 +698,7 @@ StatusOr<std::unique_ptr<se::MultiDeviceAdapter>> CreateCudaAsyncAllocator(
 
 #else  // defined(GOOGLE_CUDA) && CUDA_VERSION >= 11020
 
-StatusOr<std::unique_ptr<se::MultiDeviceAdapter>> CreateCudaAsyncAllocator(
+StatusOr<std::unique_ptr<se::MultiDeviceAdapter>> CreateGpuAsyncAllocator(
     se::Platform* platform,
     const std::map<int, std::unique_ptr<LocalDeviceState>>& addressable_devices,
     double memory_fraction, bool preallocate) {
@@ -733,7 +733,7 @@ GetStreamExecutorGpuDeviceAllocator(
   std::unique_ptr<se::DeviceMemoryAllocator> allocator;
   switch (allocator_config.kind) {
     case GpuAllocatorConfig::Kind::kCudaAsync: {
-      auto allocator_or = CreateCudaAsyncAllocator(
+      auto allocator_or = CreateGpuAsyncAllocator(
           platform, addressable_devices, allocator_config.memory_fraction,
           allocator_config.preallocate);
       if (allocator_or.ok()) {
