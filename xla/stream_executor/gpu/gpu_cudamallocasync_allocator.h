@@ -27,11 +27,12 @@ limitations under the License.
 #include "tsl/framework/device_id.h"
 #include "tsl/platform/macros.h"
 #include "tsl/platform/mutex.h"
+#include "xla/stream_executor/gpu/gpu_types.h"
 
 #if GOOGLE_CUDA
-#include "third_party/gpus/cuda/include/cuda.h"
-
 #define TF_CUDA_MALLOC_ASYNC_SUPPORTED CUDA_VERSION >= 11020
+#elif TENSORFLOW_USE_ROCM
+#define TF_CUDA_MALLOC_ASYNC_SUPPORTED TF_ROCM_VERSION >= 50300
 #endif  // GOOGLE_CUDA
 
 
@@ -105,12 +106,12 @@ class GpuCudaMallocAsyncAllocator : public tsl::Allocator {
   // stream. So we do not need to ask cudaMallocAsync to add extra
   // synchronization.
   // Not owned.
-  CUstream cuda_stream_;
+  GpuStreamHandle cuda_stream_;
 
   // Not owned. The default pool of the associated GPU.
   // If null, then the instanciation failed and the first allocation
   // will return an error.
-  CUmemoryPool pool_;
+  GpuMemoryPoolHandle pool_;
 #endif  // TF_CUDA_MALLOC_ASYNC_SUPPORTED
 
   // Just a counter for the number of time this class is instantiated.

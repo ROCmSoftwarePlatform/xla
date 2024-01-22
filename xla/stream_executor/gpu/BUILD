@@ -555,7 +555,9 @@ tsl_gpu_library(
     srcs = [
         "gpu_cudamallocasync_allocator.cc",
     ],
-    hdrs = ["gpu_cudamallocasync_allocator.h"],
+    hdrs = ["gpu_cudamallocasync_allocator.h",
+	        "gpu_types.h",
+	       ], 
     cuda_deps = [
         "//xla/stream_executor/cuda:cuda_activation",
         "//xla/stream_executor/cuda:cuda_executor",
@@ -572,7 +574,8 @@ tsl_gpu_library(
         "@tsl//tsl/platform:macros",
         "@tsl//tsl/platform:mutex",
         "@tsl//tsl/util:env_var",
-    ],
+    ] + if_rocm_is_configured([
+		         "//xla/stream_executor/rocm:rocm_activation"]),
 )
 
 cc_library(
