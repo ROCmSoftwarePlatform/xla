@@ -128,7 +128,9 @@ limitations under the License.
 #include "triton/Dialect/Triton/IR/Types.h"
 #include "triton/Dialect/Triton/Transforms/Passes.h"
 #include "triton/Dialect/TritonGPU/Transforms/Passes.h"
+#ifndef TENSORFLOW_USE_ROCM
 #include "triton/Dialect/TritonNvidiaGPU/Transforms/Passes.h"
+#endif
 
 namespace xla {
 namespace gpu {
@@ -729,7 +731,7 @@ StatusOr<Value> EmitScope(
 }
 
 void CreateTritonPipeline(mlir::OpPassManager& pm,
-                          const GpuVersion gpu_version, int num_warps,
+                          const se::GpuComputeCapability gpu_version, int num_warps,
                           int num_stages) {
   int ccAsInt = 0;
   if(std::holds_alternative<se::CudaComputeCapability>(gpu_version)) {
