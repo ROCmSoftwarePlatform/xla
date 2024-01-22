@@ -799,7 +799,11 @@ void CreateTritonPipeline(mlir::OpPassManager& pm,
   pm.addPass(mlir::createConvertSCFToCFPass());
   pm.addPass(mlir::createConvertIndexToLLVMPass());
   pm.addPass(mt::createConvertTritonGPUToLLVMPass(ccAsInt,
+#ifdef TENSORFLOW_USE_ROCM
+                                                  /*target=*/mt::ROCDL,
+#else
                                                   /*target=*/mt::Default,
+#endif
                                                   /*tmaMetadata=*/nullptr));
 #ifndef TENSORFLOW_USE_ROCM
   pm.addPass(mt::createConvertNVGPUToLLVMPass());
