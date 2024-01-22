@@ -25,10 +25,18 @@ limitations under the License.
 #define DRIVERVERSION 11030
 #include "third_party/gpus/cuda/include/cuda.h"
 #include "xla/stream_executor/cuda/cuda_activation.h"
+#define GPU_DEVICE_ATTRIBUTE_MEMORY_POOLS_SUPPORTED CU_DEVICE_ATTRIBUTE_MEMORY_POOLS_SUPPORTED
+#define GPU_MEM_ACCESS_FLAGS_PROT_READWRITE CU_MEM_ACCESS_FLAGS_PROT_READWRITE
+#define GPU_MEM_LOCATION_TYPE_DEVICE CU_MEM_LOCATION_TYPE_DEVICE
+#define GPU_ERROR_DEINITIALIZED CUDA_ERROR_DEINITIALIZED
 #elif TENSORFLOW_USE_ROCM
 
 #define DRIVERVERSION 50300
 #include "xla/stream_executor/cuda/cuda_activation.h"
+#define GPU_DEVICE_ATTRIBUTE_MEMORY_POOLS_SUPPORTED hipDeviceAttributeMemoryPoolsSupported
+#define GPU_MEM_ACCESS_FLAGS_PROT_READWRITE hipMemAccessFlagsProtReadWrite
+#define GPU_MEM_LOCATION_TYPE_DEVICE hipMemLocationTypeDevice
+#define GPU_ERROR_DEINITIALIZED hipErrorDeinitialized
 using cuuint64_t = uint64_t;
 #endif  // GOOGLE_CUDA
 
@@ -65,13 +73,17 @@ void GpuMallocAsyncAllocator::PrintAllocatorStatisticsNoLock() {
 
 #if CUDA_VERSION >= DRIVERVERSION || TF_ROCM_VERSION >= DRIVERVERSION
   cuuint64_t mem_reserved_current;
-  GpuDriver::GpuMemPoolGetAttribute(pool_, GpuDriver::MemPoolAttribute::kReservedMemCurrent, &mem_reserved_current)
+  auto result = GpuDriver::GpuMemPoolGetAttribute(pool_, GpuDriver::MemPoolAttribute::kReservedMemCurrent, &mem_reserved_current);
+  if (!result.ok()) LOG(ERROR)<< result.message(); 
   cuuint64_t mem_used_current;
   GpuDriver::GpuMemPoolGetAttribute(pool_, GpuDriver::MemPoolAttribute::kUsedMemCurrent, &mem_used_current);
+  if (!result.ok()) LOG(ERROR)<< result.message(); 
   cuuint64_t mem_reserved_high;
   GpuDriver::GpuMemPoolGetAttribute(pool_, GpuDriver::MemPoolAttribute::kReservedMemHigh, &mem_reserved_high);
+  if (!result.ok()) LOG(ERROR)<< result.message(); 
   cuuint64_t mem_used_high;
   GpuDriver::GpuMemPoolGetAttribute(pool_, GpuDriver::MemPoolAttribute::kUsedMemHigh, &mem_used_high);
+  if (!result.ok()) LOG(ERROR)<< result.message(); 
   LOG(ERROR) << "CU_MEMPOOL_ATTR_RESERVED_MEM_CURRENT: " << mem_reserved_current;
   LOG(ERROR) << "CU_MEMPOOL_ATTR_USED_MEM_CURRENT: " << mem_used_current;
   LOG(ERROR) << "CU_MEMPOOL_ATTR_RESERVED_MEM_HIGH: " << mem_reserved_high;
@@ -115,7 +127,7 @@ GpuMallocAsyncAllocator::GpuMallocAsyncAllocator(
   if (platform_device_id.value() > 0 && driverVersion < DRIVERVERSION) {
     GpuContextHandle pctx;  // We loose track of it. But this is fine.
     auto result = GpuDriver::DevicePrimaryCtxRetain(static_cast<GpuDeviceHandle>(0))
-	if (result){
+	if (!result.ok()){
       LOG(FATAL)  // Crash OK.
           << "Failed to retain context: " << result.message();
 	} else {
@@ -123,24 +135,27 @@ GpuMallocAsyncAllocator::GpuMallocAsyncAllocator(
 	}
   }
 
+  auto ctx = stream_exec_.get_context();
   // Check the CUDA runtime is recent enough.
   auto status2 = GpuDriver::GetDriverVersion();
-  if (status2) {
+  if (!status2.ok()) {
     LOG(FATAL)  // Crash OK.
         << "Error while fetching driver version: "
         << status2.message();
   }
 
   // Check that cudaMallocAsync is supported.
-  int gpu_malloc_async_supported;
+  int gpu_malloc_async_supported = 1;
   if (auto status =
-          GpuDriver::DeviceGetAttribute(&gpu_malloc_async_supported,
-                               CU_DEVICE_ATTRIBUTE_MEMORY_POOLS_SUPPORTED,
+          GpuDriver::GetDeviceAttribute(GPU_DEVICE_ATTRIBUTE_MEMORY_POOLS_SUPPORTED,
                                platform_device_id.value())) {
-    LOG(FATAL)  // Crash OK.
-        << "On device: " << platform_device_id.value()
-        << " Current driver: " << driverVersion
-        << ". Failed to get device attribute : " << status.message();
+	if (!status.ok()){
+      LOG(FATAL)  // Crash OK.
+          << "On device: " << platform_device_id.value()
+          << " Current driver: " << driverVersion
+          << ". Failed to get device attribute : " << status.message();
+	}
+	gpu_malloc_async_supported = status.value();
   }
   if (!gpu_malloc_async_supported)
     LOG(FATAL)  // Crash OK.
@@ -151,7 +166,7 @@ GpuMallocAsyncAllocator::GpuMallocAsyncAllocator(
         << " OS not supported, CUDA/ROCm version too old(request CUDA11.2+ or ROCm 5.3).";
 
   if (auto status =
-          GpuDriver::DeviceGetDefaultMemPool(&pool_, platform_device_id.value()))
+          GpuDriver::DeviceGetDefaultMemPool(ctx, &pool_, platform_device_id.value()))
     LOG(FATAL) <<  // Crash OK.
         "Failed to get default CUDA pool: " << status.message();
 
@@ -159,10 +174,10 @@ GpuMallocAsyncAllocator::GpuMallocAsyncAllocator(
           << platform_device_id.value() << " with pool size of: " << pool_size
           << " this ptr: " << this;
   uint64_t pool_size_64 = pool_size;
-  if (auto status = cuMemPoolSetAttribute(
-          pool_, CU_MEMPOOL_ATTR_RELEASE_THRESHOLD, &pool_size_64))
+  if (auto status = GpuDriver::GpuMemPoolSetAttribute(ctx,
+          pool_, GpuDriver::MemPoolAttribute::kReleaseThreshold, &pool_size_64))
     LOG(FATAL) <<  // Crash OK.
-        "Failed to set CUDA pool attribute: " << GetCudaErrorMessage(status);
+        "Failed to set CUDA pool attribute: " << status.message();
 
   if (compute_stats) {
     stats_ = std::make_unique<tsl::AllocatorStats>();
@@ -176,48 +191,48 @@ GpuMallocAsyncAllocator::GpuMallocAsyncAllocator(
                                       /*default_val=*/false, &deterministic));
   if (deterministic) {
     int disable = 0;
-    if (auto status = cuMemPoolSetAttribute(
-            pool_, CU_MEMPOOL_ATTR_REUSE_ALLOW_OPPORTUNISTIC, &disable)) {
+    if (auto status = GpuDriver::GpuMemPoolSetAttribute(ctx,
+            pool_, GpuDriver::MemPoolAttribute::kReuseAllowOpportunistic, &disable)) {
       LOG(FATAL) <<  // Crash OK.
-          "Failed to set CUDA pool attribute: " << GetCudaErrorMessage(status);
+          "Failed to set CUDA pool attribute: " << status.message();
     }
-    if (auto status = cuMemPoolSetAttribute(
-            pool_, CU_MEMPOOL_ATTR_REUSE_ALLOW_INTERNAL_DEPENDENCIES,
+    if (auto status = GpuDriver::GpuMemPoolSetAttribute(ctx,
+            pool_, GpuDriver::MemPoolAttribute::kReuseAllowInternalDependencies,
             &disable)) {
       LOG(FATAL) <<  // Crash OK.
-          "Failed to set CUDA pool attribute: " << GetCudaErrorMessage(status);
+          "Failed to set CUDA pool attribute: " << status.message();
     }
   }
 
   // Set read/write access to all GPUs.
-  static auto* all_pools_ = new std::vector<CUmemoryPool*>();
+  static auto* all_pools_ = new std::vector<GpuMemoryPoolHandle*>();
   static auto* all_ids_ = new std::vector<tsl::PlatformDeviceId>();
   DCHECK(all_pools_->size() == all_ids_->size());
   for (int i = 0; i < all_pools_->size(); ++i) {
     // Set the current pool access to the previous GPUs.
-    CUmemAccessDesc map;
-    map.flags = CU_MEM_ACCESS_FLAGS_PROT_READWRITE;
+	gpu::GpuMemAccessDesc map;
+    map.flags = GPU_MEM_ACCESS_FLAGS_PROT_READWRITE;
     map.location.id = (*all_ids_)[i].value();
 
-    map.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
+    map.location.type = GPU_MEM_LOCATION_TYPE_DEVICE;
     VLOG(2) << "Setting access of the current pool to "
             << " location id: " << map.location.id;
-    int canAccessPeer;
-    if (auto status = cuDeviceCanAccessPeer(
-            &canAccessPeer, platform_device_id.value(), map.location.id)) {
+    int canAccessPeer = 1;
+    if (auto status = GpuDriver::CanEnablePeerAccess(platform_device_id.value(), map.location.id)) {
       pool_ = nullptr;
       LOG(FATAL)  // Crash OK.
           << "cuDeviceCanAccessPeer failed to know if GPU id "
           << map.location.id << " can access GPU id "
-          << platform_device_id.value() << ": " << GetCudaErrorMessage(status);
+          << platform_device_id.value();
+	  canAccessPeer = 0;
     }
     if (canAccessPeer == 1) {
-      if (auto status = cuMemPoolSetAccess(pool_, &map, 1)) {
+      if (auto status = GpuDriver::MemPoolSetAccess(pool_, &map, 1)) {
         pool_ = nullptr;
         LOG(FATAL)  // Crash OK.
             << "Error when setting access to the pool id: " << i
             << " location id: " << map.location.id
-            << " error: " << GetCudaErrorMessage(status);
+            << " error: " << status.message();
       }
     }
 
@@ -226,19 +241,19 @@ GpuMallocAsyncAllocator::GpuMallocAsyncAllocator(
 
     VLOG(2) << "Set access to the pool id: " << i
             << " location id: " << map.location.id;
-    if (auto status = cuDeviceCanAccessPeer(&canAccessPeer, i,
+    if (auto status = GpuDriver::CanEnablePeerAccess(&canAccessPeer, i,
                                             platform_device_id.value())) {
       pool_ = nullptr;
       LOG(FATAL)  // Crash OK.
-          << "cuDeviceCanAccessPeer failed: " << GetCudaErrorMessage(status);
+          << "cuDeviceCanAccessPeer failed";
     }
     if (canAccessPeer == 1) {
-      if (auto status = cuMemPoolSetAccess(*(*all_pools_)[i], &map, 1)) {
+      if (auto status = GpuDriver::MemPoolSetAccess(*(*all_pools_)[i], &map, 1)) {
         pool_ = nullptr;
         LOG(FATAL)  // Crash OK.
             << "Error when setting access to the pool id: " << i
             << " location id: " << map.location.id
-            << " error: " << GetCudaErrorMessage(status);
+            << " error: " << status.message();
       }
     }
   }
@@ -251,12 +266,12 @@ GpuMallocAsyncAllocator::GpuMallocAsyncAllocator(
 #endif  // TF_CUDA_MALLOC_ASYNC_SUPPORTED
 }
 
-GpuCudaMallocAsyncAllocator::~GpuCudaMallocAsyncAllocator() {}
+GpuMallocAsyncAllocator::~GpuMallocAsyncAllocator() {}
 
-void* GpuCudaMallocAsyncAllocator::AllocateRaw(size_t alignment,
+void* GpuMallocAsyncAllocator::AllocateRaw(size_t alignment,
                                                size_t num_bytes) {
 #if TF_CUDA_MALLOC_ASYNC_SUPPORTED
-  CHECK(cuda_stream_ != nullptr)
+  CHECK(gpu_stream_ != nullptr)
       << "A stream must be added to the GpuCudaMallocAsync allocator";
   if (pool_ == nullptr) {
     LOG(FATAL)  // Crash OK.
@@ -270,21 +285,22 @@ void* GpuCudaMallocAsyncAllocator::AllocateRaw(size_t alignment,
   if (stats_) {
     lock.lock();
   }
-  cuda::ScopedActivateExecutorContext scoped_activation{stream_exec_};
+  //cuda::ScopedActivateExecutorContext scoped_activation{stream_exec_};
+  auto ctx = stream_exec_.get_context();
   void* ptr = nullptr;
-  auto result = cuMemAllocFromPoolAsync(reinterpret_cast<CUdeviceptr*>(&ptr),
+  auto result = GpuDriver::DeviceAllocateAsync(ctx,reinterpret_cast<GpuDevicePtr*>(&ptr),
                                         num_bytes, pool_, cuda_stream_);
   if (result == CUDA_ERROR_OUT_OF_MEMORY) {
     // Doing a stream synchronization give the driver more flexibility
     // for blocks coalescing and doing memory remapping. So it can
     // solve some OOM cases when memory is tight.
-    cuStreamSynchronize(cuda_stream_);
-    result = cuMemAllocFromPoolAsync(reinterpret_cast<CUdeviceptr*>(&ptr),
+	GpuDriver::SynchronizeStream(ctx, gpu_stream_);
+    result = GpuDriver::DeviceAllocateAsync(ctx, reinterpret_cast<CUdeviceptr*>(&ptr),
                                      num_bytes, pool_, cuda_stream_);
   }
   if (result) {
     size_t free, total;
-    cuMemGetInfo(&free, &total);
+	GpuDriver::GetDeviceMemoryInfo(ctx, &free, &total);
     LOG(ERROR) << Name() << " cuMemAllocAsync failed to allocate " << num_bytes
                << " bytes: " << GetCudaErrorMessage(result)
                << "\n Reported by CUDA: Free memory/Total memory: " << free

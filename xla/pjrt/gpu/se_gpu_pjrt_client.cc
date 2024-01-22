@@ -649,7 +649,7 @@ StatusOr<std::unique_ptr<PjRtLoadedExecutable>> StreamExecutorGpuClient::Load(
 
 namespace {
 
-#if defined(GOOGLE_CUDA) && CUDA_VERSION >= 11020
+#if (defined(GOOGLE_CUDA) && CUDA_VERSION >= 11020) || (defined(TENSORFLOW_USE_ROCM) || TF_ROCM_VERSION >= 50300)
 
 StatusOr<std::unique_ptr<se::MultiDeviceAdapter>> CreateGpuAsyncAllocator(
     se::Platform* platform,
