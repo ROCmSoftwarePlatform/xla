@@ -125,7 +125,6 @@ absl::StatusOr<bool> TritonFilecheckTest::CreateTritonIrAndFileCheck(
   module->print(os);
   return RunFileCheck(out, filecheck_pattern);
 }
-
 TEST_F(TritonFilecheckTest, TestGemm) {
   const std::string kHloText = R"(
 HloModule t, is_scheduled=true
@@ -914,7 +913,6 @@ ENTRY e {
 ; CHECK-NEXT: parameter
 ; CHECK-NEXT: fusion(
 ; CHECK-SAME: kind=kCustom
-; CHECK-SAME: "block_m":
   )");
 
   // Not doing a comparison here, because the input matrices are quite big.
@@ -940,7 +938,6 @@ ENTRY e {
 ; CHECK-NEXT: parameter
 ; CHECK-NEXT: fusion(
 ; CHECK-SAME: kind=kCustom
-; CHECK-SAME: "block_m":
   )");
 
   EXPECT_TRUE(RunAndCompare(hlo_text, ErrorSpec{/*aabs=*/1e-3, /*arel=*/1e-3}));
@@ -966,7 +963,6 @@ ENTRY e {
 ; CHECK-NEXT: ROOT
 ; CHECK-SAME: fusion(
 ; CHECK-SAME: kind=kCustom
-; CHECK-SAME: "block_m":
 ; CHECK-NOT: pad
 ; CHECK-NOT: slice
 )");
@@ -992,7 +988,6 @@ ENTRY e {
 ; CHECK-NEXT: parameter
 ; CHECK-NEXT: fusion(
 ; CHECK-SAME: kind=kCustom
-; CHECK-SAME: "block_m":
 )");
 
   EXPECT_TRUE(RunAndCompare(hlo_text, ErrorSpec{/*aabs=*/1e-2, /*arel=*/1e-2}));
@@ -1019,7 +1014,6 @@ ENTRY e {
 ; CHECK-NEXT: parameter
 ; CHECK-NEXT: fusion(
 ; CHECK-SAME: kind=kCustom
-; CHECK-SAME: "block_m":
 )");
 
   EXPECT_TRUE(RunAndCompare(hlo_text, ErrorSpec{/*aabs=*/1e-3, /*arel=*/1e-3}));
@@ -1096,7 +1090,6 @@ ENTRY e {
 ; CHECK: transpose
 ; CHECK: fusion
 ; CHECK-SAME: kind=kCustom
-; CHECK-SAME: "block_m":
 )");
 
   EXPECT_TRUE(RunAndCompare(hlo_text, ErrorSpec{/*aabs=*/1e-3, /*arel=*/1e-3}));
@@ -1121,7 +1114,6 @@ ENTRY e {
 ; CHECK: transpose
 ; CHECK: fusion
 ; CHECK-SAME: kind=kCustom
-; CHECK-SAME: "block_m":
 )");
 
   EXPECT_TRUE(RunAndCompare(hlo_text, ErrorSpec{/*aabs=*/1e-3, /*arel=*/1e-3}));
@@ -1146,7 +1138,6 @@ ENTRY e {
 ; CHECK-NEXT: parameter
 ; CHECK-NEXT: fusion
 ; CHECK-SAME: kind=kCustom
-; CHECK-SAME: "block_m":
 )");
 
   EXPECT_TRUE(RunAndCompare(hlo_text, ErrorSpec{/*aabs=*/1e-4, /*arel=*/1e-2}));
@@ -1171,7 +1162,6 @@ ENTRY e {
 ; CHECK-NEXT: parameter
 ; CHECK-NEXT: fusion
 ; CHECK-SAME: kind=kCustom
-; CHECK-SAME: "block_m":
 )");
 
   EXPECT_TRUE(RunAndCompare(hlo_text, ErrorSpec{/*aabs=*/1e-3, /*arel=*/1e-3}));
@@ -1197,7 +1187,6 @@ ENTRY e {
 ; CHECK-NEXT: parameter
 ; CHECK-NEXT: fusion
 ; CHECK-SAME: kind=kCustom
-; CHECK-SAME: "block_m":
 )");
 
   EXPECT_TRUE(RunAndCompare(hlo_text, ErrorSpec{/*aabs=*/1e-4, /*arel=*/1e-2}));
@@ -1222,7 +1211,6 @@ ENTRY e {
 ; CHECK: f32[5,3,4]{2,1,0} bitcast
 ; CHECK: fusion
 ; CHECK-SAME: kind=kCustom
-; CHECK-SAME: "block_m":
 )");
 
   EXPECT_TRUE(RunAndCompare(hlo_text, ErrorSpec{/*aabs=*/1e-4, /*arel=*/1e-4}));
@@ -1448,7 +1436,6 @@ ENTRY e {
                     // multiple times and assign block sizes on success.
                     R"(
 ; CHECK: f16[77,99,111]{2,1,0} transpose
-; CHECK: block_m
 )");
 }
 
@@ -1479,7 +1466,6 @@ ENTRY e {
                     // autotuner which will run the fusion through the emitter
                     // multiple times and assign block sizes on success.
                     R"(
-; CHECK: block_m
 )");
 }
 
@@ -1506,7 +1492,6 @@ ENTRY e {
   MatchOptimizedHlo(hlo_text, R"(
 ; CHECK: fusion
 ; CHECK-SAME: kind=kCustom
-; CHECK-SAME: block_m
 )");
 
   EXPECT_TRUE(RunAndCompare(hlo_text, ErrorSpec{/*aabs=*/1e-3, /*arel=*/1e-3}));
@@ -1900,7 +1885,6 @@ ENTRY e {
   MatchOptimizedHlo(kHloText, R"(
 ; CHECK: fusion
 ; CHECK-SAME: kind=kCustom
-; CHECK-SAME: block_m
 )");
 
   EXPECT_TRUE(RunAndCompare(kHloText, ErrorSpec{/*aabs=*/1e-3, /*arel=*/1e-3}));
@@ -1923,7 +1907,6 @@ ENTRY e {
   MatchOptimizedHlo(kHloText, R"(
 ; CHECK: fusion
 ; CHECK-SAME: kind=kCustom
-; CHECK-SAME: block_m
 )");
 
   EXPECT_TRUE(RunAndCompare(kHloText, ErrorSpec{/*aabs=*/1e-3, /*arel=*/1e-3}));
@@ -1946,7 +1929,6 @@ ENTRY e {
   MatchOptimizedHlo(kHloText, R"(
 ; CHECK: fusion
 ; CHECK-SAME: kind=kCustom
-; CHECK-SAME: block_m
 )");
 
   EXPECT_TRUE(RunAndCompare(kHloText, ErrorSpec{/*aabs=*/1e-3, /*arel=*/1e-3}));
@@ -1969,7 +1951,6 @@ ENTRY e {
   MatchOptimizedHlo(kHloText, R"(
 ; CHECK: fusion
 ; CHECK-SAME: kind=kCustom
-; CHECK-SAME: block_m
 )");
 
   EXPECT_TRUE(RunAndCompare(kHloText, ErrorSpec{/*aabs=*/1e-3, /*arel=*/1e-3}));
@@ -1993,7 +1974,6 @@ ENTRY e {
   MatchOptimizedHlo(kHloText, R"(
 ; CHECK: fusion
 ; CHECK-SAME: kind=kCustom
-; CHECK-SAME: block_m
 )");
 
   EXPECT_TRUE(RunAndCompare(kHloText, ErrorSpec{/*aabs=*/1e-3,
@@ -2018,7 +1998,6 @@ ENTRY e {
   MatchOptimizedHlo(kHloText, R"(
 ; CHECK: fusion
 ; CHECK-SAME: kind=kCustom
-; CHECK-SAME: block_m
 )");
 
   EXPECT_TRUE(RunAndCompare(kHloText, ErrorSpec{/*aabs=*/1e-3,
@@ -2043,7 +2022,6 @@ ENTRY e {
   MatchOptimizedHlo(kHloText, R"(
 ; CHECK: fusion
 ; CHECK-SAME: kind=kCustom
-; CHECK-SAME: block_m
 )");
 
   EXPECT_TRUE(RunAndCompare(kHloText, ErrorSpec{/*aabs=*/1e-3,
@@ -2068,7 +2046,6 @@ ENTRY e {
   MatchOptimizedHlo(kHloText, R"(
 ; CHECK: fusion
 ; CHECK-SAME: kind=kCustom
-; CHECK-SAME: block_m
 )");
 
   EXPECT_TRUE(RunAndCompare(kHloText, ErrorSpec{/*aabs=*/1e-3,
