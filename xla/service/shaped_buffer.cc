@@ -35,6 +35,7 @@ ShapedBuffer::ShapedBuffer(Shape on_device_shape, int device_ordinal)
     : on_device_shape_(std::move(on_device_shape)),
       device_ordinal_(device_ordinal),
       buffers_(&on_device_shape_) {
+  VLOG(-1) << "within init constructor...";
   on_host_shape_ = ShapeUtil::DeviceShapeToHostShape(on_device_shape_);
 }
 

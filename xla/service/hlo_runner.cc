@@ -380,6 +380,7 @@ StatusOr<std::vector<Literal>> HloRunner::ExecuteReplicatedImpl(
     std::function<const Literal*(int64_t, int64_t)> argument_provider,
     const ReplicatedExecuteOptions& options,
     DeviceAssignment* device_assignment) {
+  VLOG(-1) << "within ExecuteReplicatedImpl()...";
   std::vector<std::unique_ptr<se::Stream>> streams;
   std::vector<ServiceExecutableRunOptions> service_run_options;
   int64_t num_partitions = device_assignment->computation_count();
@@ -396,7 +397,7 @@ StatusOr<std::vector<Literal>> HloRunner::ExecuteReplicatedImpl(
     return total;
   }();
   argument_buffers.reserve(total_argument_count);
-
+  VLOG(-1) << "total_argument_count: " << total_argument_count;
   // Plus one so we can safely get &argument_buffer_ptrs[0] in case there are
   // no arguments.
   std::vector<const ShapedBuffer*> argument_buffer_ptrs(total_argument_count +
@@ -404,6 +405,7 @@ StatusOr<std::vector<Literal>> HloRunner::ExecuteReplicatedImpl(
   std::vector<absl::Span<const ShapedBuffer* const>> argument_buffer_slices;
   int64_t index = 0;
   RunId run_id;
+  VLOG(-1) << "start to num_replicas loop...";
   for (int64_t i = 0; i < options.num_replicas; ++i) {
     int64_t device =
         (*device_assignment)(i / num_partitions, i % num_partitions);
@@ -415,6 +417,7 @@ StatusOr<std::vector<Literal>> HloRunner::ExecuteReplicatedImpl(
         device, streams.back().get(), device_assignment, run_id));
 
     // Copy arguments to device.
+    VLOG(-1) << "start to Copy arguments to device: " << device;
     const int64_t argument_count = argument_count_provider(i);
     for (int64_t arg_index = 0; arg_index < argument_count; arg_index++) {
       const Literal* const argument = argument_provider(i, arg_index);
@@ -427,12 +430,14 @@ StatusOr<std::vector<Literal>> HloRunner::ExecuteReplicatedImpl(
       TF_RETURN_IF_ERROR(backend().transfer_manager()->TransferLiteralToDevice(
           streams.back().get(), *argument, argument_buffer));
       argument_buffers.push_back(std::move(argument_buffer));
-      argument_buffer_ptrs[index++] = &argument_buffers.back();
+      argument_buffer_ptrs[index] = &argument_buffers.back();
+      index += 1;
     }
+    VLOG(-1) << "argument_count: " << argument_count << " index: " << index;
     argument_buffer_slices.emplace_back(
         &argument_buffer_ptrs[index - argument_count], argument_count);
   }
-
+  VLOG(-1) << "num_replicas loop is complete...";
   std::unique_ptr<tsl::thread::ThreadPool> pool;
   TF_RET_CHECK(options.infeed_values.empty() ||
                options.infeed_values.size() == options.num_replicas);
@@ -491,11 +496,11 @@ StatusOr<std::vector<Literal>> HloRunner::ExecuteReplicatedImpl(
     }
   }
 
-  VLOG(1) << "Replicated execution started";
+  VLOG(-1) << "Replicated execution started";
   TF_ASSIGN_OR_RETURN(
       std::vector<ScopedShapedBuffer> results,
       execution_helper(service_run_options, argument_buffer_slices));
-  VLOG(1) << "Replicated execution terminated";
+  VLOG(-1) << "Replicated execution terminated";
 
   std::vector<Literal> exec_results;
   exec_results.reserve(options.num_replicas);
@@ -506,12 +511,14 @@ StatusOr<std::vector<Literal>> HloRunner::ExecuteReplicatedImpl(
                             streams[i].get(), results[i]));
     exec_results.push_back(std::move(literal));
   }
+  VLOG(-1) << "ExecuteReplicatedImpl() is complete...";
   return std::move(exec_results);
 }
 
 StatusOr<std::vector<Literal>> HloRunner::ExecuteReplicated(
     Executable* executable, const ReplicatedExecuteOptions& options,
     DeviceAssignment* device_assignment, ExecutionProfile* profile) {
+  VLOG(-1) << "before ExecuteReplicatedImpl()...";
   return ExecuteReplicatedImpl(
       [&](const std::vector<ServiceExecutableRunOptions>& service_run_options,
           const std::vector<absl::Span<const ShapedBuffer* const>>&
@@ -527,7 +534,7 @@ StatusOr<std::vector<Literal>> HloRunner::ExecuteReplicated(
           std::vector<StatusOr<ScopedShapedBuffer>> thread_results(
               options.num_replicas);
           {
-            VLOG(1) << "Creating thread pool for " << options.num_replicas
+            VLOG(-1) << "Creating thread pool for " << options.num_replicas
                     << " replicas";
             tsl::thread::ThreadPool pool(tsl::Env::Default(), "replicas",
                                          options.num_replicas);

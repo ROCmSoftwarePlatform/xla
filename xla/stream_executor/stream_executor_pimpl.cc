@@ -114,6 +114,7 @@ StreamExecutor::platform_specific_handle() const {
 absl::Status StreamExecutor::Init(DeviceOptions device_options) {
   TF_RETURN_IF_ERROR(
       implementation_->Init(device_ordinal_, std::move(device_options)));
+  VLOG(-1) << "StreamExecutor::Init()...device_ordinal_ = " << device_ordinal_;
   return absl::OkStatus();
 }
 

@@ -2046,7 +2046,9 @@ ShapeUtil::GetNormalizedLogicalTransposeShape(
 }
 
 Shape ShapeUtil::DeviceShapeToHostShape(Shape s) {
+  VLOG(-1) << "within DeviceShapeToHostShape...";
   ForEachMutableSubshape(&s, [](Shape* subshape, const ShapeIndex& index) {
+    VLOG(-1) << "within ForEachMutableSubshape...";
     if (subshape->IsArray() && subshape->has_layout()) {
       subshape->mutable_layout()->clear_tiles();
       subshape->mutable_layout()->set_memory_space(Layout::kDefaultMemorySpace);
@@ -2055,6 +2057,7 @@ Shape ShapeUtil::DeviceShapeToHostShape(Shape s) {
       subshape->mutable_layout()->set_dynamic_shape_metadata_prefix_bytes(0);
     }
   });
+  VLOG(-1) << "finished DeviceShapeToHostShape()...";
   return s;
 }
 

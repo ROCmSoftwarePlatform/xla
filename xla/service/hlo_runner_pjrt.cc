@@ -309,6 +309,7 @@ StatusOr<std::vector<Literal>> HloRunnerPjRt::ExecuteReplicatedImpl(
     std::function<const Literal*(int64_t, int64_t)> argument_provider,
     const ReplicatedExecuteOptions& options,
     DeviceAssignment* device_assignment) {
+  VLOG(-1) << "HloRunnerPjRt::ExecuteReplicatedImpl";    
   absl::Span<PjRtDevice* const> devices = pjrt_client_->devices();
 
   std::vector<std::vector<std::unique_ptr<PjRtBuffer>>> argument_buffer_slices;
