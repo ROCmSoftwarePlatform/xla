@@ -188,7 +188,7 @@ StatusOr<bool> ConvertAsyncCollectivesToSync::RunOnComputation(
   if (async_pairs.empty()) {
     return false;
   }
-
+  VLOG(-1) << "start to ConvertAsyncInstructionsToSync()......";
   TF_RETURN_IF_ERROR(ConvertAsyncInstructionsToSync(computation, async_pairs));
   return true;
 }

@@ -311,6 +311,9 @@ absl::StatusOr<CompileModuleResults> CompileModuleToLlvmIr(
     const se::DeviceDescription& gpu_device_info,
     const HloDataflowAnalysis::CanShareBuffer& can_share_buffer_function,
     const BufferValue::SizeFunction& buffer_size_bytes_function) {
+  VLOG(-1) << "start to CompileModuleToLlvmIr()...";
+  VLOG(-1) << "target_triple = " << target_triple << " platform_name = " << platform_name
+          << " platform_id = " << platform_id << " gpu_device_info.name = " << gpu_device_info.name();
   CompileModuleResults results;
   results.llvm_module = std::make_unique<llvm::Module>("", *llvm_context);
   results.llvm_module->setTargetTriple(target_triple);
@@ -333,7 +336,7 @@ absl::StatusOr<CompileModuleResults> CompileModuleToLlvmIr(
               : BufferAssigner::DefaultColorer(),
           /*must_not_live_out=*/{}, can_share_buffer_function));
 
-  VLOG(1) << "Buffer Assignment Stats for " << hlo_module->name() << "\n"
+  VLOG(-1) << "Buffer Assignment Stats for " << hlo_module->name() << "\n"
           << results.buffer_assignment->GetStats().ToString();
   struct GetCcStr {
     std::string operator()(const se::CudaComputeCapability& cc) const {
@@ -349,7 +352,7 @@ absl::StatusOr<CompileModuleResults> CompileModuleToLlvmIr(
           std::visit(GetCcStr(), gpu_device_info.gpu_compute_capability()),
           "_gpu_", kAfterOptimizationsDumpName));
 
-  VLOG(1) << "After optimization module fingerprint for " << hlo_module->name()
+  VLOG(-1) << "After optimization module fingerprint for " << hlo_module->name()
           << ": " << hlo_module->GetFingerprint128();
 
   uint64_t start_usecs = tsl::Env::Default()->NowMicros();
@@ -367,13 +370,13 @@ absl::StatusOr<CompileModuleResults> CompileModuleToLlvmIr(
 
   absl::flat_hash_map<const mlir::Operation*, const xla::HloInstruction*>
       operation_map;
-
+  VLOG(-1) << "start to HloToLhloModule()...";
   // Store the allocations in the order of the LMHLO buffer arguments.
   std::vector<const BufferAllocation*> ordered_allocations;
   TF_RETURN_IF_ERROR(HloToLhloModule(*results.buffer_assignment, *hlo_module,
                                      *mlir_module, &ordered_allocations,
                                      &operation_map));
-
+  VLOG(-1) << "HloToLhloModule() is done...";
   results.module_name =
       mlir::mhlo::GetDebugNameFromLocation(mlir_module->getLoc());
 
@@ -392,7 +395,7 @@ absl::StatusOr<CompileModuleResults> CompileModuleToLlvmIr(
   TF_RETURN_IF_ERROR(GetMlirAllocationInfo(entry_function, &mlir_allocations,
                                            &mlir_output_info,
                                            &mlir_output_shape));
-
+  VLOG(-1) << "GetMlirAllocationInfo() is done...";
   IrEmitterContext ir_emitter_context(
       hlo_module, results.buffer_assignment.get(), platform_name,
       gpu_device_info, mlir_context.get(), results.llvm_module.get(),
@@ -400,6 +403,7 @@ absl::StatusOr<CompileModuleResults> CompileModuleToLlvmIr(
 
   std::vector<BufferAllocation*> allocations;
   if (emit_from_hlo) {
+    VLOG(-1) << "emit_from_hlo...";
     results.output_shape = hlo_module->result_shape();
     TF_ASSIGN_OR_RETURN(results.output_info,
                         GetOutputInfo(*hlo_module, *results.buffer_assignment));
@@ -407,6 +411,7 @@ absl::StatusOr<CompileModuleResults> CompileModuleToLlvmIr(
     ir_emitter_context.set_allocations(ordered_allocations);
     results.use_original_allocations = true;
   } else {
+    VLOG(-1) << "not emit_from_hlo...";
     results.allocations = std::move(mlir_allocations);
     results.output_shape = mlir_output_shape;
     results.output_info = mlir_output_info;
@@ -419,7 +424,7 @@ absl::StatusOr<CompileModuleResults> CompileModuleToLlvmIr(
   }
 
   auto ir_emitter = IrEmitterUnnested::Create(&ir_emitter_context);
-
+  VLOG(-1) << "IrEmitterUnnested::Create is done...";
   {
     XLA_SCOPED_LOGGING_TIMER(absl::StrCat(
         "GpuCompiler::RunBackend - IR emission for ", hlo_module->name()));
@@ -455,13 +460,14 @@ absl::StatusOr<CompileModuleResults> CompileModuleToLlvmIr(
     llvm::transform(
         results.allocations, std::back_inserter(buffer_sizes),
         [](const BufferAllocation& allocation) { return allocation.size(); });
-
+    VLOG(-1) << "start to LowerToJitRt()...";
     TF_ASSIGN_OR_RETURN(
         results.executable,
         LowerToJitRt(*mlir_module, entry_function.getName(), buffer_sizes,
                      ir_emitter->ConsumeThunkSequence(), hlo_module,
                      gpu_device_info.gpu_compute_capability()));
   } else {
+    VLOG(-1) << "start to ForAllThunks()...";
     auto thunk_sequence = ir_emitter->ConsumeThunkSequence();
     ForAllThunks([](Thunk* thunk) { thunk->ClearCompileTimeInfo(); },
                  thunk_sequence.get());

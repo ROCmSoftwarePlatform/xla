@@ -3283,7 +3283,7 @@ absl::Status IrEmitterUnnested::EmitNcclThunk(mlir::Operation* untyped_op) {
   const auto& hlo_config = ir_emitter_context_->hlo_module().config();
   int64_t replica_count = hlo_config.replica_count();
   int64_t partition_count = hlo_config.num_partitions();
-  VLOG(2) << NcclThunkType::GetHloOpName()
+  VLOG(-1) << NcclThunkType::GetHloOpName()
           << "; replica count: " << replica_count
           << "; partition count: " << partition_count
           << "; operand count: " << op.getOperands().size();
@@ -3319,6 +3319,7 @@ absl::Status IrEmitterUnnested::EmitNcclThunk(mlir::Operation* untyped_op) {
   }
 
   if (should_use_nccl_thunk) {
+    VLOG(-1) << "should_use_nccl_thunk...";
     auto thunk = std::make_unique<NcclThunkType>(
         Thunk::ThunkInfo::WithProfileAnnotation(op), NcclApi::Default(), op,
         /*buffers=*/std::move(buffers));
@@ -3334,7 +3335,7 @@ absl::Status IrEmitterUnnested::EmitNcclThunk(mlir::Operation* untyped_op) {
   // Signal that start thunk not created with nullptr.
   async_executors_.insert({untyped_op, nullptr});
 
-  VLOG(1) << "Collective call is degenerate, not doing NCCL call";
+  VLOG(-1) << "Collective call is degenerate, not doing NCCL call";
 
   // Degenerate collectives are simply identity function. Buffer
   // assignment expects a copy, so that's what we do.
@@ -3383,7 +3384,7 @@ absl::Status IrEmitterUnnested::EmitNcclThunk(
   const auto& hlo_config = ir_emitter_context_->hlo_module().config();
   int64_t replica_count = hlo_config.replica_count();
   int64_t partition_count = hlo_config.num_partitions();
-  VLOG(2) << NcclThunkType::GetHloOpName()
+  VLOG(-1) << NcclThunkType::GetHloOpName()
           << "; replica count: " << replica_count
           << "; partition count: " << partition_count
           << "; operand count: " << inst->operand_count();
@@ -3403,7 +3404,7 @@ absl::Status IrEmitterUnnested::EmitNcclThunk(
 
   int64_t operand_count = inst->operand_count();
   buffers.reserve(operand_count);
-
+  VLOG(-1) << "start to Adds a source and destination buffers pair to `buffers`";
   // Adds a source and destination buffers pair to `buffers`.
   auto add_buffer = [&](int64_t element_count, BufferAllocation::Slice src,
                         int64_t src_memory_space, BufferAllocation::Slice dst,
@@ -3419,6 +3420,7 @@ absl::Status IrEmitterUnnested::EmitNcclThunk(
   };
 
   if (kind == Thunk::Kind::kNcclAllGatherStart) {
+    VLOG(-1) << "kind == Thunk::Kind::kNcclAllGatherStart";
     // Start operations return a tuple of (<<inputs>>, <<outputs>>) where
     // outputs can be a tuple itself (if operation has multiple operands).
     for (int64_t i = 0; i < operand_count; i++) {
@@ -3433,6 +3435,7 @@ absl::Status IrEmitterUnnested::EmitNcclThunk(
     }
 
   } else {
+    VLOG(-1) << "For other operations simply zip operands with results";
     // For other operations simply zip operands with results.
     for (int64_t i = 0; i < operand_count; i++) {
       ShapeIndex idx = operand_count > 1 ? ShapeIndex({i}) : ShapeIndex({});
@@ -3447,11 +3450,15 @@ absl::Status IrEmitterUnnested::EmitNcclThunk(
   }
 
   if (should_use_nccl_thunk) {
+    VLOG(-1) << "should_use_nccl_thunk....";
     auto thunk = std::make_unique<NcclThunkType>(
         Thunk::ThunkInfo::WithProfileAnnotation(inst), NcclApi::Default(), inst,
         /*buffers=*/std::move(buffers));
+    VLOG(-1) << "auto thunk = std::make_unique<NcclThunkType is done....";    
     async_executors_.insert({async_start, thunk->async_executor()});
+    VLOG(-1) << "async_executors_.insert is done....";    
     AddThunkToThunkSequence(std::move(thunk));
+    VLOG(-1) << "AddThunkToThunkSequence is done....";    
     return absl::OkStatus();
   }
 
@@ -3462,7 +3469,7 @@ absl::Status IrEmitterUnnested::EmitNcclThunk(
   // Signal that start thunk not created with nullptr.
   async_executors_.insert({async_start, nullptr});
 
-  VLOG(1) << "Collective call is degenerate, not doing NCCL call";
+  VLOG(-1) << "Collective call is degenerate, not doing NCCL call";
 
   // Degenerate collectives are simply identity function. Buffer
   // assignment expects a copy, so that's what we do.
@@ -4067,17 +4074,21 @@ absl::Status IrEmitterUnnested::EmitOp(
   }
 
   if (mlir::isa<mlir::lmhlo_gpu::AllReduceStartOp>(op)) {
+    VLOG(-1) << "start to mlir::isa<mlir::lmhlo_gpu::AllReduceStartOp...";
     if (ir_emitter_context_->emit_ir_from_hlo()) {
+      VLOG(-1) << "ir_emitter_context_->emit_ir_from_hlo()...";
       auto* all_reduce = Cast<HloAllReduceInstruction>(hlo_for_lmhlo.at(op));
       return EmitNcclThunk<NcclAllReduceStartThunk, HloAllReduceInstruction>(
           Thunk::kNcclAllReduceStart, all_reduce, all_reduce,
           all_reduce->use_global_device_ids());
     }
+    VLOG(-1) << "EmitNcclThunk<NcclAllReduceStartThunk, mlir::....";
     return EmitNcclThunk<NcclAllReduceStartThunk,
                          mlir::lmhlo_gpu::AllReduceStartOp>(op);
   }
 
   if (mlir::isa<mlir::lmhlo_gpu::AllReduceDoneOp>(op)) {
+    VLOG(-1) << "start to mlir::isa<mlir::lmhlo_gpu::AllReduceDoneOp...";
     if (ir_emitter_context_->emit_ir_from_hlo()) {
       return EmitNcclAsyncDone(Thunk::kNcclAllReduceDone, hlo_for_lmhlo.at(op));
     }

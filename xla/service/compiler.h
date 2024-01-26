@@ -201,6 +201,7 @@ class Compiler {
       std::unique_ptr<HloModule> module,
       const BufferAssignmentProto* /*buffer_assignment_proto*/,
       se::StreamExecutor* executor, const CompileOptions& options) {
+    VLOG(-1) << "RunBackendWithBufferAssignment...";
     LOG(WARNING) << "Ignoring the buffer assignment proto provided.";
     return RunBackend(std::move(module), executor, options);
   }

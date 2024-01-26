@@ -148,7 +148,7 @@ void GenericTransferManager::TransferLiteralFromDevice(
     se::Stream* stream, const ShapedBuffer& device_buffer,
     MutableBorrowingLiteral literal, std::function<void(Status)> done,
     const TransferMetadata* transfer_metadata) {
-  VLOG(2) << "transferring literal from device ordinal "
+  VLOG(-1) << "transferring literal from device ordinal "
           << stream->parent()->device_ordinal()
           << "; device buffer: " << device_buffer;
 

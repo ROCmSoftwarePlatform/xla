@@ -115,16 +115,22 @@ tsl::StatusOr<std::unique_ptr<HloModule>> HloModuleFromProto(
 }
 
 bool NoParallelCustomCallCollective(const HloInstruction* instr) {
-  auto backend_config = instr->backend_config<xla::gpu::GpuBackendConfig>()
-                            .value()
-                            .collective_backend_config();
-  return backend_config.no_parallel_custom_call();
+  VLOG(-1) << "start to NoParallelCustomCallCollective...";
+  auto backend_config = instr->backend_config<xla::gpu::GpuBackendConfig>();
+  if (!backend_config.ok()) return false;
+
+  return backend_config->collective_backend_config().no_parallel_custom_call();
+  // auto backend_config = instr->backend_config<xla::gpu::GpuBackendConfig>()
+  //                           .value()
+  //                           .collective_backend_config();
+  // return backend_config.no_parallel_custom_call();
 }
 
 // Convert the MLIR `module` from HLO dialect to LHLO dialect using XLA for the
 // given platform.
 tsl::Status ConvertHloToLmhlo(std::unique_ptr<HloModule> hlo_module,
                               ModuleOp module, StringRef platform_name) {
+  VLOG(-1) << "start to ConvertHloToLmhlo()...";                              
   auto platform = xla::se::MultiPlatformManager::PlatformWithName(
       StringRefToView(platform_name));
   if (!platform.ok()) {
@@ -213,6 +219,7 @@ tsl::StatusOr<OpType> LhloDialectEmitter::CreateOpWithoutAttrs(
 
 tsl::StatusOr<mlir::Operation*> LhloDialectEmitter::EmitOp(
     const HloInstruction* instr) {
+  VLOG(-1) << "start to EmitOp(): " << xla::HloOpcodeString(instr->opcode());    
   using xla::HloOpcode;
   switch (instr->opcode()) {
     case HloOpcode::kAddDependency:
@@ -296,6 +303,7 @@ tsl::StatusOr<mlir::Operation*> LhloDialectEmitter::EmitOp(
 }
 
 tsl::Status LhloDialectEmitter::DefaultAction(const HloInstruction* instr) {
+  VLOG(-1) << "after dfs_hlo_visitor, start DefaultAction()";
   TF_ASSIGN_OR_RETURN(auto* op, EmitOp(instr));
   if (op) {
     lhlo_to_hlo_[op] = instr;
@@ -1777,6 +1785,7 @@ LhloDialectEmitter::EmitAllGatherDoneOp(const HloInstruction* instr) {
 
 tsl::StatusOr<lmhlo_gpu::AllReduceStartOp>
 LhloDialectEmitter::EmitAllReduceStartOp(const HloInstruction* instr) {
+  VLOG(-1) << "start LhloDialectEmitter::EmitAllReduceStartOp()...";
   llvm::SmallVector<Value, 4> operands;
   for (const HloInstruction* operand : instr->operands()) {
     TF_RETURN_IF_ERROR(GetOrCreateView(operand, &operands));
@@ -1788,28 +1797,35 @@ LhloDialectEmitter::EmitAllReduceStartOp(const HloInstruction* instr) {
   std::array<mlir::Type, 1> result_types = {token_type};
   auto all_reduce_start_op =
       builder_.create<lmhlo_gpu::AllReduceStartOp>(loc, result_types, operands);
-
+  VLOG(-1) << "all_reduce_start_op is created...";
   auto* all_reduce = xla::Cast<xla::HloAllReduceInstruction>(instr);
   TF_RETURN_IF_ERROR(
       SetupCommonCollectiveOpAttributes(all_reduce_start_op, instr, builder_));
+  VLOG(-1) << "SetupCommonCollectiveOpAttributes is done...";
   all_reduce_start_op.setUseGlobalDeviceIdsAttr(
       builder_.getBoolAttr(all_reduce->use_global_device_ids()));
+  VLOG(-1) << "setUseGlobalDeviceIdsAttr is done...";
   all_reduce_start_op.setIsSync(IsSyncCollective(instr));
+  VLOG(-1) << "setIsSync(IsSyncCollective(instr) is done...";
   all_reduce_start_op.setNoParallelCustomCall(
       NoParallelCustomCallCollective(instr));
-
+  VLOG(-1) << "setNoParallelCustomCall is done...";
   TF_RETURN_IF_ERROR(xla::HloFunctionImporter::ImportAsRegion(
       *instr->called_computations()[0], symbol_table_,
       &all_reduce_start_op.getComputation(), &builder_));
 
+  VLOG(-1) << "xla::HloFunctionImporter::ImportAsRegion is done...";
   auto [_, was_inserted] =
       ret_tokens_.insert({instr, all_reduce_start_op.getToken()});
+  VLOG(-1) << "({instr, all_reduce_start_op.getToken() is done...";
   TF_RET_CHECK(was_inserted) << "all-reduce-start already lowered";
+  VLOG(-1) << "all_reduce_start_op is complete...";
   return all_reduce_start_op;
 }
 
 tsl::StatusOr<lmhlo_gpu::AllReduceDoneOp>
 LhloDialectEmitter::EmitAllReduceDoneOp(const HloInstruction* instr) {
+  VLOG(-1) << "start to LhloDialectEmitter::EmitAllReduceDoneOp...";
   return EmitDoneOp<lmhlo_gpu::AllReduceDoneOp>(instr);
 }
 
@@ -2529,6 +2545,7 @@ tsl::Status HloToLhloModule(
     ModuleOp module, std::vector<const BufferAllocation*>* ordered_allocations,
     absl::flat_hash_map<const mlir::Operation*, const xla::HloInstruction*>*
         lhlo_to_hlo_map) {
+  VLOG(-1) << "start to tsl::Status HloToLhloModule()...";
   module.getContext()
       ->loadDialect<arith::ArithDialect, bufferization::BufferizationDialect,
                     func::FuncDialect, memref::MemRefDialect, mhlo::MhloDialect,
@@ -2543,10 +2560,10 @@ tsl::Status HloToLhloModule(
                   builder.getI64IntegerAttr(hlo_module.unique_id()));
 
   const HloComputation* computation = hlo_module.entry_computation();
-
+  VLOG(-1) << "start to emitter.Initialize...";
   LhloDialectEmitter emitter(assignment, *computation, module);
   TF_RETURN_IF_ERROR(emitter.Initialize(ordered_allocations));
-
+  VLOG(-1) << " emitter.Initialize is done...";  
   const xla::HloInstructionSequence* schedule =
       &hlo_module.schedule().sequence(computation);
 
@@ -2555,14 +2572,16 @@ tsl::Status HloToLhloModule(
         "Missing sequential order for the computation");
   }
   BaseScopedDiagnosticHandler status_handler(module.getContext());
-
+  VLOG(-1) << "start to schedule->instructions...";
   const std::vector<HloInstruction*>& ordering = schedule->instructions();
+  VLOG(-1) << "start to computation->AcceptOrdered(&emitter, ordering)...";
   TF_RETURN_IF_ERROR(computation->AcceptOrdered(&emitter, ordering));
+  VLOG(-1) << "computation->AcceptOrdered is done...";
   TF_RETURN_IF_ERROR(status_handler.ConsumeStatus());
-
+  VLOG(-1) << "status_handler.ConsumeStatus is done...";
   (void)mlir::verify(module);
 
-  if (lhlo_to_hlo_map) {
+  if (lhlo_to_hlo_map) {    
     auto map = emitter.ConsumeLhloToHloMap();
     std::swap(*lhlo_to_hlo_map, map);
   }

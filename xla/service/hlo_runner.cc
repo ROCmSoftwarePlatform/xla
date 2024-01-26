@@ -115,6 +115,7 @@ StatusOr<std::vector<ScopedShapedBuffer>> HloRunner::TransferLiteralsToDevice(
 
 StatusOr<Literal> HloRunner::TransferLiteralFromDevice(
     const ShapedBuffer& buffer) {
+  VLOG(-1) << "within TransferLiteralFromDevice...";    
   TF_ASSIGN_OR_RETURN(
       auto stream, backend().BorrowStream(backend().default_stream_executor()));
 
@@ -365,6 +366,7 @@ StatusOr<ExecutionOutput> HloRunner::ExecuteWithExecutionInputs(
 StatusOr<std::vector<Literal>> HloRunner::ExecuteReplicated(
     std::unique_ptr<HloModule> module, const ReplicatedExecuteOptions& options,
     DeviceAssignment* device_assignment) {
+  VLOG(-1) << "StatusOr<std::vector<Literal>> HloRunner::ExecuteReplicated...";
   TF_ASSIGN_OR_RETURN(
       std::unique_ptr<Executable> executable,
       CreateExecutable(std::move(module), options.run_hlo_passes));
@@ -539,6 +541,7 @@ StatusOr<std::vector<Literal>> HloRunner::ExecuteReplicated(
             tsl::thread::ThreadPool pool(tsl::Env::Default(), "replicas",
                                          options.num_replicas);
             for (int64_t i = 0; i < options.num_replicas; ++i) {
+              VLOG(-1) << "start to pool.Schedule()...";
               pool.Schedule([&, i] {
                 auto result = executable->ExecuteOnStream(
                     &service_run_options[i], argument_buffer_slices[i],
@@ -571,6 +574,7 @@ StatusOr<std::vector<Literal>> HloRunner::ExecuteReplicated(
     std::function<const Literal*(int64_t, int64_t)> argument_provider,
     const ReplicatedExecuteOptions& options,
     DeviceAssignment* device_assignment) {
+  VLOG(-1) << "within ExecuteReplicated()...";
   DeviceAssignment computation_device_assignment;
   if (device_assignment == nullptr) {
     TF_ASSIGN_OR_RETURN(
@@ -623,6 +627,7 @@ StatusOr<std::vector<Literal>> HloRunner::ExecuteReplicated(
 StatusOr<std::vector<Literal>> HloRunner::ExecuteReplicated(
     std::unique_ptr<HloModule> module,
     const ReplicatedExecuteOptions& options) {
+  VLOG(-1) << "StatusOr<std::vector<Literal>> HloRunner::ExecuteReplicated...";
   TF_ASSIGN_OR_RETURN(
       DeviceAssignment device_assignment,
       backend().computation_placer()->AssignDevices(options.num_replicas, 1));
@@ -631,6 +636,7 @@ StatusOr<std::vector<Literal>> HloRunner::ExecuteReplicated(
 
 StatusOr<std::unique_ptr<Executable>> HloRunner::CreateExecutable(
     std::unique_ptr<HloModule> module, bool run_hlo_passes) {
+  VLOG(-1) << "std::unique_ptr<Executable>> HloRunner::CreateExecutable()...";
   return CreateExecutableWithBufferAssignment(
       std::move(module),
       /*buffer_assignment_proto=*/nullptr, run_hlo_passes);
@@ -640,6 +646,7 @@ StatusOr<std::unique_ptr<Executable>>
 HloRunner::CreateExecutableWithBufferAssignment(
     std::unique_ptr<HloModule> module,
     const BufferAssignmentProto* buffer_assignment_proto, bool run_hlo_passes) {
+  VLOG(-1) << "CreateExecutableWithBufferAssignment()...";
   xla::UpdateEntryComputationLayout(module.get(),
                                     device_shape_representation_fn_);
   if (run_hlo_passes) {
@@ -648,6 +655,7 @@ HloRunner::CreateExecutableWithBufferAssignment(
                       "are enabled.";
     }
     auto module_group = std::make_unique<HloModuleGroup>(std::move(module));
+    VLOG(-1) << "run_hlo_passes...";
     TF_ASSIGN_OR_RETURN(
         auto executables,
         backend().compiler()->Compile(std::move(module_group),
@@ -655,6 +663,8 @@ HloRunner::CreateExecutableWithBufferAssignment(
                                       backend().memory_allocator()));
     return std::move(executables[0]);
   }
+  VLOG(-1) << "RunBackendWithBufferAssignment()...";
+  VLOG(-1) << "backend().platform()->Name(): " << backend().platform()->Name();
   return backend().compiler()->RunBackendWithBufferAssignment(
       std::move(module), buffer_assignment_proto,
       backend().default_stream_executor(), backend().memory_allocator());
@@ -680,7 +690,7 @@ ServiceExecutableRunOptions HloRunner::GetServiceRunOptionsForDevice(
 Backend& HloRunner::backend() {
   if (!backend_) {
     backend_ = Backend::CreateDefaultBackend().value();
-    VLOG(1) << "Executing on platform " << backend().platform()->Name();
+    VLOG(-1) << "Executing on platform " << backend().platform()->Name();
   }
   return *backend_;
 }

@@ -29,6 +29,7 @@ absl::Status GpuConvertAsyncCollectivesToSync::ConvertAsyncInstructionsToSync(
     HloComputation* computation,
     absl::Span<const std::pair<HloInstruction*, HloInstruction*>> async_pairs)
     const {
+  VLOG(-1) << "start to ConvertAsyncInstructionsToSync()...";
   absl::flat_hash_map<HloInstruction*, HloInstruction*> replaced_ops;
   CollectiveBackendConfig sync_config;
   sync_config.set_is_sync(true);

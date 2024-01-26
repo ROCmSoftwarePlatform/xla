@@ -431,7 +431,7 @@ absl::Status DefaultNcclApi::ReduceScatter(se::DeviceMemoryBase send_buffer,
                                            ReductionKind reduction_kind,
                                            NcclCommHandle comm,
                                            se::Stream* stream) {
-  VLOG(3) << absl::StreamFormat(
+  VLOG(-1) << absl::StreamFormat(
       "Launch NCCL ReduceScatter operation on device #%d; send_buffer=%p; "
       "recv_buffer=%p; dtype=%s; count=%d; reduction_kind=%s; comm=%p; "
       "stream=%p",

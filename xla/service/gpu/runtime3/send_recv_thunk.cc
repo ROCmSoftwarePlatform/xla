@@ -197,7 +197,7 @@ RecvThunk::RecvThunk(
       device_constraint_(device_constraint) {}
 
 absl::Status RecvThunk::ExecuteOnStream(const ExecuteParams& params) {
-  VLOG(3) << "Recv buffer: channel_id=" << channel_id_
+  VLOG(-1) << "Recv buffer: channel_id=" << channel_id_
           << "; shape=" << shape_.ToString();
 
   TF_ASSIGN_OR_RETURN(

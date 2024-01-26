@@ -103,6 +103,7 @@ StatusOr<ScopedShapedBuffer> Executable::ExecuteAsyncOnStream(
     const ServiceExecutableRunOptions* run_options,
     absl::Span<const ShapedBuffer* const> arguments,
     HloExecutionProfile* hlo_execution_profile) {
+  VLOG(-1) << "Executable::ExecuteAsyncOnStream()...";    
   std::vector<ExecutionInput> args;
   args.reserve(arguments.size());
   for (const ShapedBuffer* arg : arguments) {
@@ -118,6 +119,7 @@ StatusOr<ExecutionOutput> Executable::ExecuteOnStream(
     const ServiceExecutableRunOptions* run_options,
     std::vector<ExecutionInput> arguments,
     HloExecutionProfile* hlo_execution_profile) {
+  VLOG(-1) << "Executable::ExecuteOnStream()...";    
   StatusOr<ExecutionOutput> result = ExecuteAsyncOnStream(
       run_options, std::move(arguments), hlo_execution_profile);
   Status blocking_status = run_options->stream()->BlockHostUntilDone();

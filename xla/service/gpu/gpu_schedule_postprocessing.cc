@@ -61,6 +61,7 @@ bool MayInvokeCustomCall(
 // Returns true if this is an asynchronous collective start operation, excluding
 // P2P operations.
 absl::StatusOr<bool> IsRelevantAsynchronousStart(const HloInstruction* hlo) {
+  VLOG(-1) << "IsRelevantAsynchronousStart...";
   if (!hlo_query::IsAsyncCollectiveStartOp(hlo,
                                            /*include_send_recv=*/false)) {
     return false;
@@ -86,6 +87,7 @@ absl::StatusOr<bool> IsRelevantAsynchronousDone(const HloInstruction* hlo) {
 absl::StatusOr<bool> ProcessComputation(
     const HloSchedule& schedule, HloComputation* computation,
     CustomCallInComputation& custom_call_in_computation) {
+  VLOG(-1) << "ProcessComputation...";
   bool changed = false;
   bool has_custom_call = false;
   absl::flat_hash_set<HloInstruction*> async_starts;
@@ -135,6 +137,7 @@ absl::StatusOr<bool> ProcessComputation(
 absl::StatusOr<bool> GpuSchedulePostprocessing::Run(
     HloModule* module,
     const absl::flat_hash_set<absl::string_view>& execution_threads) {
+  VLOG(-1) << "GpuSchedulePostprocessing::Run()...";    
   if (!module->has_schedule()) return false;
   HloSchedule& schedule = module->schedule();
   bool changed = false;

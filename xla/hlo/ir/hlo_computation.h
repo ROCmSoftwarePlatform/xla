@@ -1000,14 +1000,14 @@ template <typename HloInstructionPtr>
 Status HloComputation::AcceptOrdered(
     DfsHloVisitorBase<HloInstructionPtr>* visitor,
     absl::Span<HloInstruction* const> order) const {
-  VLOG(3) << "Accepting visitor with order.";
+  VLOG(-1) << "Accepting visitor with order.";
   for (HloInstruction* root : CollectUnreachableRoots()) {
     TF_RET_CHECK(absl::c_linear_search(order, root)) << root->ToString();
   }
   TF_RET_CHECK(order.size() == instruction_count());
   absl::flat_hash_set<const HloInstruction*> visited;
   for (const HloInstruction* instruction : order) {
-    VLOG(3) << "Visiting ordered: " << instruction->ToString();
+    VLOG(-1) << "Visiting ordered: " << instruction->ToString();
     TF_RET_CHECK(instruction_indices_.contains(instruction))
         << "Instruction " << instruction->name() << " is not in computation "
         << name();

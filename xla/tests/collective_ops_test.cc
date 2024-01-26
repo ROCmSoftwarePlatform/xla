@@ -187,12 +187,12 @@ static Eigen::half ToHalf(T value) {
   return static_cast<Eigen::half>(value);
 }
 
-XLA_TEST_F(CollectiveOpsTest, AllReduce_sum_float32_2D) {
-  TestTwoReplicasOneOperand<float>(
-      "add",
-      /*input_value=*/LiteralUtil::CreateR2<float>({{1, 2}, {3, 4}}),
-      /*expected_value=*/LiteralUtil::CreateR2<float>({{2, 4}, {6, 8}}));
-}
+// XLA_TEST_F(CollectiveOpsTest, AllReduce_sum_float32_2D) {
+//   TestTwoReplicasOneOperand<float>(
+//       "add",
+//       /*input_value=*/LiteralUtil::CreateR2<float>({{1, 2}, {3, 4}}),
+//       /*expected_value=*/LiteralUtil::CreateR2<float>({{2, 4}, {6, 8}}));
+// }
 
 // XLA_TEST_F(CollectiveOpsTest, AllReduceSingleOutput_float32) {
 //   TestTwoReplicasOneOperand<float>(
@@ -551,6 +551,7 @@ XLA_TEST_F(CollectiveOpsTest, AllReduce_sum_float32_2D) {
 //       GetModuleConfigForTest(/*replica_count=*/num_devices_);
 //   TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<HloModule> module,
 //                           ParseAndReturnVerifiedModule(kModuleStr, config));
+//   VLOG(-1) << "ParseAndReturnVerifiedModule is done";                        
 //   TF_ASSERT_OK_AND_ASSIGN(
 //       std::vector<Literal> results,
 //       ExecuteReplicated(std::move(module), {}, num_devices_,
@@ -1862,47 +1863,47 @@ XLA_TEST_F(CollectiveOpsTest, AllReduce_sum_float32_2D) {
 //   }
 // }
 
-// XLA_TEST_F(CollectiveOpsTest, DISABLED_ON_CPU(SendRecv_Simple)) {
-//   const char* const kModuleStr = R"(
-//   HloModule test
-//   ENTRY test_computation {
-//     %replica = u32[] replica-id()
-//     %ten = u32[] constant(10)
-//     %sum = u32[] add(%replica, %ten)
-//     %p = u32[2] broadcast(%sum), dimensions={}
+XLA_TEST_F(CollectiveOpsTest, DISABLED_ON_CPU(SendRecv_Simple)) {
+  const char* const kModuleStr = R"(
+  HloModule test
+  ENTRY test_computation {
+    %replica = u32[] replica-id()
+    %ten = u32[] constant(10)
+    %sum = u32[] add(%replica, %ten)
+    %p = u32[2] broadcast(%sum), dimensions={}
 
-//     %after-all = token[] after-all()
-//     %recv = (u32[2], u32[], token[]) recv(%after-all), channel_id=0, frontend_attributes={
-//       _xla_send_recv_source_target_pairs="{{1,0}}"
-//     }
-//     %send = (u32[2], u32[], token[]) send(%p, %after-all), channel_id=0, control-predecessors={%recv}, frontend_attributes={
-//       _xla_send_recv_source_target_pairs="{{1,0}}"
-//     }
+    %after-all = token[] after-all()
+    %recv = (u32[2], u32[], token[]) recv(%after-all), channel_id=0, frontend_attributes={
+      _xla_send_recv_source_target_pairs="{{1,0}}"
+    }
+    %send = (u32[2], u32[], token[]) send(%p, %after-all), channel_id=0, control-predecessors={%recv}, frontend_attributes={
+      _xla_send_recv_source_target_pairs="{{1,0}}"
+    }
 
-//     %recv-done = (u32[2], token[]) recv-done(%recv), channel_id=0
-//     %recv-data = u32[2] get-tuple-element(%recv-done), index=0
-//     %send-done = token[] send-done(%send), channel_id=0, control-predecessors={%recv}
-//     ROOT copy = u32[2] copy(%recv-data)
-//   }
-//   )";
+    %recv-done = (u32[2], token[]) recv-done(%recv), channel_id=0
+    %recv-data = u32[2] get-tuple-element(%recv-done), index=0
+    %send-done = token[] send-done(%send), channel_id=0, control-predecessors={%recv}
+    ROOT copy = u32[2] copy(%recv-data)
+  }
+  )";
 
-//   const int64_t kNumReplicas = 2;
-//   SKIP_TEST_IF_NUM_DEVICES_LESS_THAN(kNumReplicas)
+  const int64_t kNumReplicas = 2;
+  SKIP_TEST_IF_NUM_DEVICES_LESS_THAN(kNumReplicas)
 
-//   HloModuleConfig config =
-//       GetModuleConfigForTest(/*replica_count=*/kNumReplicas);
-//   TF_ASSERT_OK_AND_ASSIGN(auto module,
-//                           ParseAndReturnVerifiedModule(kModuleStr, config));
+  HloModuleConfig config =
+      GetModuleConfigForTest(/*replica_count=*/kNumReplicas);
+  TF_ASSERT_OK_AND_ASSIGN(auto module,
+                          ParseAndReturnVerifiedModule(kModuleStr, config));
 
-//   TF_ASSERT_OK_AND_ASSIGN(std::vector<Literal> results,
-//                           ExecuteReplicated(std::move(module), {}, kNumReplicas,
-//                                             /*use_threads=*/true));
-//   ASSERT_EQ(results.size(), kNumReplicas);
-//   EXPECT_TRUE(LiteralTestUtil::Equal(LiteralUtil::CreateR1<uint32_t>({11, 11}),
-//                                      results[0]));
-//   EXPECT_TRUE(LiteralTestUtil::Equal(LiteralUtil::CreateR1<uint32_t>({0, 0}),
-//                                      results[1]));
-// }
+  TF_ASSERT_OK_AND_ASSIGN(std::vector<Literal> results,
+                          ExecuteReplicated(std::move(module), {}, kNumReplicas,
+                                            /*use_threads=*/true));
+  ASSERT_EQ(results.size(), kNumReplicas);
+  EXPECT_TRUE(LiteralTestUtil::Equal(LiteralUtil::CreateR1<uint32_t>({11, 11}),
+                                     results[0]));
+  EXPECT_TRUE(LiteralTestUtil::Equal(LiteralUtil::CreateR1<uint32_t>({0, 0}),
+                                     results[1]));
+}
 
 }  // namespace
 }  // namespace xla

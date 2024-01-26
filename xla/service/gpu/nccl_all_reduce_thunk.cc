@@ -52,7 +52,7 @@ absl::Status RunAllReduce(NcclApi* nccl_api, ReductionKind reduction_kind,
                           std::vector<DeviceBufferPair>& buffers,
                           se::Stream& stream, NcclApi::NcclCommHandle comm) {
   int device_ordinal = stream.parent()->device_ordinal();
-  VLOG(3) << "Performing all-reduce from device ordinal: " << device_ordinal;
+  VLOG(-1) << "Performing all-reduce from device ordinal: " << device_ordinal;
   TF_RETURN_IF_ERROR(
       MaybeRegisterBuffers(nccl_api, device_ordinal, buffers, comm));
 
@@ -250,13 +250,11 @@ NcclAllReduceStartThunk::NcclAllReduceStartThunk(
     const HloAllReduceInstruction* inst, std::vector<Buffer> buffers)
     : NcclAllReduceReduceScatterThunkBase(
           Thunk::kNcclAllReduceStart, thunk_info, nccl_api,
-          impl::GetNcclAllReduceConfigInst(inst), std::move(buffers),
-          inst->backend_config<GpuBackendConfig>()
-              ->collective_backend_config()
-              .is_sync()) {}
+          impl::GetNcclAllReduceConfigInst(inst), std::move(buffers), false) {}
 
 absl::Status NcclAllReduceStartThunk::CheckImplementable(
     AllReduceStartOp op, int64_t replica_count, int64_t partition_count) {
+  VLOG(-1) << "NcclAllReduceStartThunk::CheckImplementable-1";
   return AddOpDescription<NcclAllReduceStartThunk>(
       impl::CheckImplementable(op, Thunk::kNcclAllReduceStart), op,
       replica_count, partition_count);
@@ -265,6 +263,7 @@ absl::Status NcclAllReduceStartThunk::CheckImplementable(
 absl::Status NcclAllReduceStartThunk::CheckImplementable(
     const HloAllReduceInstruction* inst, int64_t replica_count,
     int64_t partition_count) {
+  VLOG(-1) << "NcclAllReduceStartThunk::CheckImplementable-2";
   return AddOpDescription<NcclAllReduceStartThunk>(
       impl::CheckImplementableInst(inst, Thunk::kNcclAllReduceStart), inst,
       replica_count, partition_count);
@@ -337,6 +336,7 @@ NcclReduceScatterStartThunk::NcclReduceScatterStartThunk(
 absl::Status NcclReduceScatterStartThunk::RunNcclCollective(
     const ExecuteParams& params, se::Stream& stream,
     NcclApi::NcclCommHandle comm) {
+  VLOG(-1) << "NcclReduceScatterStartThunk::RunNcclCollective";
   TF_ASSIGN_OR_RETURN(
       std::vector<DeviceBufferPair> device_buffers,
       ConvertToDeviceBuffers(params, buffers_,
@@ -350,15 +350,15 @@ absl::Status RunReduceScatter(NcclApi* nccl_api, ReductionKind reduction_kind,
                               se::Stream& stream,
                               NcclApi::NcclCommHandle comm) {
   int device_ordinal = stream.parent()->device_ordinal();
-  VLOG(3) << "Performing reduce-scatter from device ordinal: "
+  VLOG(-1) << "Performing reduce-scatter from device ordinal: "
           << device_ordinal;
   TF_RETURN_IF_ERROR(
       MaybeRegisterBuffers(nccl_api, device_ordinal, buffers, comm));
 
   TF_ASSIGN_OR_RETURN(int32_t num_participants, nccl_api->CommCount(comm));
-
+  VLOG(-1) << "nccl_api->CommCount(comm) is done...";
   TF_RETURN_IF_ERROR(nccl_api->GroupStart());
-
+  VLOG(-1) << "nccl_api->GroupStart() is done...";
   for (DeviceBufferPair& buffer : buffers) {
     // buffer.element_count is the source buffers element count. For
     // ncclReduceScatter, we need the destination buffers element count.
