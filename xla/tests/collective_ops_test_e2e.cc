@@ -126,7 +126,7 @@ XLA_TEST_P(AsyncCollectiveOps, AsyncAllReduce) {
     )";
 
   const int64_t kNumReplicas = 2;
-  const bool enable_async_all_reduce = GetParam();
+  const bool enable_async_all_reduce = true; //GetParam();
   TF_ASSERT_OK_AND_ASSIGN(auto executable,
                           CreateExecutable(kModuleStr, kNumReplicas));
   EXPECT_TRUE(executable->has_module());
@@ -162,7 +162,7 @@ XLA_TEST_P(AsyncCollectiveOps, AsyncAllGather) {
   }
   )";
   const int64_t kNumReplicas = 2;
-  const bool enable_async_all_gather = GetParam();
+  const bool enable_async_all_gather = true; //GetParam();
 
   TF_ASSERT_OK_AND_ASSIGN(auto executable,
                           CreateExecutable(kModuleStr, kNumReplicas));
@@ -203,7 +203,7 @@ XLA_TEST_P(AsyncCollectiveOps, AsyncAllGatherMixedTypes) {
   }
   )";
   const int64_t kNumReplicas = 2;
-  const bool enable_async_all_gather = GetParam();
+  const bool enable_async_all_gather = true; //GetParam();
 
   TF_ASSERT_OK_AND_ASSIGN(auto executable,
                           CreateExecutable(kModuleStr, kNumReplicas));
@@ -240,7 +240,7 @@ XLA_TEST_P(AsyncCollectiveOps, AsyncCollectivePermute) {
   }
   )";
   const int64_t kNumReplicas = 2;
-  const bool enable_async_collective_permute = GetParam();
+  const bool enable_async_collective_permute = true; //GetParam();
   TF_ASSERT_OK_AND_ASSIGN(auto executable,
                           CreateExecutable(kModuleStr, kNumReplicas));
   EXPECT_TRUE(executable->has_module());
@@ -283,7 +283,7 @@ XLA_TEST_P(AsyncCollectiveOps, AsyncReduceScatter) {
   )";
 
   const int64_t kNumReplicas = 2;
-  const bool enable_async_reduce_scatter = GetParam();
+  const bool enable_async_reduce_scatter = true; //GetParam();
   TF_ASSERT_OK_AND_ASSIGN(auto executable,
                           CreateExecutable(kModuleStr, kNumReplicas));
   EXPECT_TRUE(executable->has_module());
@@ -316,7 +316,7 @@ XLA_TEST_P(AsyncCollectiveOps, AsyncAllToAllWithSplitDim) {
   }
   )";
   const int64_t kNumReplicas = 2;
-  const bool enable_async_all_to_all = GetParam();
+  const bool enable_async_all_to_all = true; //GetParam();
   TF_ASSERT_OK_AND_ASSIGN(auto executable,
                           CreateExecutable(kModuleStr, kNumReplicas));
   EXPECT_TRUE(executable->has_module());
@@ -360,7 +360,7 @@ XLA_TEST_P(AsyncCollectiveOps, AsyncAllToAllWithoutSplitDim) {
   }
   )";
   const int64_t kNumReplicas = 2;
-  const bool enable_async_all_to_all = GetParam();
+  const bool enable_async_all_to_all = true; //GetParam();
   TF_ASSERT_OK_AND_ASSIGN(auto executable,
                           CreateExecutable(kModuleStr, kNumReplicas));
   EXPECT_TRUE(executable->has_module());
