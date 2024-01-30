@@ -97,7 +97,7 @@ Status NcclRecvThunk::RunNcclCollective(const ExecuteParams& params,
 
 Status RunRecv(NcclP2PConfig::SourceTargetMapEntry source_target,
                DeviceBufferPair& buffer, se::Stream& stream, ncclComm_t comm,
-               absl::string_view device_string, int64_t current_id) {
+               absl::string_view device_string, int64_t current_id, int64_t /*noop*/) {
 #if XLA_ENABLE_XCCL
   // Determine the source IDs for this instance. The source ID is the ID for
   // the peer that will copy its data to this instance. If there is no source,

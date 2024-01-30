@@ -58,7 +58,7 @@ class NcclRecvThunk : public NcclCollectiveThunk {
 
 Status RunRecv(NcclP2PConfig::SourceTargetMapEntry source_target,
                DeviceBufferPair& buffer, se::Stream& stream, ncclComm_t comm,
-               absl::string_view device_string, int64_t current_id);
+               absl::string_view device_string, int64_t current_id, int64_t = 0);
 
 }  // namespace gpu
 }  // namespace xla

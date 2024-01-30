@@ -97,7 +97,7 @@ Status NcclSendThunk::RunNcclCollective(const ExecuteParams& params,
 
 Status RunSend(NcclP2PConfig::SourceTargetMapEntry source_target,
                DeviceBufferPair& buffer, se::Stream& stream, ncclComm_t comm,
-               absl::string_view device_string, int64_t current_id) {
+               absl::string_view device_string, int64_t current_id, int64_t /* noop */) {
 #if XLA_ENABLE_XCCL
   // Determine the target IDs for this instance. The target ID is the ID
   // to which this instance will copy its data.

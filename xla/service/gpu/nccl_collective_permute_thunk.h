@@ -62,7 +62,7 @@ class NcclCollectivePermuteStartThunk : public NcclCollectiveThunk {
 Status RunCollectivePermute(NcclP2PConfig::SourceTargetMapEntry source_target,
                             DeviceBufferPair& buffer, se::Stream& stream,
                             ncclComm_t comm, absl::string_view device_string,
-                            int64_t current_id);
+                            int64_t current_id, int64_t use_memcpy_to_peer);
 
 }  // namespace gpu
 }  // namespace xla

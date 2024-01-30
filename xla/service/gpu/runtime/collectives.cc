@@ -169,7 +169,7 @@ absl::Status AsyncDoneImpl(const ServiceExecutableRunOptions* run_options,
                            AsyncCollectivesSupport* async_collectives,
                            int32_t uid, std::string_view done_type) {
 #if XLA_ENABLE_XCCL
-  VLOG(3) << "Running " << done_type;
+  VLOG(2) << "Running done " << done_type;
   se::Stream* stream = run_options->stream();
 
   TF_ASSIGN_OR_RETURN(se::Event event, async_collectives->PopEvent(uid));
@@ -226,7 +226,7 @@ absl::Status NcclMockImplCommon(se::Stream* stream) {
 using NcclP2PRunner = absl::FunctionRef<absl::Status(
     NcclP2PConfig::SourceTargetMapEntry source_target, DeviceBufferPair& buffer,
     se::Stream& stream, ncclComm_t comm, absl::string_view device_string,
-    int64_t current_id)>;
+    int64_t current_id, int64_t use_memcpy)>;
 
 using DeviceBuffersGetter =
     absl::FunctionRef<StatusOr<std::vector<DeviceBufferPair>>(
@@ -278,10 +278,11 @@ absl::Status P2PImplCommon(const ServiceExecutableRunOptions* run_options,
   const NcclP2PConfig::SourceTargetMapEntry source_target =
       NcclP2PConfig::GetSourceTarget(id_to_source_target, current_id);
 
+  auto useMemcpy = debug_options->xla_gpu_collective_permute_with_memcpy();
   return RunRepeated(
       debug_options->xla_gpu_collective_inflation_factor(), [&]() -> Status {
         return runner(source_target, (*device_buffers)[0], *stream, **comm,
-                      device_string, current_id);
+                      device_string, current_id, useMemcpy);
       });
 }
 #endif  // XLA_ENABLE_XCCL
@@ -296,7 +297,8 @@ absl::Status CollectivePermuteImpl(
     absl::Span<const int64_t> source_peers,
     absl::Span<const int64_t> target_peers) {
 #if XLA_ENABLE_XCCL
-  VLOG(3) << "Running CollectivePermute " << (is_async ? "(Async)" : "(Sync)");
+  VLOG(2) << "Running CollectivePermute " << (is_async ? "(Async)" : "(Sync)") << 
+      "uid: " << uid << " ID: " << op_id;
   return RunSyncOrAsync(
       run_options, collectives, async_collectives, uid, is_async,
       [&](se::Stream* stream) {

@@ -126,6 +126,7 @@ DebugOptions DefaultDebugOptionsIgnoringFlags() {
   opts.set_xla_gpu_enable_async_collective_permute(false);
   opts.set_xla_gpu_enable_async_all_to_all(false);
   opts.set_xla_gpu_enable_async_reduce_scatter(false);
+  opts.set_xla_gpu_collective_permute_with_memcpy(0);
 
   opts.set_xla_gpu_enable_reassociation_for_converted_ar(true);
 
@@ -876,6 +877,12 @@ void MakeDebugOptionsFlags(std::vector<tsl::Flag>* flag_list,
           &DebugOptions::set_xla_gpu_enable_async_collective_permute),
       debug_options->xla_gpu_enable_async_collective_permute(),
       "Converts synchronous collective-permute ops into asynchronous."));
+  flag_list->push_back(tsl::Flag(
+      "xla_gpu_collective_permute_with_memcpy",
+      int64_setter_for(
+          &DebugOptions::set_xla_gpu_collective_permute_with_memcpy),
+      debug_options->xla_gpu_collective_permute_with_memcpy(),
+      "Implement collective permute with async memcpy-to-peer (0 or 1)"));
   flag_list->push_back(tsl::Flag(
       "xla_gpu_enable_async_all_gather",
       bool_setter_for(&DebugOptions::set_xla_gpu_enable_async_all_gather),
