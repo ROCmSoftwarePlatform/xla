@@ -1440,6 +1440,12 @@ ENTRY e {
 }
 
 TEST_F(TritonGemmTest, SingleElementTileIsHandled) {
+#ifdef TENSORFLOW_USE_ROCM
+  if (!GetCudaComputeCapability().IsAtLeast(
+          se::CudaComputeCapability::AMPERE)) {
+    GTEST_SKIP() << "Not using autotuner on ROCM yet.";
+  }
+#endif
   MatchOptimizedHlo(R"(
 t {
   p0 = f32[2,7,3]{2,1,0} parameter(0)
@@ -1466,6 +1472,7 @@ ENTRY e {
                     // autotuner which will run the fusion through the emitter
                     // multiple times and assign block sizes on success.
                     R"(
+; CHECK: block_m
 )");
 }
 
@@ -3574,10 +3581,12 @@ class TritonGemmContractionDims : public TritonGemmTest {
 };
 
 TEST_F(TritonGemmContractionDims, TritonDotForceContractionDims_1_0) {
+#ifndef TENSORFLOW_USE_ROCM
   if (!GetCudaComputeCapability().IsAtLeast(
           se::CudaComputeCapability::AMPERE)) {
     GTEST_SKIP() << "No BF16 before Ampere.";
   }
+#endif
   const std::string kHloText = R"(
 HloModule m
 
@@ -3600,10 +3609,12 @@ ENTRY e {
 }
 
 TEST_F(TritonGemmContractionDims, TritonDotForceContractionDims_1_2_1_2) {
+#ifndef TENSORFLOW_USE_ROCM
   if (!GetCudaComputeCapability().IsAtLeast(
           se::CudaComputeCapability::AMPERE)) {
     GTEST_SKIP() << "No BF16 before Ampere.";
   }
+#endif
   const std::string kHloText = R"(
 HloModule m
 
@@ -3626,10 +3637,12 @@ ENTRY e {
 }
 
 TEST_F(TritonGemmContractionDims, TritonDotForceContractionDims_1_2_0_1) {
+#ifndef TENSORFLOW_USE_ROCM
   if (!GetCudaComputeCapability().IsAtLeast(
           se::CudaComputeCapability::AMPERE)) {
     GTEST_SKIP() << "No BF16 before Ampere.";
   }
+#endif
   const std::string kHloText = R"(
 HloModule m
 
@@ -3653,10 +3666,12 @@ ENTRY e {
 }
 
 TEST_F(TritonGemmContractionDims, TritonDotForceContractionDims_1_1) {
+#ifndef TENSORFLOW_USE_ROCM
   if (!GetCudaComputeCapability().IsAtLeast(
           se::CudaComputeCapability::AMPERE)) {
     GTEST_SKIP() << "No BF16 before Ampere.";
   }
+#endif
   const std::string kHloText = R"(
 HloModule m
 
