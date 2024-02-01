@@ -2153,7 +2153,6 @@ absl::StatusOr<TritonWrapperResult> TritonWrapper(
       auto triton_module,
       CreateTritonModule(analysis, fn_name, hlo_computation, device_info,
                          config, ir_emitter, mlir_context));
-
   VLOG(3) << hlo_computation->ToString(HloPrintOptions::ShortParsable());
   VLOG(2) << config.ToString();
 

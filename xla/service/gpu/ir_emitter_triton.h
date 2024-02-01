@@ -35,7 +35,6 @@ limitations under the License.
 #include "xla/stream_executor/device_description.h"
 #include "triton/Dialect/Triton/IR/Dialect.h"
 
-
 namespace xla {
 namespace gpu {
 
