@@ -30,15 +30,22 @@ limitations under the License.
 #include "xla/status.h"
 #include "tsl/platform/errors.h"
 #include "tsl/platform/regexp.h"
-#if GOOGLE_CUDA
+#if GOOGLE_CUDA 
 #include "third_party/gpus/nccl/graph/xml.h"
+#elif TENSORFLOW_USE_ROCM
+#include "rocm/rocm_config.h"
+#if (TF_ROCM_VERSION >= 50200)
+#include "rocm/include/rccl/rccl.h"
+#include "rocm/include/rccl/xml.h"
+#else
+#include "rocm/include/rccl.h"
 #endif
 
 namespace xla {
 namespace gpu {
 namespace {
 
-#if GOOGLE_CUDA
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 
 class NcclTopoXmlParser {
  public:
@@ -142,9 +149,15 @@ class NcclTopoXmlParser {
   absl::string_view src_;
   ncclXml* xml_;
   absl::flat_hash_map<std::string, absl::flat_hash_set<std::string>> spec_ = {
-      {"system", {"cpu"}}, {"pci", {"pci", "gpu", "nic"}}, {"gpu", {"nvlink"}},
+      {"system", {"cpu"}}, {"pci", {"pci", "gpu", "nic"}}, 
+#if GOOGLE_CUDA     
+      {"gpu", {"nvlink"}},
+#elif TENSORFLOW_USE_ROCM
+      {"gpu", {"xgmi"}},
+#endif    
       {"nic", {"net"}},    {"cpu", {"pci", "nic"}},        {"nvlink", {}},
-      {"net", {}}};
+      {"net", {}} , {"xgmi", {}}
+      };
 };
 
 Status MockNcclTopoUpdateXmlRec(
@@ -175,7 +188,7 @@ Status MockNcclTopoUpdateXmlRec(
 }  // namespace
 
 Status MockTopoGetXml(absl::string_view xml_str_view, ncclXml* xml) {
-#if GOOGLE_CUDA
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
   xml->maxIndex = 0;
   NcclTopoXmlParser parser(xml_str_view, xml);
   return parser.Parse(nullptr);
@@ -186,7 +199,7 @@ Status MockTopoGetXml(absl::string_view xml_str_view, ncclXml* xml) {
 
 Status MockNcclTopoUpdateXml(absl::Span<const std::pair<int, int>> local_ranks,
                              ncclXml* xml) {
-#if GOOGLE_CUDA
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
   return MockNcclTopoUpdateXmlRec(local_ranks, xml->nodes);
 #else
   return absl::OkStatus();

@@ -22,6 +22,7 @@ limitations under the License.
 #include "absl/types/span.h"
 #include "xla/status.h"
 
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 struct ncclXml;
 
 namespace xla {
@@ -36,5 +37,6 @@ Status MockNcclTopoUpdateXml(absl::Span<const std::pair<int, int>> local_ranks,
 
 }  // namespace gpu
 }  // namespace xla
+#endif // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 
 #endif  // XLA_SERVICE_GPU_MOCK_NCCL_XML_H_

@@ -72,7 +72,7 @@ class GpuExecutableRunOptions {
     return *this;
   }
 
-  enum class MockNcclTopoModel { kGCPA3, kNvidia };
+  enum class MockNcclTopoModel { kGCPA3, kNvidia, kAMD };
   // Gets the nccl network topology used in mocking calls.
   MockNcclTopoModel mock_nccl_topo_model() const {
     return mock_nccl_topo_model_;

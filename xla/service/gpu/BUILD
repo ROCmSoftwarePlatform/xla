@@ -3,7 +3,7 @@
 
 load("//xla/tests:build_defs.bzl", "xla_test")
 load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
-load("@local_config_cuda//cuda:build_defs.bzl", "cuda_library")
+load("@local_config_cuda//cuda:build_defs.bzl", "cuda_library", "cuda_default_copts")
 load("//xla:xla.bzl", "xla_cc_test", "xla_cub_deps", "xla_export_hlo_deps")
 load(
     "//xla/service/gpu:build_defs.bzl",
@@ -17,7 +17,7 @@ load(
 load(
     "@local_config_rocm//rocm:build_defs.bzl",
     "if_rocm_hipblaslt",
-    "if_rocm_is_configured",
+    "if_rocm_is_configured", 
     "rocm_copts",
 )
 load("@tsl//tsl:tsl.bzl", "if_google", "if_cuda_or_rocm", "if_nccl", "tsl_copts", "tsl_gpu_library")
@@ -947,6 +947,8 @@ cc_library(
         "//xla/stream_executor/cuda:cuda_executor",
     ]) + if_rocm_is_configured([
         "@local_config_rocm//rocm:rccl",
+        "//xla/stream_executor/rocm:rocm_driver",
+        "//xla/stream_executor/rocm:rocm_executor",        
     ]) + if_gpu_is_configured([
         "//xla/stream_executor/gpu:gpu_stream",
     ]),
@@ -1015,18 +1017,24 @@ cc_library(
     ],
 )
 
-cuda_library(
-    name = "sleep_kernel",
-    srcs = if_cuda_is_configured(["sleep_kernel.cu.cc"]),
-    hdrs = if_cuda_is_configured(["sleep_kernel.h"]),
-    deps = ["@local_config_cuda//cuda:cuda_headers"],
+cc_library(
+    name = "sleep_kernel_gpu",
+    srcs = if_cuda_or_rocm(["sleep_kernel.cu.cc"]),
+    hdrs = if_cuda_or_rocm(["sleep_kernel.h"]),
+    copts = rocm_copts() + cuda_default_copts(),
+    deps = if_cuda_is_configured([
+            "@local_config_cuda//cuda:cuda_headers"
+        ]) + if_rocm_is_configured([
+            "@local_config_rocm//rocm:rocm_headers",
+        ]),
 )
 
 cc_library(
     name = "mock_nccl_xml_google",
     srcs = ["mock_nccl_xml.cc"],
     hdrs = ["mock_nccl_xml.h"],
-    local_defines = if_cuda_is_configured(["GOOGLE_CUDA=1"]),
+    local_defines = if_cuda_is_configured(["GOOGLE_CUDA=1"]) + 
+                    if_rocm_is_configured(["TENSORFLOW_USE_ROCM=1"]),
     tags = ["manual"],
     visibility = ["//visibility:private"],
     deps = [
@@ -1085,24 +1093,24 @@ alias(
 # TODO(b/306073484): Stub out the cost model api used in mock nccl functions.
 cc_library(
     name = "_mock_nccl_utils_google",
-    srcs = if_cuda_is_configured(["mock_nccl_utils.cc"]),
-    hdrs = if_cuda_is_configured([
+    srcs = if_gpu_is_configured(["mock_nccl_utils.cc"]),
+    hdrs = if_gpu_is_configured([
         "mock_nccl_utils.h",
         "mock_nccl_topo_config.h",
     ]),
     # Override tsl_gpu_library()'s internal default value of ["//buildenv/target:gce"].
     compatible_with = [],
-    defines = if_cuda_is_configured(["XLA_ENABLE_XCCL"]),  # TODO(ezhulenev): Remove!
+    defines = if_gpu_is_configured(["XLA_ENABLE_XCCL"]),  # TODO(ezhulenev): Remove!
     tags = ["manual"],
     visibility = ["//visibility:private"],
-    deps = if_cuda_is_configured([
+    deps = if_gpu_is_configured([
         ":gpu_executable_run_options",
         ":mock_nccl_xml_google",
         ":nccl_collective_thunks",
         ":nccl_api",
         ":nccl_clique_key",
         ":nccl_clique",
-        ":sleep_kernel",
+        ":sleep_kernel_gpu",
         ":thunk",
         "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/base:core_headers",
@@ -1116,8 +1124,6 @@ cc_library(
         "@com_google_absl//absl/synchronization",
         "@com_google_absl//absl/time",
         "@com_google_absl//absl/types:span",
-        "@local_config_cuda//cuda:cuda_headers",
-        "@local_config_nccl//:nccl",
         "//xla:debug_options_flags",
         "//xla:executable_run_options",
         "//xla:shape_util",
@@ -1135,6 +1141,12 @@ cc_library(
         "@tsl//tsl/platform:env",
         "@tsl//tsl/platform:errors",
         "@tsl//tsl/platform:statusor",
+    ]) + if_cuda_is_configured([
+        "@local_config_cuda//cuda:cuda_headers",
+        "@local_config_nccl//:nccl",
+    ]) + if_rocm_is_configured([
+        "@local_config_rocm//rocm:rocm_headers",        
+        "@local_config_rocm//rocm:rccl",
     ]),
 )
 
@@ -1163,6 +1175,8 @@ cc_library(
         "//xla/stream_executor",
     ]) + if_cuda_is_configured([
         "@local_config_nccl//:nccl",
+    ]) + if_rocm_is_configured([
+        "@local_config_rocm//rocm:rccl",
     ]),
 )
 
@@ -1201,9 +1215,8 @@ cc_library(
     hdrs = [
         "gpu_executable.h",
     ],
-    local_defines = if_cuda_is_configured(["GOOGLE_CUDA=1"]) + if_rocm_is_configured([
-        "TENSORFLOW_USE_ROCM=1",
-    ]),
+    local_defines = if_cuda_is_configured(["GOOGLE_CUDA=1"]) + 
+                    if_rocm_is_configured(["TENSORFLOW_USE_ROCM=1"]),
     deps = [
         ":buffer_allocations",
         ":gpu_constants",
@@ -1417,9 +1430,8 @@ cc_library(
     name = "cub_sort_thunk",
     srcs = if_gpu_is_configured(["cub_sort_thunk.cc"]),
     hdrs = if_gpu_is_configured(["cub_sort_thunk.h"]),
-    local_defines = if_cuda_is_configured(["GOOGLE_CUDA=1"]) + if_rocm_is_configured([
-        "TENSORFLOW_USE_ROCM=1",
-    ]),
+    local_defines = if_cuda_is_configured(["GOOGLE_CUDA=1"]) + 
+                    if_rocm_is_configured(["TENSORFLOW_USE_ROCM=1"]),
     deps = if_gpu_is_configured([
         ":buffer_allocations",
         ":thunk",
@@ -1441,9 +1453,8 @@ build_cub_sort_kernels(
     name = "cub_sort_kernel",
     srcs = if_gpu_is_configured(["cub_sort_kernel.cu.cc"]),
     hdrs = if_gpu_is_configured(["cub_sort_kernel.h"]),
-    local_defines = if_cuda_is_configured(["GOOGLE_CUDA=1"]) + if_rocm_is_configured([
-        "TENSORFLOW_USE_ROCM=1",
-    ]),
+    local_defines = if_cuda_is_configured(["GOOGLE_CUDA=1"]) + 
+                    if_rocm_is_configured(["TENSORFLOW_USE_ROCM=1"]),
     tags = [
         "ignore_for_dep=third_party/tensorflow/compiler/xla/service/gpu/gpu_prim_rocm.h",
     ],

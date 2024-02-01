@@ -42,6 +42,7 @@ limitations under the License.
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "absl/types/span.h"
+#if GOOGLE_CUDA
 #include "third_party/gpus/cuda/include/cuda_runtime_api.h"
 #include "third_party/gpus/cuda/include/driver_types.h"
 #include "third_party/gpus/cuda/include/vector_types.h"
@@ -53,6 +54,12 @@ limitations under the License.
 #include "third_party/gpus/nccl/include/info.h"
 #include "third_party/gpus/nccl/include/nccl_common.h"
 #include "third_party/nccl/nccl.h"
+#elif TENSORFLOW_USE_ROCM
+#include "rocm/include/hip/hip_runtime.h"
+#include "rocm/rocm_config.h"
+#if (TF_ROCM_VERSION >= 50200)
+#include "rocm/include/rccl/rccl.h"
+#endif 
 #include "xla/debug_options_flags.h"
 #include "xla/executable_run_options.h"
 #include "xla/service/collective_ops_utils.h"
@@ -695,6 +702,13 @@ absl::Status InitializeMockNcclCostModel(
       XLA_NCCL_RETURN_IF_ERROR(ncclCalloc(&comm->peerInfo, nRanks + 1));
       xml_str = kNvidia;
       break;
+    case GpuExecutableRunOptions::MockNcclTopoModel::kAMD:
+      comm->collNetSupport = false;
+      comm->nvlsSupport = false;
+      comm->minCompCap = comm->maxCompCap = 9;   // ROCm doesn't use it
+      XLA_NCCL_RETURN_IF_ERROR(ncclCalloc(&comm->peerInfo, nRanks + 1));
+      xml_str = kAMD;
+      break;        
     default:
       return absl::InvalidArgumentError("Unknown MockNcclTopoModel");
   }
