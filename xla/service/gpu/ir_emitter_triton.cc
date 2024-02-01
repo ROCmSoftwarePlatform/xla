@@ -758,9 +758,11 @@ void CreateTritonPipeline(mlir::OpPassManager& pm,
   // Based on make_ttgir() under "# optimize TTGIR" in
   // @triton//:python/triton/compiler/backends/cuda.py
   pm.addPass(mlir::createTritonGPUCoalescePass());
-  //pm.addPass(mlir::createTritonNvidiaGPUPlanCTAPass(/*clusterInfo=*/));
-  //pm.addPass(mlir::createTritonGPURewriteTensorPointerPass(ccAsInt));
-  //pm.addPass(mlir::createTritonNvidiaGPUPlanCTAPass(/*clusterInfo=*/));
+#ifndef TENSORFLOW_USE_ROCM
+  pm.addPass(mlir::createTritonNvidiaGPUPlanCTAPass(/*clusterInfo=*/));
+  pm.addPass(mlir::createTritonGPURewriteTensorPointerPass(ccAsInt));
+  pm.addPass(mlir::createTritonNvidiaGPUPlanCTAPass(/*clusterInfo=*/));
+#endif
   pm.addPass(mlir::createTritonGPURemoveLayoutConversionsPass());
   pm.addPass(mlir::createTritonGPUAccelerateMatmulPass(ccAsInt));
   pm.addPass(mlir::createTritonGPURemoveLayoutConversionsPass());
@@ -768,22 +770,28 @@ void CreateTritonPipeline(mlir::OpPassManager& pm,
   pm.addPass(mlir::createCSEPass());
   pm.addPass(mlir::createTritonGPUPipelinePass(num_stages, num_warps, numCTAs,
                                                ccAsInt));
-  //pm.addPass(
-  //    mlir::createTritonNvidiaGPUMaterializeLoadStorePass(num_warps, ccAsInt));
+#ifndef TENSORFLOW_USE_ROCM
+  pm.addPass(
+      mlir::createTritonNvidiaGPUMaterializeLoadStorePass(num_warps, ccAsInt));
+#endif
   if (ccAsInt <= 80) {
     pm.addPass(mlir::createTritonGPUPrefetchPass());
   }
   pm.addPass(mlir::createTritonGPUOptimizeDotOperandsPass());
   pm.addPass(mlir::createTritonGPURemoveLayoutConversionsPass());
   pm.addPass(mlir::createTritonGPUDecomposeConversionsPass());
-  //pm.addPass(mlir::createTritonNvidiaGPUWSFixupMissingAttrs());
+#ifndef TENSORFLOW_USE_ROCM
+  pm.addPass(mlir::createTritonNvidiaGPUWSFixupMissingAttrs());
+#endif
   pm.addPass(mlir::createTritonGPUReorderInstructionsPass());
   pm.addPass(mlir::createCSEPass());
   pm.addPass(mlir::createSymbolDCEPass());
-  //if (ccAsInt >= 90) {
-    //pm.addPass(mlir::createTritonNvidiaGPUFenceInsertionPass(ccAsInt));
-  //}
-  //pm.addPass(mlir::createTritonNvidiaGPUWSFixupMissingAttrs());
+#ifndef TENSORFLOW_USE_ROCM
+  if (ccAsInt >= 90) {
+    pm.addPass(mlir::createTritonNvidiaGPUFenceInsertionPass(ccAsInt));
+  }
+  pm.addPass(mlir::createTritonNvidiaGPUWSFixupMissingAttrs());
+#endif
   pm.addPass(mlir::createTritonGPUOptimizeThreadLocalityPass());
   pm.addPass(mlir::createCanonicalizerPass());
   // Based on translateTritonGPUToLLVMIR() in
@@ -2074,7 +2082,6 @@ StatusOr<TritonWrapperResult> TritonWrapper(
       auto triton_module,
       CreateTritonModule(analysis, fn_name, hlo_computation, device_info,
                          config, ir_emitter, mlir_context));
-
   VLOG(3) << hlo_computation->ToString(HloPrintOptions::ShortParsable());
   VLOG(2) << config.ToString();
 

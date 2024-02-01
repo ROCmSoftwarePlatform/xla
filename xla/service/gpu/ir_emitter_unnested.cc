@@ -2333,6 +2333,7 @@ Status IrEmitterUnnested::EmitFusion(
                  << backend_config_str.str();
     }
   }
+
   // Create HloFusionAnalysis instance.
   const se::DeviceDescription& device_info =
       ir_emitter_context_->gpu_device_info();
