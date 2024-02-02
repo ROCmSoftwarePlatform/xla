@@ -70,7 +70,13 @@ using TypesF16F32F64CF64 = ::testing::Types<
 #endif
     float>;
 
+#if GOOGLE_CUDA
 using TypesF8 = ::testing::Types<tsl::float8_e4m3fn>;
+#endif
+#if TF_HIPBLASLT && TF_ROCM_VERSION >= 60000
+using TypesF8 = ::testing::Types<tsl::float8_e4m3fnuz>;
+#endif
+
 
 // Check that we can safely pass an input tuple's elements to a dot operation.
 XLA_TEST_F(DotOperationTest, DotOfInputTupleElem) {
@@ -689,7 +695,7 @@ XLA_TYPED_TEST(DotOperationTest_F16F32F64CF64, GeneralMatMul) {
       {x_data.get(), y_data.get()}, this->error_spec_);
 }
 
-#if GOOGLE_CUDA || TF_HIPBLASLT
+#if GOOGLE_CUDA || (TF_HIPBLASLT && TF_ROCM_VERSION >= 60000)
 template <typename T>
 class DotOperationTestWithCublasLt_F16F32F64CF64 : public DotOperationTest {
  public:
@@ -745,7 +751,7 @@ XLA_TYPED_TEST(DotOperationTestWithCublasLt_F16F32F64CF64,
 }
 #endif  // GOOGLE_CUDA || TF_HIPBLASLT
 
-#if GOOGLE_CUDA
+#if GOOGLE_CUDA || TF_HIPBLASLT
 template <typename T>
 class DotOperationTestWithCublasLt_F8 : public DotOperationTest {
  public:
@@ -1067,7 +1073,7 @@ XLA_TYPED_TEST(DotOperationTestWithCublasLt_F8, ScaledABScaledDWithDAmaxF8) {
                                 b_scale_data.get(), d_scale_data.get()},
                                this->error_spec_);
 }
-#endif  // GOOGLE_CUDA
+#endif  // GOOGLE_CUDA || TF_HIPBLASLT
 
 XLA_TYPED_TEST(DotOperationTest_F16F32F64CF64, GeneralMatMulR3LhsR2Rhs) {
   using T = TypeParam;
