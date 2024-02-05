@@ -64,6 +64,7 @@ cc_library(
         "//xla/stream_executor/platform",
         "//xla/stream_executor/platform:dso_loader",
         "@local_config_rocm//rocm:rocm_headers",
+        "@local_config_rocm//rocm:hip",
         "@tsl//tsl/platform:env",
         "@tsl//tsl/platform:numbers",
         "@tsl//tsl/platform:stacktrace",

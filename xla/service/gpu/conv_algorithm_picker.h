@@ -82,7 +82,13 @@ class GpuConvAlgorithmPicker : public HloModulePass {
   }
 
   static bool IsEnabled(const HloModule* module) {
+#if GOOGLE_CUDA
     return module->config().debug_options().xla_gpu_autotune_level() != 0;
+#else
+    /* ROCM requires this pass, because convolutions can't be executed without it.
+       No actual autotuning will occur. */
+    return true;
+#endif
   }
 
   static bool IsCandidate(const HloInstruction* instr) {

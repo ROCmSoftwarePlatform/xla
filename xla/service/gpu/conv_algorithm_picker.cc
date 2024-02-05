@@ -1191,13 +1191,13 @@ absl::StatusOr<bool> GpuConvAlgorithmPicker::Run(
     const absl::flat_hash_set<absl::string_view>& execution_threads) {
   XLA_SCOPED_LOGGING_TIMER(
       absl::StrCat("GpuConvAlgorithmPicker for ", module->name()));
-
+#if GOOGLE_CUDA
   if (!IsEnabled(module)) {
     VLOG(3) << "Convolution auto-tuning disabled, GpuConvAlgorithmPicker "
                "returning early.";
     return false;
   }
-
+#endif
   bool changed = false;
   for (HloComputation* computation :
        module->MakeNonfusionComputations(execution_threads)) {

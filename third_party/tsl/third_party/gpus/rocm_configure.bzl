@@ -46,7 +46,6 @@ def verify_build_defines(params):
     missing = []
     for param in [
         "cxx_builtin_include_directories",
-        "extra_no_canonical_prefixes_flags",
         "host_compiler_path",
         "host_compiler_prefix",
         "linker_bin_path",
@@ -64,25 +63,28 @@ def verify_build_defines(params):
             ".",
         )
 
-def find_cc(repository_ctx):
+def find_cc(rocm_config, repository_ctx):
     """Find the C++ compiler."""
-
-    # Return a dummy value for GCC detection here to avoid error
-    target_cc_name = "gcc"
-    cc_path_envvar = _GCC_HOST_COMPILER_PATH
-    cc_name = target_cc_name
-
-    cc_name_from_env = get_host_environ(repository_ctx, cc_path_envvar)
-    if cc_name_from_env:
-        cc_name = cc_name_from_env
-    if cc_name.startswith("/"):
+    clang = get_host_environ(repository_ctx, "CLANG_COMPILER_PATH")
+    gcc = get_host_environ(repository_ctx, "GCC_HOST_COMPILER_PATH")
+    if gcc != None:
+        target_cc_name = "gcc"
+        cc_name = gcc
+    else:
+        target_cc_name = "clang"
+        cc_name = clang
+    if cc_name!=None and cc_name.startswith("/"):
         # Absolute path, maybe we should make this supported by our which function.
-        return cc_name
-    cc = which(repository_ctx, cc_name)
+        print("Using", cc_name, "as the ROCm compiler")
+        return target_cc_name, cc_name
+    if cc_name==None:
+        cc = which(repository_ctx, rocm_config.rocm_toolkit_path + "/llvm/bin/clang")
+    else:
+        cc = which(repository_ctx, cc_name)
     if cc == None:
-        fail(("Cannot find {}, either correct your path or set the {}" +
-              " environment variable").format(target_cc_name, cc_path_envvar))
-    return cc
+        fail(("Cannot find {}").format(target_cc_name))
+    print("Using", cc, "as the ROCm compiler")
+    return target_cc_name, cc
 
 _INC_DIR_MARKER_BEGIN = "#include <...>"
 
@@ -198,6 +200,7 @@ def _rocm_include_path(repository_ctx, rocm_config, bash_bin):
     inc_dirs.append(rocm_toolkit_path + "/llvm/lib/clang/15.0.0/include")
     inc_dirs.append(rocm_toolkit_path + "/llvm/lib/clang/16.0.0/include")
     inc_dirs.append(rocm_toolkit_path + "/llvm/lib/clang/17.0.0/include")
+    inc_dirs.append(rocm_toolkit_path + "/lib/llvm/lib/clang/17.0.0/include")
     inc_dirs.append(rocm_toolkit_path + "/llvm/lib/clang/17/include")
     inc_dirs.append(rocm_toolkit_path + "/llvm/lib/clang/18/include")
 
@@ -675,7 +678,11 @@ def _create_local_rocm_repository(repository_ctx):
 
     # Set up crosstool/
 
-    cc = find_cc(repository_ctx)
+    cc_name, cc = find_cc(rocm_config, repository_ctx)
+
+    # configure.py will try to add-Wno-gnu-offsetof-extensions, but, in case it fails,
+    # we do it too
+    extra_compile_flags = [] if (cc_name == "gcc") else ["-Wno-gnu-offsetof-extensions"]
 
     host_compiler_includes = get_cxx_inc_directories(repository_ctx, cc)
 
@@ -687,18 +694,11 @@ def _create_local_rocm_repository(repository_ctx):
 
     rocm_defines["%{linker_bin_path}"] = rocm_config.rocm_toolkit_path + "/hcc/compiler/bin"
 
-    # For gcc, do not canonicalize system header paths; some versions of gcc
-    # pick the shortest possible path for system includes when creating the
-    # .d file - given that includes that are prefixed with "../" multiple
-    # time quickly grow longer than the root of the tree, this can lead to
-    # bazel's header check failing.
-    rocm_defines["%{extra_no_canonical_prefixes_flags}"] = "\"-fno-canonical-system-headers\""
-
     rocm_defines["%{unfiltered_compile_flags}"] = to_list_of_strings([
         "-DTENSORFLOW_USE_ROCM=1",
         "-D__HIP_PLATFORM_AMD__",
         "-DEIGEN_USE_HIP",
-    ])
+    ] + extra_compile_flags)
 
     rocm_defines["%{host_compiler_path}"] = "clang/bin/crosstool_wrapper_driver_is_not_gcc"
 
