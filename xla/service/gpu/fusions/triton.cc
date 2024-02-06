@@ -148,7 +148,7 @@ absl::StatusOr<FusionEmissionResult> TritonFusion::Emit(
           triton_wrapper_result,
           TritonWrapper(analysis, impl_fn_name, hlo_computation,
                         kTritonSoftmaxFusionKind,
-                        ir_emitter_context.cuda_compute_capability(),
+                        ir_emitter_context.gpu_compute_capability(),
                         ir_emitter_context.gpu_device_info(), config,
                         ir_emitter_context.llvm_module(), &EmitSoftMax,
                         *ir_emitter_context.mlir_context()));
@@ -179,7 +179,7 @@ absl::StatusOr<FusionEmissionResult> TritonFusion::Emit(
           triton_wrapper_result,
           TritonWrapper(analysis, impl_fn_name, hlo_computation,
                         kTritonGemmFusionKind,
-                        ir_emitter_context.cuda_compute_capability(),
+                        ir_emitter_context.gpu_compute_capability(),
                         ir_emitter_context.gpu_device_info(), config,
                         ir_emitter_context.llvm_module(), &EmitMatMul,
                         *ir_emitter_context.mlir_context()));
