@@ -2159,11 +2159,7 @@ StatusOr<FusionEmissionResult> IrEmitterUnnested::EmitTritonFusion(
           triton_wrapper_result,
           TritonWrapper(analysis, impl_fn_name, hlo_computation,
                         kTritonSoftmaxFusionKind,
-#ifdef TENSORFLOW_USE_ROCM
-                        ir_emitter_context_->rocm_compute_capability(),
-#else
-                        ir_emitter_context_->cuda_compute_capability(),
-#endif
+                        ir_emitter_context_->gpu_compute_capability(),
                         ir_emitter_context_->gpu_device_info(), config, module_,
                         &EmitSoftMax, *ir_emitter_context_->mlir_context()));
       launch_dimensions =

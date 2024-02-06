@@ -59,6 +59,9 @@ namespace xla {
 namespace gpu {
 namespace {
 
+template<class... Ts> struct Overload : Ts... { using Ts::operator()...; };
+template<class... Ts> Overload(Ts...) -> Overload<Ts...>;
+
 namespace m = ::xla::match;
 
 class TritonTest : public GpuCodegenTest {
@@ -69,6 +72,90 @@ class TritonTest : public GpuCodegenTest {
         ->GetDeviceDescription()
         .cuda_compute_capability();
   }
+
+  const auto& device_desc() {
+    return backend()
+        .default_stream_executor()
+        ->GetDeviceDescription();
+  }
+
+public:
+
+  const se::GpuComputeCapability& GpuComputeComp() {
+    return device_desc().gpu_compute_capability();
+  }
+
+  enum class Switch : uint32_t {
+    False,  // check always fails
+    True,   // check always succeeds
+  };
+  // switch based on architecture only
+  bool CudaOrRocmCheck(Switch cuda_set, Switch rocm_set) {
+    return std::visit(
+        Overload{[cuda_set](const se::CudaComputeCapability&) {
+                         return cuda_set == Switch::True;
+                       },
+                       [rocm_set](const se::RocmComputeCapability&) {
+                         return rocm_set == Switch::True;
+                       }},
+        GpuComputeComp());
+  }
+
+  se::GpuComputeCapability CudaAmpereOrRocm() {
+    return std::visit(
+        Overload{[](const se::CudaComputeCapability&) {
+                         return se::GpuComputeCapability{
+                             se::CudaComputeCapability{
+                                 se::CudaComputeCapability::AMPERE, 0}};
+                       },
+                       [](const se::RocmComputeCapability& rocm) {
+                         return se::GpuComputeCapability{rocm};
+                       }},
+        GpuComputeComp());
+  }
+  // major version check for CUDA and true/false for rocm
+  bool CudaOrRocmCheck(int cuda_major, Switch rocm_set) {
+    return CudaOrRocmCheck(cuda_major, 0, rocm_set);
+  }
+  // full version check for CUDA and true/false for rocm
+  bool CudaOrRocmCheck(int cuda_major, int cuda_minor, Switch rocm_set) {
+    return std::visit(
+        Overload{
+            [cuda_major, cuda_minor](const se::CudaComputeCapability& cc) {
+              return cc.IsAtLeast(cuda_major, cuda_minor);
+            },
+            [rocm_set](const se::RocmComputeCapability&) {
+              return rocm_set == Switch::True;
+            },
+        },
+        GpuComputeComp());
+  }
+  // most generic check: passes if NULL function is specified
+  bool CudaOrRocmCheck(
+      absl::AnyInvocable<bool(const se::CudaComputeCapability&)> cuda_fun,
+      absl::AnyInvocable<bool(const se::RocmComputeCapability&)> rocm_fun) {
+    return std::visit(
+        Overload{[&cuda_fun](const se::CudaComputeCapability& cc) {
+                         return (cuda_fun ? cuda_fun(cc) : true);
+                       },
+                       [&rocm_fun](const se::RocmComputeCapability& cc) {
+                         return (rocm_fun ? rocm_fun(cc) : true);
+                       }},
+        GpuComputeComp());
+  }
+
+  bool SkipBF16Tests() {
+    return CudaOrRocmCheck(
+        [](se::CudaComputeCapability cuda) {
+          if (!cuda.IsAtLeast(
+                  se::CudaComputeCapability::AMPERE))
+            return true;
+        },
+        [](se::RocmComputeCapability rocm) {
+          return (!rocm.has_bf16_dtype_support());
+        });
+  }
+
 };
 
 class TritonGemmTest : public TritonTest {
@@ -779,9 +866,9 @@ CHECK: fma
 }
 
 TEST_F(TritonGemmTest, FailIfTooMuchShmem) {
-#ifdef TENSORFLOW_USE_ROCM
-  GTEST_SKIP() << "GEMM padding requirements for ROCM not included yet.";
-#endif
+  if (CudaOrRocmCheck(Switch::False, Switch::True)) {
+    GTEST_SKIP() << "GEMM padding requirements for ROCM not included yet.";
+  }
   const std::string kHloText = R"(
 HloModule module, is_scheduled=true
 
@@ -815,12 +902,7 @@ ENTRY entry {
   EXPECT_THAT(
       TritonWrapper(*TritonFusionAnalysis::Execute(*triton_dot_computation),
                     "test_fn", triton_dot_computation, kTritonGemmFusionKind,
-#ifdef TENSORFLOW_USE_ROCM
-                    se::RocmComputeCapability{"gfx906"},
-#else
-                    se::CudaComputeCapability{se::CudaComputeCapability::AMPERE,
-                                              /*minor=*/0},
-#endif
+                    CudaAmpereOrRocm(),
                     dev_info, config, &llvm_module, &EmitMatMul, mlir_context),
       tsl::testing::StatusIs(
           tsl::error::RESOURCE_EXHAUSTED,
@@ -834,12 +916,7 @@ ENTRY entry {
       const auto result,
       TritonWrapper(*TritonFusionAnalysis::Execute(*triton_dot_computation),
                     "test_fn", triton_dot_computation, kTritonGemmFusionKind,
-#ifdef TENSORFLOW_USE_ROCM
-                    se::RocmComputeCapability{"gfx906"},
-#else
-                    se::CudaComputeCapability{se::CudaComputeCapability::AMPERE,
-                                              /*minor=*/0},
-#endif
+                    CudaAmpereOrRocm(),
                     dev_info, config, &llvm_module, &EmitMatMul, mlir_context));
   // Use optin shared memory which is > shared_memory_per_block.
   EXPECT_GT(result.shmem_bytes, dev_info.shared_memory_per_block());
@@ -1196,9 +1273,9 @@ ENTRY e {
 }
 
 TEST_F(TritonGemmTestWithoutTritonGemmAny, SkipU8) {
-#ifdef TENSORFLOW_USE_ROCM
-  GTEST_SKIP() << "GEMM padding requirements for ROCM not included yet.";
-#endif
+  if (CudaOrRocmCheck(Switch::False, Switch::True)) {
+    GTEST_SKIP() << "GEMM padding requirements for ROCM not included yet.";
+  }
   const std::string hlo_text = R"(
 HloModule t
 
@@ -1217,9 +1294,9 @@ ENTRY e {
 }
 
 TEST_F(TritonGemmTestWithoutTritonGemmAny, SkipF32F32) {
-#ifdef TENSORFLOW_USE_ROCM
-  GTEST_SKIP() << "GEMM padding requirements for ROCM not included yet.";
-#endif
+  if (CudaOrRocmCheck(Switch::False, Switch::True)) {
+    GTEST_SKIP() << "GEMM padding requirements for ROCM not included yet.";
+  }
   const std::string hlo_text = R"(
 HloModule t
 
@@ -1272,12 +1349,7 @@ ENTRY entry {
   EXPECT_THAT(
       TritonWrapper(*TritonFusionAnalysis::Execute(*triton_dot_computation),
                     "test_fn", triton_dot_computation, kTritonGemmFusionKind,
-#ifdef TENSORFLOW_USE_ROCM
-                    se::RocmComputeCapability{"gfx906"},
-#else
-                    se::CudaComputeCapability{se::CudaComputeCapability::AMPERE,
-                                              /*minor=*/0},
-#endif
+                    CudaAmpereOrRocm(),
                     dev_info, config, &llvm_module, &EmitMatMul, mlir_context),
       tsl::testing::StatusIs(
           tsl::error::RESOURCE_EXHAUSTED,
@@ -1290,12 +1362,7 @@ ENTRY entry {
   TF_CHECK_OK(
       TritonWrapper(*TritonFusionAnalysis::Execute(*triton_dot_computation),
                     "test_fn", triton_dot_computation, kTritonGemmFusionKind,
-#ifdef TENSORFLOW_USE_ROCM
-                    se::RocmComputeCapability{"gfx906"},
-#else
-                    se::CudaComputeCapability{se::CudaComputeCapability::AMPERE,
-                                              /*minor=*/0},
-#endif
+                    CudaAmpereOrRocm(),
                     dev_info, config, &llvm_module, &EmitMatMul, mlir_context)
           .status());
 }
@@ -1356,12 +1423,10 @@ ENTRY e {
 }
 
 TEST_F(TritonGemmTest, SingleElementTileIsHandled) {
-#ifdef TENSORFLOW_USE_ROCM
-  if (!GetCudaComputeCapability().IsAtLeast(
-          se::CudaComputeCapability::AMPERE)) {
-    GTEST_SKIP() << "Not using autotuner on ROCM yet.";
+  if (CudaOrRocmCheck(Switch::False, Switch::True)) {
+    GTEST_SKIP() << "Not using autotuner on ROCM yet..";
   }
-#endif
+
   MatchOptimizedHlo(R"(
 t {
   p0 = f32[2,7,3]{2,1,0} parameter(0)
@@ -1464,12 +1529,10 @@ ENTRY e {
 class TritonGemmLevel2Test : public TritonGemmTest {
  public:
   void SetUp() override {
-#ifndef TENSORFLOW_USE_ROCM
-    if (!GetCudaComputeCapability().IsAtLeast(
-            se::CudaComputeCapability::AMPERE)) {
-      GTEST_SKIP() << "Triton fusion on pre-Ampere GPUs is limited.";
-    }
-#endif
+  if (!CudaOrRocmCheck(se::CudaComputeCapability::AMPERE, Switch::True)) {
+    GTEST_SKIP()
+        << "Triton fusion on pre-Ampere GPUs is limited.";
+  }
   }
   DebugOptions GetDebugOptionsForTest() override {
     DebugOptions debug_options = TritonGemmTest::GetDebugOptionsForTest();
@@ -2444,12 +2507,10 @@ ENTRY e {
 }
 
 TEST_F(CompareTest, BF16TransposedLHS) {
-#ifndef TENSORFLOW_USE_ROCM
-  if (!GetCudaComputeCapability().IsAtLeast(
-          se::CudaComputeCapability::AMPERE)) {
-    GTEST_SKIP() << "No BF16 before Ampere.";
+  if (SkipBF16Tests()) {
+    GTEST_SKIP() << "BF16 not supported.";
   }
-#endif
+
   const char* hlo_text_ref = R"(
 HloModule r
 
@@ -2488,13 +2549,10 @@ ENTRY e {
 
 TEST_F(CompareTest, UsingOptinSharedMemoryOnAmpereProducesSameResult) {
   // On pre-Ampere GPUs the test would use a different amount of shared memory.
-  if (!GetCudaComputeCapability().IsAtLeast(
-          se::CudaComputeCapability::AMPERE)) {
+  if (!CudaOrRocmCheck(se::CudaComputeCapability::AMPERE, Switch::False)) {
     GTEST_SKIP() << "This test is for Ampere+ GPUs.";
   }
-#ifdef TENSORFLOW_USE_ROCM
-    GTEST_SKIP() << "Optin shared memory not supported on rocm";
-#endif
+
   const se::DeviceDescription dev_info =
       backend().default_stream_executor()->GetDeviceDescription();
   constexpr int kBytesOfSharedMemoryTested = 64 * 1024;
@@ -2646,13 +2704,14 @@ ENTRY e {
 }
 
 TEST_F(CompareTest, S8BF16) {
-  if (!GetCudaComputeCapability().IsAtLeast(
-          se::CudaComputeCapability::AMPERE)) {
-    GTEST_SKIP() << "No BF16 before Ampere.";
+  if (SkipBF16Tests()) {
+    GTEST_SKIP() << "BF16 not supported.";
   }
+
 #ifndef ROCM_LONG_TESTS
     GTEST_SKIP() << "Takes long time to execute.";
 #endif
+
   const char* hlo_text_ref = R"(
 HloModule r
 
@@ -2697,12 +2756,10 @@ ENTRY e {
 }
 
 TEST_F(CompareTest, SplitK) {
-#ifndef TENSORFLOW_USE_ROCM
-  if (!GetCudaComputeCapability().IsAtLeast(
-          se::CudaComputeCapability::AMPERE)) {
-    GTEST_SKIP() << "No BF16 before Ampere.";
+  if (SkipBF16Tests()) {
+    GTEST_SKIP() << "BF16 not supported.";
   }
-#endif
+
   const std::string hlo_text_ref = R"(
 HloModule t, is_scheduled=true
 
@@ -2770,12 +2827,10 @@ ENTRY e {
 }
 
 TEST_F(CompareTest, SplitKBatch) {
-#ifndef TENSORFLOW_USE_ROCM
-  if (!GetCudaComputeCapability().IsAtLeast(
-          se::CudaComputeCapability::AMPERE)) {
-    GTEST_SKIP() << "No BF16 before Ampere.";
+  if (SkipBF16Tests()) {
+    GTEST_SKIP() << "BF16 not supported.";
   }
-#endif
+
   const std::string kHloTextRef = R"(
 HloModule m, is_scheduled=true
 
@@ -2832,12 +2887,9 @@ ENTRY e {
 }
 
 TEST_F(CompareTest, SplitKNontrivialBitcast) {
-#ifndef TENSORFLOW_USE_ROCM
-  if (!GetCudaComputeCapability().IsAtLeast(
-          se::CudaComputeCapability::AMPERE)) {
-    GTEST_SKIP() << "No BF16 before Ampere.";
+  if (SkipBF16Tests()) {
+    GTEST_SKIP() << "BF16 not supported.";
   }
-#endif
   const std::string kHloTextRef = R"(
 HloModule module, is_scheduled=true
 
@@ -3371,12 +3423,9 @@ ENTRY e {
 }
 
 TEST_F(CompareTest, PredToBF16ConversionWorks) {
-#ifndef TENSORFLOW_USE_ROCM
-  if (!GetCudaComputeCapability().IsAtLeast(
-          se::CudaComputeCapability::AMPERE)) {
-    GTEST_SKIP() << "No BF16 before Ampere.";
+  if (SkipBF16Tests()) {
+    GTEST_SKIP() << "BF16 not supported.";
   }
-#endif
   const std::string kHloTextTest = R"(
 HloModule m, is_scheduled=true
 
@@ -3494,12 +3543,9 @@ class TritonGemmContractionDims : public TritonGemmTest {
 };
 
 TEST_F(TritonGemmContractionDims, TritonDotForceContractionDims_1_0) {
-#ifndef TENSORFLOW_USE_ROCM
-  if (!GetCudaComputeCapability().IsAtLeast(
-          se::CudaComputeCapability::AMPERE)) {
-    GTEST_SKIP() << "No BF16 before Ampere.";
+  if (SkipBF16Tests()) {
+    GTEST_SKIP() << "BF16 not supported.";
   }
-#endif
   const std::string kHloText = R"(
 HloModule m
 
@@ -3522,12 +3568,9 @@ ENTRY e {
 }
 
 TEST_F(TritonGemmContractionDims, TritonDotForceContractionDims_1_2_1_2) {
-#ifndef TENSORFLOW_USE_ROCM
-  if (!GetCudaComputeCapability().IsAtLeast(
-          se::CudaComputeCapability::AMPERE)) {
-    GTEST_SKIP() << "No BF16 before Ampere.";
+  if (SkipBF16Tests()) {
+    GTEST_SKIP() << "BF16 not supported.";
   }
-#endif
   const std::string kHloText = R"(
 HloModule m
 
@@ -3550,12 +3593,9 @@ ENTRY e {
 }
 
 TEST_F(TritonGemmContractionDims, TritonDotForceContractionDims_1_2_0_1) {
-#ifndef TENSORFLOW_USE_ROCM
-  if (!GetCudaComputeCapability().IsAtLeast(
-          se::CudaComputeCapability::AMPERE)) {
-    GTEST_SKIP() << "No BF16 before Ampere.";
+  if (SkipBF16Tests()) {
+    GTEST_SKIP() << "BF16 not supported.";
   }
-#endif
   const std::string kHloText = R"(
 HloModule m
 
@@ -3579,12 +3619,9 @@ ENTRY e {
 }
 
 TEST_F(TritonGemmContractionDims, TritonDotForceContractionDims_1_1) {
-#ifndef TENSORFLOW_USE_ROCM
-  if (!GetCudaComputeCapability().IsAtLeast(
-          se::CudaComputeCapability::AMPERE)) {
-    GTEST_SKIP() << "No BF16 before Ampere.";
+  if (SkipBF16Tests()) {
+    GTEST_SKIP() << "BF16 not supported.";
   }
-#endif
   const std::string kHloText = R"(
 HloModule m
 
