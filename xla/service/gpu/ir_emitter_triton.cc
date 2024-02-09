@@ -788,16 +788,13 @@ absl::Status CreateTritonPipeline(mlir::OpPassManager& pm,
     pm.addPass(mlir::createTritonNvidiaGPUWSMaterializationPass(ccAsInt));
     pm.addPass(mlir::createLoopInvariantCodeMotionPass());
     pm.addPass(mlir::createCSEPass());
-  } else {
+  } else if (ccAsInt >= 80) {
     pm.addPass(mt::gpu::createPipelinePass(config.num_stages, config.num_warps,
                                            config.num_ctas, ccAsInt));
   }
 
   pm.addPass(mlir::createTritonNvidiaGPUMaterializeLoadStorePass(
       config.num_warps, ccAsInt));
-  if (ccAsInt <= 80) {
-    pm.addPass(mlir::triton::gpu::createPrefetchPass());
-  }
   pm.addPass(mt::gpu::createOptimizeDotOperandsPass());
   pm.addPass(mt::gpu::createRemoveLayoutConversionsPass());
   pm.addPass(mt::gpu::createReduceDataDuplicationPass());
@@ -817,8 +814,7 @@ absl::Status CreateTritonPipeline(mlir::OpPassManager& pm,
   pm.addPass(mlir::triton::gpu::createDecomposeUnsupportedConversionsPass());
   pm.addPass(mlir::createConvertSCFToCFPass());
   pm.addPass(mlir::createConvertIndexToLLVMPass());
-  // // TODO(b/316566238): Use TMA info collected here in XLA runtime.
-  mlir::triton::gpu::TMAMetadataTy tma_infos;
+  pm.addPass(mlir::triton::gpu::createAllocateSharedMemoryPass());
   pm.addPass(mt::createConvertTritonGPUToLLVMPass(ccAsInt,
                                                   /*target=*/mlir::triton::NVVM,
                                                   &tma_infos));
