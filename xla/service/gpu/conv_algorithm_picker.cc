@@ -96,6 +96,13 @@ class ScratchAllocator : public se::ScratchAllocator {
       : device_ordinal_(device_ordinal), memory_allocator_(memory_allocator) {}
 
   int64_t GetMemoryLimitInBytes() override {
+    const char* workspace_limit_in_mb_str =
+        getenv("TF_CUDNN_WORKSPACE_LIMIT_IN_MB");
+    if (workspace_limit_in_mb_str != nullptr &&
+        strcmp(workspace_limit_in_mb_str, "") != 0) {
+      int64_t scratch_limit_in_mb = atoi(workspace_limit_in_mb_str);
+      return scratch_limit_in_mb * (1 << 20);
+    }
     return 1LL << 32;  // 4GB.  TODO(jlebar): Tune this?
   }
   int64_t TotalAllocatedBytes() { return total_allocated_bytes_; }
