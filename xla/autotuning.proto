@@ -66,6 +66,7 @@ message AutotuneResult {
 
   message GemmKey {
     int64 algorithm = 1;
+    bool needs_rewrite = 2;
   }
 
   // Legacy and unused in new data; superseded by AlgorithmProto.

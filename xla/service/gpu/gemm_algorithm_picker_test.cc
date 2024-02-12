@@ -16,6 +16,8 @@ limitations under the License.
 #include "xla/service/gpu/gemm_algorithm_picker.h"
 
 #include <string>
+#include <fstream>
+#include <sstream>
 
 #include "xla/service/gpu/backend_configs.pb.h"
 #include "xla/service/gpu/gemm_rewriter.h"
@@ -23,6 +25,7 @@ limitations under the License.
 #include "xla/service/pattern_matcher_gmock.h"
 #include "xla/stream_executor/device_description.h"
 #include "xla/tests/hlo_test_base.h"
+#include "xla/tests/test_utils.h"
 #include "tsl/lib/core/status_test_util.h"
 #include "tsl/platform/statusor.h"
 #include "tsl/platform/test.h"
@@ -229,6 +232,148 @@ ENTRY main {
   const GemmBackendConfig& config = gpu_config.gemm_backend_config();
 
   EXPECT_EQ(config.selected_algorithm(), new_algo_id);
+}
+
+
+// Test that the alpha and beta fields of the GemmBackendConfig are updated.
+// A bias must be present for the beta value to be set.
+// In order to have a bias add fused, the bias term must be overwritable.
+// We assume that we may not overwrite parameters of a computation. Hence, we
+// use the third parameter to create a new value which can be overwritten and
+// will be used as the bias. This negate(param_2) has no semantic use, it simply
+// exists so that bias may be overwritten.
+TEST_P(GemmAlgorithmPickerTest, RuntimeGemmSelection) {
+  
+  const char* hlo_text_non_zero = R"(
+HloModule NonZeroAlphaBeta
+
+ENTRY AddDotsFunc {
+  x = f32[2500,300] parameter(0)
+  y = f32[300,800] parameter(1)
+  param_2 = f32[2500,800] parameter(2)
+  bias = f32[2500,800] add(param_2,param_2)
+  k = f32[] constant(3.0)
+  k_broadcast = f32[2500, 800] broadcast(k), dimensions={}
+  dot_a = f32[2500,800] dot(x, y), lhs_contracting_dims={1}, rhs_contracting_dims={0}, operand_precision={highest,highest}
+  dot_a_multiplied = f32[2500, 800] multiply(dot_a, k_broadcast)
+  ROOT out = f32[2500,800] add(dot_a_multiplied, bias)
+}
+)";
+
+  const char* hlo_text_bias_epilogue = R"(
+HloModule BiasEpilogue
+
+ENTRY test {
+  x = f32[2000,3000] parameter(0)
+  y = f32[3000,450] parameter(1)
+  z = f32[450] parameter(2)
+  dot_a = f32[2000,450] dot(x, y), lhs_contracting_dims={1}, rhs_contracting_dims={0}
+  z_bcast = f32[2000,450] broadcast(z), dimensions={1}
+  ROOT out = f32[2000,450] add(dot_a, z_bcast)
+}
+
+)";
+
+  const char* hlo_text_batched_bias_epilogue = R"(
+HloModule test
+    ENTRY test {
+      x = f16[4,15,15] parameter(0)
+      y = f16[15,31] parameter(1)
+      dot_a = f16[4,15,31] dot(x, y), lhs_contracting_dims={2}, rhs_contracting_dims={0}
+      b = f16[31] parameter(2)
+      b_bcast = f16[4,15,31] broadcast(b), dimensions={2}
+      ROOT out = f16[4,15,31] add(dot_a, b_bcast)
+}
+)";
+
+  const char* hlo_text_relu_epilogue = R"(
+HloModule ReluEpilogue
+
+ENTRY test {
+  x = f32[2,3] parameter(0)
+  y = f32[3,4] parameter(1)
+  dot_a = f32[2,4] dot(x, y), lhs_contracting_dims={1}, rhs_contracting_dims={0}
+  c = f32[] constant(0)
+  c_bcast = f32[2,4] broadcast(c), dimensions={}
+  ROOT out = f32[2,4] maximum(dot_a, c_bcast)
+}
+
+)";
+
+const char* hlo_text_relu_bias = R"(
+HloModule test
+
+ENTRY test {
+  x = f32[2,3] parameter(0)
+  y = f32[3,4] parameter(1)
+  z = f32[4] parameter(2)
+  dot_a = f32[2,4] dot(x, y), lhs_contracting_dims={1}, rhs_contracting_dims={0}
+  z_bcast = f32[2,4] broadcast(z), dimensions={1}
+  add = f32[2,4] add(dot_a, z_bcast)
+  c = f32[] constant(0)
+  c_bcast = f32[2,4] broadcast(c), dimensions={}
+  ROOT out = f32[2,4] maximum(add, c_bcast)
+}
+)";
+
+  const char* batched_relu_bias_hlo_text = R"(
+HloModule test
+
+ENTRY test {
+  x = f32[2,3,4] parameter(0)
+  y = f32[4,5,6] parameter(1)
+  z = f32[3,5,6] parameter(2)
+  dot_a = f32[2,3,5,6] dot(x, y), lhs_contracting_dims={2}, rhs_contracting_dims={0}, operand_precision={highest,highest}
+  z_bcast = f32[2,3,5,6] broadcast(z), dimensions={1,2,3}
+  add = f32[2,3,5,6] add(dot_a, z_bcast)
+  c = f32[] constant(0)
+  c_bcast = f32[2,3,5,6] broadcast(c), dimensions={}
+  ROOT out = f32[2,3,5,6] maximum(add, c_bcast)
+}
+)";
+
+  std::ifstream ifs("/tf/xla/input.hlo");
+  if(!ifs)
+    throw "Unable to open file";
+
+  std::stringstream buffer;
+  buffer << ifs.rdbuf();
+
+  // if(!GetDebugOptionsForTest().xla_gpu_enable_cublaslt()) {
+  //   GTEST_SKIP() << "This test must run with blas-lt enabled!";
+  // }
+
+  // DebugOptions debug_options = GetDebugOptionsForTest();
+  // debug_options.set_xla_gpu_enable_cublaslt(GetParam());
+
+  // TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<HloModule> module,
+  //                         GetOptimizedModule(buffer.str()));
+
+  TF_ASSERT_OK_AND_ASSIGN(auto module, ParseAndReturnVerifiedModule(buffer.str()));
+
+  TF_ASSERT_OK_AND_ASSIGN(auto dataflow, HloDataflowAnalysis::Run(*module));
+  const auto params = module->entry_computation()->parameter_instructions();
+
+  using DataType = half;
+  std::vector<Literal> arguments(params.size());
+  std::vector<Literal*> argument_ptrs(params.size());
+  for (int i = 0; i < params.size(); ++i) {
+    VLOG(0) << i << "th param shape = " << params[i]->shape();
+#if 0
+    arguments[i] = LiteralUtil::CreateFullWithDescendingLayout<DataType>
+          (params[i]->shape().dimensions(), (DataType)(i+1));
+#else
+    TF_ASSERT_OK_AND_ASSIGN(arguments[i], xla::MakeFakeLiteral(
+          params[i]->shape(), true, false));
+#endif
+    argument_ptrs[i] = &arguments[i];
+  }
+  //VLOG(0) << "Optimized HLO: " << module->ToString();
+
+  //EXPECT_TRUE(RunAndCompare(buffer.str(), ErrorSpec{1e-5, 1e-5}));
+  //  Actual: false (NOT_FOUND: Custom call target '__cublas$gemm' was not registered)
+  //EXPECT_TRUE(RunAndCompareNoHloPasses(std::move(module), argument_ptrs, ErrorSpec{1e-5, 1e-5}));
+  EXPECT_TRUE(RunAndCompare(std::move(module), argument_ptrs, ErrorSpec{1e-5, 1e-5}));
 }
 
 INSTANTIATE_TEST_SUITE_P(GemmAlgorithmPickerTestSuite, GemmAlgorithmPickerTest,
