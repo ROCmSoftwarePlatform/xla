@@ -1394,6 +1394,7 @@ cc_library(
         ":matmul_utils",
         ":stream_executor_util",
         ":autotuner_util",
+        ":gemm_rewriter",
         "@com_google_absl//absl/strings",
         "//xla:autotune_results_proto_cc",
         "//xla/hlo/ir:hlo",
