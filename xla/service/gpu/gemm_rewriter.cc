@@ -33,7 +33,6 @@ limitations under the License.
 #include "absl/status/status.h"
 #include "absl/strings/string_view.h"
 #include "xla/hlo/evaluator/hlo_evaluator.h"
-#include "xla/hlo/ir/dfs_hlo_visitor_with_default.h"
 #include "xla/hlo/ir/hlo_casting_utils.h"
 #include "xla/hlo/ir/hlo_instruction.h"
 #include "xla/hlo/ir/hlo_instructions.h"
@@ -1978,16 +1977,19 @@ class GemmRewriterVisitor : public DfsHloRewriteVisitor {
   }
 };
 
-// Rewriter that adds a workspace to legacy cuBLAS custom calls. We run it
-// separately after gemm rewriter, so that we can do pattern matching without
-// having to match output tuples.
-class GemmWorkspaceRewriteVisitor : public DfsHloRewriteVisitor {
- public:
-  explicit GemmWorkspaceRewriteVisitor(
-      const se::GpuComputeCapability &gpu_version)
-      : gpu_version_(gpu_version) {}
+absl::StatusOr<bool> RunOnComputation(HloComputation *computation,
+                                      se::GpuComputeCapability gpu_version) {
+  GemmRewriterVisitor visitor(gpu_version);
+  TF_RETURN_IF_ERROR(computation->Accept(&visitor));
+  GemmWorkspaceRewriteVisitor workspace_visitor(gpu_version);
+  TF_RETURN_IF_ERROR(computation->Accept(&workspace_visitor));
+  return visitor.changed();
+}
 
-  absl::Status HandleCustomCall(HloInstruction *instr) override {
+}  // anonymous namespace
+
+absl::Status GemmWorkspaceRewriteVisitor::HandleCustomCall(
+        HloInstruction *instr) {
     if (instr->custom_call_target() != kGemmCallTarget ||
         !instr->shape().IsArray()) {
       return absl::OkStatus();
@@ -2034,22 +2036,7 @@ class GemmWorkspaceRewriteVisitor : public DfsHloRewriteVisitor {
     HloInstruction *get_output = instr->AddInstruction(
         HloInstruction::CreateGetTupleElement(new_call, 0));
     return ReplaceInstruction(instr, get_output);
-  }
-
- private:
-  se::GpuComputeCapability gpu_version_;
-};
-
-absl::StatusOr<bool> RunOnComputation(HloComputation *computation,
-                                      se::GpuComputeCapability gpu_version) {
-  GemmRewriterVisitor visitor(gpu_version);
-  TF_RETURN_IF_ERROR(computation->Accept(&visitor));
-  GemmWorkspaceRewriteVisitor workspace_visitor(gpu_version);
-  TF_RETURN_IF_ERROR(computation->Accept(&workspace_visitor));
-  return visitor.changed();
 }
-
-}  // anonymous namespace
 
 GemmRewriter::GemmRewriter(se::GpuComputeCapability gpu_version)
     : gpu_version_(gpu_version) {}

@@ -48,83 +48,6 @@ using xla::runtime::CustomCall;
 using xla::runtime::State;
 using xla::runtime::StridedMemrefView;
 
-#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
-
-// TODO(ezhulenev): Delete run time auto tuning from XLA.
-absl::Status DoRuntimeAutotuning(se::Stream* stream, GemmConfig* config,
-                                 se::DeviceMemoryBase lhs_buffer,
-                                 se::DeviceMemoryBase rhs_buffer,
-                                 se::DeviceMemoryBase out_buffer,
-                                 const Shape& output_shape, double beta,
-                                 const DebugOptions* debug_options,
-                                 NonAtomicallyUpgradeableRWLock* gpu_lock) {
-  VLOG(3) << "Running GEMM runtime autotuning";
-  std::vector<se::blas::AlgorithmType> algorithms;
-  TF_ASSIGN_OR_RETURN(
-      GemmConfig::DescriptorsTuple desc,
-      config->GetMatrixDescriptors(lhs_buffer, rhs_buffer, out_buffer));
-
-  auto blas = stream->parent()->AsBlas();
-  if (blas == nullptr) {
-    return absl::InternalError("No BLAS support for stream");
-  }
-  blas->GetBlasGemmAlgorithms(stream, desc.lhs, desc.rhs, &desc.output,
-                              &config->alpha, &config->beta, &algorithms);
-  const bool deterministic_ops = debug_options->xla_gpu_deterministic_ops();
-
-  AutotuneConfig autotune_config{
-      DeviceConfig{stream->parent(), stream->parent()->GetAllocator()},
-      *debug_options};
-
-  // TODO(jlebar): We should not use stream->parent()->GetAllocator() here;
-  // that's the global CUDA allocator.  There may not be any free space in
-  // there, because TF usually gobbles it all up for its own BFCAllocator.  We
-  // should use the allocator the user passed when running the XLA program.
-  se::RedzoneAllocator buffer_allocator(
-      stream, stream->parent()->GetAllocator(),
-      PtxOptsFromDebugOptions(*debug_options),
-      /*memory_limit=*/std::numeric_limits<int64_t>::max(),
-      /*redzone_size=*/autotune_config.should_check_correctness()
-          ? debug_options->xla_gpu_redzone_padding_bytes()
-          : 0);
-
-  // Upgrade the reader lock for execution to a writer lock to protect runtime
-  // autotuning.
-  NonAtomicallyUpgradeableRWLock::WriterLock writer_lock =
-      gpu_lock->UpgradeToWriterMutexLock();
-
-  TF_ASSIGN_OR_RETURN(
-      AutotuneResult best_algorithm,
-      GetBestBlasAlgorithm(stream, buffer_allocator, /*gemm_str=*/std::nullopt,
-                           autotune_config, lhs_buffer, rhs_buffer, out_buffer,
-                           algorithms, output_shape, HloModuleConfig(), beta,
-                           [&](const se::blas::AlgorithmType& algorithm)
-                               -> absl::StatusOr<se::blas::ProfileResult> {
-                             se::blas::ProfileResult profile_result;
-                             // We expect GemmWithAlgorithm to fail sometimes --
-                             // in fact, it will fail for all algorithms if
-                             // we're targeting < sm_50.  But because we pass a
-                             // non-null ProfileResult, DoGemmWithAlgorithm
-                             // should always return true, and the actual
-                             // success-ness is returned in
-                             // ProfileResult::is_valid.
-                             TF_RETURN_IF_ERROR(RunGemm(
-                                 *config, lhs_buffer, rhs_buffer, out_buffer,
-                                 se::DeviceMemoryBase(nullptr, 0),
-                                 deterministic_ops, stream, algorithm,
-                                 &profile_result));
-                             return std::move(profile_result);
-                           }));
-
-  if (best_algorithm.has_gemm()) {
-    config->algorithm = algorithms[best_algorithm.gemm().algorithm()];
-    return absl::OkStatus();
-  } else {
-    return Internal("Runtime autotuning failed to select an algorithm");
-  }
-}
-#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
-
 static absl::Status GemmImpl(const ServiceExecutableRunOptions* run_options,
                              const DebugOptions* debug_options,
                              NonAtomicallyUpgradeableRWLock* gpu_lock,
@@ -159,17 +82,8 @@ static absl::Status GemmImpl(const ServiceExecutableRunOptions* run_options,
   // outside of state.GetOrCreate() because otherwise it would be a potential
   // deadlock.
   if (gemm_config->algorithm == stream_executor::blas::kRuntimeAutotuning) {
-#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
-    auto status = DoRuntimeAutotuning(stream, gemm_config, lhs_data, rhs_data,
-                                      output_data, output_shape, beta,
-                                      debug_options, gpu_lock);
-    if (!status.ok()) {
-      return absl::InternalError(status.ToString());
-    }
-#else
     return absl::InternalError(
         "Failed to run runtime autotuner because GPU support is not enabled");
-#endif
   }
 
   return RunGemm(*gemm_config, lhs_data, rhs_data, output_data, workspace_data,
