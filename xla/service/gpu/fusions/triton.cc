@@ -42,7 +42,7 @@ limitations under the License.
 #include "tsl/platform/errors.h"
 #include "tsl/platform/statusor.h"
 
-#if GOOGLE_CUDA
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 #include "xla/service/gpu/ir_emitter_triton.h"
 #else
 #include "absl/status/status.h"
@@ -98,7 +98,7 @@ absl::StatusOr<FusionEmissionResult> TritonFusion::Emit(
     IrEmitterContext& ir_emitter_context, mlir::lmhlo::FusionOp fusion_op,
     const HloFusionInstruction& fusion) const {
   llvm::IRBuilder builder(ir_emitter_context.llvm_module()->getContext());
-#if GOOGLE_CUDA
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
   if (!ir_emitter_context.emit_ir_from_hlo()) {
     CHECK_NE(fusion_op, nullptr);
   }

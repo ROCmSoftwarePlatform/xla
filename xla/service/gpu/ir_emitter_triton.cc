@@ -133,6 +133,9 @@ limitations under the License.
 #ifndef TENSORFLOW_USE_ROCM
 #include "triton/Dialect/TritonNvidiaGPU/Transforms/Passes.h"
 #include "triton/Target/PTX/TmaMetadata.h"
+#else
+#include "third_party/amd/include/TritonAMDGPUToLLVM/Passes.h"
+#endif
 
 namespace xla {
 namespace gpu {
@@ -744,20 +747,22 @@ absl::StatusOr<Value> EmitScope(
   return values[instructions.back()];
 }
 
-void CreateTritonPipeline(mlir::OpPassManager& pm,
-                          const GpuVersion gpu_version,
-                          const TritonGemmConfig& config) {
+absl::Status  CreateTritonPipeline(mlir::OpPassManager& pm,
+                                   const se::GpuComputeCapability gpu_version,
+                                   const TritonGemmConfig& config) {
   int ccAsInt = 0;
-  if(std::holds_alternative<se::CudaComputeCapability>(gpu_version)) {
-    auto cc = std::get<se::CudaComputeCapability>(gpu_version);
-    int ccAsInt = cc.major * 10 + cc.minor;
-  }
+#ifndef TENSORFLOW_USE_ROCM
+  auto cc = std::get<se::CudaComputeCapability>(gpu_version);
+  ccAsInt = cc.major * 10 + cc.minor;
+#endif
 
   const int threadsPerWarp = 32;
+#ifndef TENSORFLOW_USE_ROCM
   mlir::triton::nvidia_gpu::ClusterInfo clusterInfo;
   clusterInfo.clusterDimX = config.cluster_dims.x;
   clusterInfo.clusterDimY = config.cluster_dims.y;
   clusterInfo.clusterDimZ = config.cluster_dims.z;
+#endif
 
   // Based on make_ttir() in
   // @triton//:third_party/nvidia/backend/compiler.py
@@ -775,9 +780,11 @@ void CreateTritonPipeline(mlir::OpPassManager& pm,
   pm.addPass(mt::createConvertTritonToTritonGPUPass(
       config.num_warps, threadsPerWarp, config.num_ctas, ccAsInt));
   pm.addPass(mt::gpu::createCoalescePass());
+#ifndef TENSORFLOW_USE_ROCM
   pm.addPass(mlir::createTritonNvidiaGPUPlanCTAPass(&clusterInfo));
   pm.addPass(mlir::createTritonGPURewriteTensorPointerPass(ccAsInt));
   pm.addPass(mlir::createTritonNvidiaGPUPlanCTAPass(&clusterInfo));
+#endif
   pm.addPass(mt::gpu::createRemoveLayoutConversionsPass());
   pm.addPass(mt::gpu::createOptimizeThreadLocalityPass());
   pm.addPass(mt::gpu::createAccelerateMatmulPass(ccAsInt));
@@ -785,6 +792,7 @@ void CreateTritonPipeline(mlir::OpPassManager& pm,
   pm.addPass(mt::gpu::createOptimizeDotOperandsPass());
   pm.addPass(mlir::createCSEPass());
 
+#ifndef TENSORFLOW_USE_ROCM
   if (cc.IsAtLeastHopper() && config.enable_warp_specialization) {
     // Triton currently doesn't support warp specialization for num_warps != 4.
     // TODO from Triton to add support here:
@@ -813,44 +821,52 @@ void CreateTritonPipeline(mlir::OpPassManager& pm,
 
   pm.addPass(mlir::createTritonNvidiaGPUMaterializeLoadStorePass(
       config.num_warps, ccAsInt));
+#endif
   if (ccAsInt <= 80) {
     pm.addPass(mlir::triton::gpu::createPrefetchPass());
   }
   pm.addPass(mt::gpu::createOptimizeDotOperandsPass());
   pm.addPass(mt::gpu::createRemoveLayoutConversionsPass());
   pm.addPass(mt::gpu::createReduceDataDuplicationPass());
+#ifndef TENSORFLOW_USE_ROCM
   pm.addPass(mlir::createTritonNvidiaGPUWSFixupMissingAttrs());
+#endif
   pm.addPass(mt::gpu::createReorderInstructionsPass());
   pm.addPass(mlir::createCSEPass());
   pm.addPass(mlir::createSymbolDCEPass());
+#ifndef TENSORFLOW_USE_ROCM
   if (cc.IsAtLeastHopper()) {
     pm.addPass(mlir::createTritonNvidiaGPUFenceInsertionPass(ccAsInt));
   }
   pm.addPass(mlir::createTritonNvidiaGPUWSFixupMissingAttrs());
+#endif
   pm.addPass(mlir::createCanonicalizerPass());
 
   // Based on make_llir() in
   // @triton//:third_party/nvidia/backend/compiler.py
+#ifndef TENSORFLOW_USE_ROCM
   pm.addPass(mlir::createTritonNvidiaGPUAddDescriptorArgs());
+#endif
   pm.addPass(mlir::triton::gpu::createDecomposeUnsupportedConversionsPass());
   pm.addPass(mlir::createConvertSCFToCFPass());
   pm.addPass(mlir::createConvertIndexToLLVMPass());
   // // TODO(b/316566238): Use TMA info collected here in XLA runtime.
   mlir::triton::gpu::TMAMetadataTy tma_infos;
+#ifndef TENSORFLOW_USE_ROCM
   pm.addPass(mt::createConvertTritonGPUToLLVMPass(ccAsInt,
-#ifdef TENSORFLOW_USE_ROCM
-                                                  /*target=*/mt::ROCDL,
-#else
                                                   /*target=*/mt::Default,
-#endif
                                                   &tma_infos));
   if (cc.IsAtLeastHopper() && config.enable_warp_specialization) {
     pm.addPass(mlir::createLoopInvariantCodeMotionPass());
     pm.addPass(mlir::createCSEPass());
   }
-#ifndef TENSORFLOW_USE_ROCM
   pm.addPass(mt::createConvertNVGPUToLLVMPass());
+#else
+    pm.addPass(mlir::createLoopInvariantCodeMotionPass());
+    pm.addPass(mlir::createCSEPass());
+    pm.addPass(mt::createConvertTritonAMDGPUToLLVMPass());
 #endif
+
   pm.addPass(mlir::createArithToLLVMConversionPass());
   pm.addPass(mlir::createCanonicalizerPass());
   pm.addPass(mlir::createCSEPass());
@@ -2213,6 +2229,20 @@ absl::StatusOr<TritonWrapperResult> TritonWrapper(
   pm.addPass(std::make_unique<GeneralizeKernelSignaturePass>());
   // llvm::Linker::linkModules() segfaults if we don't strip locations.
   pm.addPass(mlir::createStripDebugInfoPass());
+
+
+// TODO(ROCm): Check why call to loadAllAvailableDialects is necessary here.
+#ifdef TENSORFLOW_USE_ROCM
+  {
+    mlir::DialectRegistry registry;
+    mlir::registerBuiltinDialectTranslation(registry);
+    mlir::registerLLVMDialectTranslation(registry);
+    mlir::registerNVVMDialectTranslation(registry);
+    mlir::registerROCDLDialectTranslation(registry);
+    triton_module->getContext()->appendDialectRegistry(registry);
+    triton_module->getContext()->loadAllAvailableDialects();
+  }
+#endif // TENSORFLOW_USE_ROCM
 
   bool succeeded = mlir::succeeded(pm.run(*triton_module));
 
