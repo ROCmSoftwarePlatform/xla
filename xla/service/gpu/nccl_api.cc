@@ -370,7 +370,7 @@ DefaultNcclApi::CommInitRanks(int32_t nranks, const NcclCliqueId& clique_id,
                               const Config& config) {
   VLOG(1) << "Initialize NCCL communicator for " << ranks.size()
           << " devices; hash(id)=" << absl::HashOf(clique_id);
-
+#if !defined(TENSORFLOW_USE_ROCM)
   ncclConfig_t comm_config = NCCL_CONFIG_INITIALIZER;
   comm_config.splitShare = config.split_share;
 
@@ -394,6 +394,11 @@ DefaultNcclApi::CommInitRanks(int32_t nranks, const NcclCliqueId& clique_id,
   TF_RETURN_IF_ERROR(GroupEnd());
 
   return comms;
+#else
+  return absl::UnimplementedError(
+      absl::StrFormat("%s:%d: NCCL operation ncclCommInitRankConfig not implemented",
+                      __FILE__, __LINE__));
+#endif
 }
 
 absl::StatusOr<std::vector<NcclApi::OwnedNcclComm>> DefaultNcclApi::CommSplit(
