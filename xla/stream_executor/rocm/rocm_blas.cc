@@ -766,27 +766,35 @@ bool ROCMBlas::GetBlasGemmAlgorithms(Stream* stream,
   if (TF_PREDICT_FALSE(!result.ok())) return false;  \
   lhs = std::move(result).value()
 
-    out_algorithms->clear();
-    auto blas_lambda = [this, out_algorithms](auto handle, 
-            auto&& blas_func, auto&&... rest) {
-      rocblas_int num_sols = 0;
-
-      if(auto ret = blas_func(handle, std::forward<decltype(rest)>(rest)..., 
-                  nullptr, &num_sols); ret != rocblas_status_success) {
-        return ret;
-      }
-      solutions_.resize(num_sols);
-      if(auto ret = blas_func(handle, std::forward<decltype(rest)>(rest)..., 
-                solutions_.data(), &num_sols); ret != rocblas_status_success) {
-        return ret;
-      }
-      // NOTE: this is currently disabled due to stability issues
-      out_algorithms->resize(num_sols);
-      for(rocblas_int i = 0; i < num_sols; i++) {
-        (*out_algorithms)[i] = solutions_[i];
-      }
-      return rocblas_status_success;
-    };
+bool ROCMBlas::GetBlasGemmAlgorithms(
+    Stream *stream, const gpu::MatrixDescriptor &a,
+    const gpu::MatrixDescriptor &b, gpu::OutputMatrixDescriptor *c,
+    const void *alpha, const void *beta,
+    std::vector<blas::AlgorithmType> *out_algorithms) {
+  out_algorithms->clear();
+  auto blas_lambda = [this, out_algorithms](auto handle, auto &&blas_func,
+                                            auto &&...rest) {
+    rocblas_int num_sols = 0;
+    if (auto ret = blas_func(handle, std::forward<decltype(rest)>(rest)...,
+                             nullptr, &num_sols);
+        ret != rocblas_status_success) {
+      return ret;
+    }
+    // Limit the number of blas solutions to be more deterministic
+    num_sols = std::min(num_sols, s_max_gemm_solutions);     
+    solutions_.resize(num_sols);
+    if (auto ret = blas_func(handle, std::forward<decltype(rest)>(rest)...,
+                             solutions_.data(), &num_sols);
+        ret != rocblas_status_success) {
+      return ret;
+    }
+    out_algorithms->resize(num_sols);
+    for (rocblas_int i = 0; i < num_sols; i++) {
+      (*out_algorithms)[i] = solutions_[i];
+    }
+    std::sort(out_algorithms->begin(), out_algorithms->end());
+    return rocblas_status_success;
+  };
 
     VLOG(1) << absl::StreamFormat(
       "GetBlasAlgorithms: at=%d bt=%d m=%u n=%u "
