@@ -110,7 +110,9 @@ cc_library(
         "@tsl//tsl/platform:errors",
         "@tsl//tsl/platform:logging",
         "@tsl//tsl/platform:statusor",
-    ],
+    ] + if_rocm_is_configured([
+        "//xla/stream_executor/rocm:hip_memset32_kernel",
+    ]),
 )
 
 cc_library(
