@@ -22,6 +22,7 @@ cc_library(
     ],
     deps = [
         "//tsl/platform:protobuf",
+        "//tsl/platform:logging",
         "//tsl/profiler/protobuf:trace_events_proto_cc",
     ],
 )

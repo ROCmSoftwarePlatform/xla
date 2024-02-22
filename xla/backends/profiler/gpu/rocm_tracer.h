@@ -277,7 +277,7 @@ class RocmActivityCallbackImpl {
  public:
   RocmActivityCallbackImpl(const RocmTracerOptions& options, RocmTracer* tracer,
                            RocmTraceCollector* collector)
-      : options_(options), tracer_(tracer), collector_(collector) {}
+      : options_(options), tracer_(tracer), collector_(collector), HIP_OP_ID_DISPATCH_cnt(0) {}
 
   tsl::Status operator()(const char* begin, const char* end);
 
@@ -293,9 +293,10 @@ class RocmActivityCallbackImpl {
   RocmTracerOptions options_;
   RocmTracer* tracer_ = nullptr;
   RocmTraceCollector* collector_ = nullptr;
+  int HIP_OP_ID_DISPATCH_cnt;
 };
 
-// The class use to enable cupti callback/activity API and forward the collected
+// The class uses roctracer callback/activity API and forward the collected
 // trace events to RocmTraceCollector. There should be only one RocmTracer
 // per process.
 class RocmTracer {

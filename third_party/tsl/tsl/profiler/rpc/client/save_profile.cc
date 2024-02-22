@@ -111,6 +111,7 @@ Status SaveGzippedToolData(const std::string& repository_root,
                            const std::string& run, const std::string& host,
                            const std::string& tool_name,
                            const std::string& data) {
+  LOG(INFO) << "RB : Enter";
   std::string run_dir;
   std::stringstream ss;
   Status status = GetOrCreateRunDir(repository_root, run, &run_dir, &ss);
@@ -121,6 +122,7 @@ Status SaveGzippedToolData(const std::string& repository_root,
       ProfilerJoinPath(run_dir, absl::StrCat(host_prefix, tool_name));
   TF_RETURN_IF_ERROR(WriteGzippedDataToFile(path, data));
   LOG(INFO) << "Dumped gzipped tool data for " << tool_name << " to " << path;
+  LOG(INFO) << "RB : Exit";
   return OkStatus();
 }
 
@@ -132,6 +134,7 @@ std::string GetCurrentTimeStampAsString() {
 Status SaveXSpace(const std::string& repository_root, const std::string& run,
                   const std::string& host,
                   const tensorflow::profiler::XSpace& xspace) {
+  LOG(INFO) << "RB : Enter";
   std::string log_dir = ProfilerJoinPath(repository_root, run);
   VLOG(1) << "Creating " << log_dir;
   TF_RETURN_IF_ERROR(Env::Default()->RecursivelyCreateDir(log_dir));
@@ -143,6 +146,7 @@ Status SaveXSpace(const std::string& repository_root, const std::string& run,
   std::string out_path = ProfilerJoinPath(log_dir, file_name);
   LOG(INFO) << "Collecting XSpace to repository: " << out_path;
 
+  LOG(INFO) << "RB : Exit";
   return WriteBinaryProto(Env::Default(), out_path, xspace);
 }
 

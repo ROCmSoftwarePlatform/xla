@@ -339,6 +339,7 @@ tsl::Status RocmApiCallbackImpl::operator()(uint32_t domain, uint32_t cbid,
 
     if (cbid == HIP_API_ID_hipSetDevice) {
       default_device = hipGetStreamDeviceId(nullptr);
+      LOG(INFO) << "RB: Default device set to "<<default_device;
     }
   } else if (data->phase == ACTIVITY_API_PHASE_EXIT) {
     uint64_t enter_time = 0, exit_time = 0;
@@ -474,7 +475,9 @@ void RocmApiCallbackImpl::AddKernelEventUponApiExit(uint32_t cbid,
       event.kernel_info.func_ptr = kernelFunc;
       const hipStream_t& stream = data->args.hipModuleLaunchKernel.stream;
       // TODO(rocm-profiler): wrap this API if possible.
+
       event.device_id = hipGetStreamDeviceId(stream);
+      LOG(INFO) << "RB: hipModuleLaunchKernel device_id=" << event.device_id;
     } break;
     case HIP_API_ID_hipExtModuleLaunchKernel: {
       const hipFunction_t kernelFunc = data->args.hipExtModuleLaunchKernel.f;
@@ -556,7 +559,7 @@ void RocmApiCallbackImpl::AddNormalMemcpyEventUponApiExit(
     missing:
       device_id(partially, have only for async), context_id,
     memcpy_info.kind(CUPTI puts CUPTI_ACTIVITY_MEMCPY_KIND_UNKNOWN),
-      memcpy_info.destenation(partially, only for async)( CUPTI puts device_id),
+      memcpy_info.destination(partially, only for async)( CUPTI puts device_id),
 
     extra:
       domain, name,
@@ -903,6 +906,7 @@ tsl::Status RocmActivityCallbackImpl::operator()(const char* begin,
       // HIP API activities.
       case ACTIVITY_DOMAIN_HIP_API:
         switch (record->op) {
+          /*
           case HIP_API_ID_hipModuleLaunchKernel:
           case HIP_API_ID_hipExtModuleLaunchKernel:
           case HIP_API_ID_hipHccModuleLaunchKernel:
@@ -947,7 +951,7 @@ tsl::Status RocmActivityCallbackImpl::operator()(const char* begin,
             DumpActivityRecord(record, std::to_string(__LINE__));
             AddHipStreamSynchronizeActivityEvent(record);
             break;
-
+          */
           default:
             if (dump_excluded_activities.find(record->op) ==
                 dump_excluded_activities.end()) {
@@ -964,6 +968,8 @@ tsl::Status RocmActivityCallbackImpl::operator()(const char* begin,
 
         switch (record->op) {
           case HIP_OP_ID_DISPATCH:
+            HIP_OP_ID_DISPATCH_cnt++;
++           VLOG(3) << "RB: hip_op_id_dispatch_cnt=" << HIP_OP_ID_DISPATCH_cnt;
             DumpActivityRecord(record, std::to_string(__LINE__));
             AddHccKernelActivityEvent(record);
             tracer_->RemoveFromPendingActivityRecords(record->correlation_id);
@@ -1045,7 +1051,7 @@ void RocmActivityCallbackImpl::AddHipKernelActivityEvent(
   // TODO(rocm-profiler): CUDA uses device id and correlation ID for finding
   // annotations.
   event.annotation = collector_->annotation_map()->LookUp(event.correlation_id);
-
+  
   event.start_time_ns = record->begin_ns;
   event.end_time_ns = record->end_ns;
 

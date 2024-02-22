@@ -66,9 +66,11 @@ void ConvertXPlaneToTraceEvents(uint32 device_id, const XPlaneVisitor& xplane,
   BuildDeviceAndResources(device_id, xplane,
                           container.MutableDevice(device_id));
 
+    LOG(INFO) << "RB: device_id=" << device_id;
   // Convert events.
   xplane.ForEachLine([device_id, &container](const XLineVisitor& xline) {
     uint32 resource_id = xline.DisplayId();
+    LOG(INFO) << "RB: device_id=" << device_id << " resource_id=" << resource_id;
     if (xline.DisplayName() == tsl::profiler::kXlaAsyncOpLineName) {
       return;
     }
@@ -86,6 +88,9 @@ void ConvertXPlaneToTraceEvents(uint32 device_id, const XPlaneVisitor& xplane,
             args["long_name"] = std::string(xevent.Name());
           } else {
             event->set_name(std::string(xevent.Name()));
+          }
+          if (device_id != 701) { //Only log for GPU.
+            LOG(INFO) << "RB: device_id=" << device_id << " resource_id=" << resource_id << " name=" << xevent.Name();
           }
           event->set_timestamp_ps(xevent.TimestampPs());
           event->set_duration_ps(xevent.DurationPs());
@@ -138,6 +143,7 @@ TraceContainer ConvertXSpaceToTraceContainer(const XSpace& xspace) {
   for (const XPlane* device_plane : device_planes) {
     XPlaneVisitor xplane = CreateTfXPlaneVisitor(device_plane);
     uint32 device_id = kFirstDeviceId + xplane.Id();
+    LOG(INFO) << "RB: device_id=" << device_id << " xplane.id" << xplane.Id() ;
     ConvertXPlaneToTraceEvents(device_id, xplane, container);
   }
   // Trace viewer (non-streaming) has scalability issues, we need to drop

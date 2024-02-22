@@ -20,6 +20,7 @@ limitations under the License.
 #include <vector>
 
 #include "tsl/platform/protobuf.h"
+#include "tsl/platform/logging.h"
 
 namespace tsl {
 namespace profiler {
@@ -31,6 +32,7 @@ bool TraceContainer::ParseMetadataFromString(const std::string& description) {
 void TraceContainer::CapEvents(const uint32_t max_count) {
   const size_t total_count = events_.size();
 
+  LOG(INFO) << "RB: total_count=" << total_count << " max_count=" << max_count;
   if (total_count <= max_count) {
     // Nothing to do. Events are not known sorted after return.
     return;
