@@ -758,7 +758,7 @@ template<class Func> NameWrap(Func) -> NameWrap<Func>;
 
 bool ROCMBlas::GetBlasGemmAlgorithms(Stream* stream, 
   const gpu::MatrixDescriptor& a, const gpu::MatrixDescriptor& b,
-  gpu::MatrixOutDescriptor *c, const void *alpha, const void *beta, 
+  gpu::OutputMatrixDescriptor *c, const void *alpha, const void *beta, 
   std::vector<blas::AlgorithmType> *out_algorithms)
 {
 #define ASSIGN_OR_FALSE(lhs, rexpr) \
@@ -766,11 +766,6 @@ bool ROCMBlas::GetBlasGemmAlgorithms(Stream* stream,
   if (TF_PREDICT_FALSE(!result.ok())) return false;  \
   lhs = std::move(result).value()
 
-bool ROCMBlas::GetBlasGemmAlgorithms(
-    Stream *stream, const gpu::MatrixDescriptor &a,
-    const gpu::MatrixDescriptor &b, gpu::OutputMatrixDescriptor *c,
-    const void *alpha, const void *beta,
-    std::vector<blas::AlgorithmType> *out_algorithms) {
   out_algorithms->clear();
   auto blas_lambda = [this, out_algorithms](auto handle, auto &&blas_func,
                                             auto &&...rest) {

@@ -346,7 +346,7 @@ class StreamExecutor {
   // Get the list of supported algorithms for BLAS gemm.
   bool GetBlasGemmAlgorithms(Stream* stream,
       const gpu::MatrixDescriptor& a, const gpu::MatrixDescriptor& b,
-      gpu::MatrixOutDescriptor *c, const void *alpha, const void *beta, 
+      gpu::OutputMatrixDescriptor *c, const void *alpha, const void *beta, 
       std::vector<blas::AlgorithmType> *out_algorithms);
 
   // Create an RNN descriptor based on model shapes and configurations.

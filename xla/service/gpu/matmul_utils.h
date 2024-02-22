@@ -158,7 +158,7 @@ struct GemmConfig : public se::gpu::GemmConfig {
 
   using DescriptorsTuple = std::tuple< se::gpu::MatrixDescriptor, 
                                        se::gpu::MatrixDescriptor, 
-                                       se::gpu::MatrixOutDescriptor, bool >;
+                                       se::gpu::OutputMatrixDescriptor, bool >;
   DescriptorsTuple MatrixDescriptors(se::DeviceMemoryBase lhs_buf, 
         se::DeviceMemoryBase rhs_buf, se::DeviceMemoryBase out_buf) const;
 };

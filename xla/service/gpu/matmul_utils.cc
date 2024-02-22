@@ -529,7 +529,7 @@ auto GemmConfig::MatrixDescriptors(se::DeviceMemoryBase lhs_buf,
         static_cast< se::blas::ComputationType >(
             std::numeric_limits< int32_t >::max());
 
-  auto out_desc = se::gpu::MatrixOutDescriptor{ create(out, out_buf) };
+  auto out_desc = se::gpu::OutputMatrixDescriptor{ create(out, out_buf) };
   out_desc.batch_size = out.batch_size;
   out_desc.m = out.num_rows;
   out_desc.n = out.num_cols;
@@ -545,7 +545,7 @@ namespace {
 template <typename Scale, typename Input, typename Output>
 Status DoGemmWithAlgorithm(const se::gpu::MatrixDescriptor& lhs, 
     const se::gpu::MatrixDescriptor& rhs,
-    const se::gpu::MatrixOutDescriptor& output, se::DeviceMemoryBase workspace, 
+    const se::gpu::OutputMatrixDescriptor& output, se::DeviceMemoryBase workspace, 
     Scale alpha, Scale beta, se::Stream* stream, 
     se::blas::AlgorithmType algorithm, 
     se::blas::ComputePrecision compute_precision,
@@ -584,7 +584,7 @@ Status DoGemmWithAlgorithm(const se::gpu::MatrixDescriptor& lhs,
 template <typename Scale, typename Input, typename Output>
 Status DoGemm(const se::gpu::MatrixDescriptor& lhs, 
               const se::gpu::MatrixDescriptor& rhs,
-              const se::gpu::MatrixOutDescriptor& output, 
+              const se::gpu::OutputMatrixDescriptor& output, 
               se::DeviceMemoryBase workspace,
               Scale alpha, Scale beta, se::Stream* stream,
               std::optional<se::blas::AlgorithmType> algorithm,

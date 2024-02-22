@@ -135,9 +135,9 @@ public:
     TF_ASSIGN_OR_RETURN(output_buffer_, CreateBuffer(GetOutputShape(gemm)));
 
     StatusOr<AutotuneResult> blas_result;
-    GpuBackendConfig gpu_config =
-          gemm->backend_config<GpuBackendConfig>().value();
-    const GemmBackendConfig& backend_config = gpu_config.gemm_backend_config();
+    const GemmBackendConfig& backend_config =
+      gemm->backend_config<GemmBackendConfig>().value();
+
     epilogue_ = backend_config.epilogue();
     bool rewritable = IsRewritable(gemm, gemm_config);
     
@@ -260,7 +260,7 @@ private:
          const GemmConfig& gemm_config) {
 
     int64_t workspace_size =
-      std::visit(VariantVisitor{[](const se::CudaComputeCapability& cc) {
+      std::visit(se::VariantVisitor{[](const se::CudaComputeCapability& cc) {
                                   return cc.IsAtLeastHopper()
                                              ? GemmConfig::kHopperWorkspace
                                              : GemmConfig::kDefaultWorkspace;
@@ -275,16 +275,12 @@ private:
       CreateBuffer(ShapeUtil::MakeShape(S8, {workspace_size})));
 
     std::vector<se::blas::AlgorithmType> algorithms;
-    TF_ASSIGN_OR_RETURN(GemmConfig::DescriptorsTuple desc,
-        gemm_config.GetMatrixDescriptors(lhs_buffer_, rhs_buffer_, 
-                output_buffer_));
+    auto [lhs, rhs, output, operands_swapped] = 
+        gemm_config.MatrixDescriptors(lhs_buffer_, rhs_buffer_, output_buffer_);
 
-    auto blas = stream_->parent()->AsBlas();
-    if (blas == nullptr) {
-      return absl::InternalError("No BLAS support for stream");
-    }
-    blas->GetBlasGemmAlgorithms(stream_, desc.lhs, desc.rhs, &desc.output,
-                        &gemm_config.alpha, &gemm_config.beta, &algorithms);
+    stream_->parent()->GetBlasGemmAlgorithms(stream_, lhs, rhs, &output, 
+                            &gemm_config.alpha, &gemm_config.beta, &algorithms);
+
 
     AutotuneResult best_algorithm;
 #if TENSORFLOW_USE_ROCM        // Blas gemm algorithms can be empty for ROCM
@@ -521,9 +517,8 @@ StatusOr<bool> RunOnInstruction(HloInstruction* gemm,
                                 const AutotuneConfig& config) {
   VLOG(3) << "Loading the autotune result of GemmThunk " << gemm->ToString();
 
-  GpuBackendConfig gpu_config =
-      gemm->backend_config<GpuBackendConfig>().value();
-  GemmBackendConfig& backend_config = *gpu_config.mutable_gemm_backend_config();
+  GemmBackendConfig backend_config = 
+              gemm->backend_config<GemmBackendConfig>().value();
 
   // Degenerate gemms replaced with memzero operation, no need to auto tune it.
   if (backend_config.alpha_real() == 0.0 && 
@@ -554,7 +549,7 @@ StatusOr<bool> RunOnInstruction(HloInstruction* gemm,
 
   auto old_algorithm = backend_config.selected_algorithm();
   bool update_algorithm = std::visit(
-      VariantVisitor{[](const se::CudaComputeCapability& cc) {
+      se::VariantVisitor{[](const se::CudaComputeCapability& cc) {
                        // We only set the 'algorithm' field on
                        // non-Ampere architectures, as for Ampere
                        // it's ignored in any case.
@@ -574,7 +569,7 @@ StatusOr<bool> RunOnInstruction(HloInstruction* gemm,
     }
   }
 
-  TF_RETURN_IF_ERROR(gemm->set_backend_config(gpu_config));
+  TF_RETURN_IF_ERROR(gemm->set_backend_config(backend_config));
   if (gemm_rewritten) {
       GemmWorkspaceRewriteVisitor visitor(config.GetGpuComputeCapability());
       TF_RETURN_IF_ERROR(visitor.HandleCustomCall(gemm));

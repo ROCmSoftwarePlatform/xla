@@ -88,7 +88,7 @@ struct MatrixDescriptor {
   }
 };
 
-struct MatrixOutDescriptor : public MatrixDescriptor {
+struct OutputMatrixDescriptor : public MatrixDescriptor {
   int64_t batch_size, m, n, k;
   blas::ComputationType compute_type;
 };
