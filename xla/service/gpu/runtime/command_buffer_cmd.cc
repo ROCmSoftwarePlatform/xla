@@ -60,6 +60,7 @@ limitations under the License.
 #include "xla/stream_executor/launch_dim.h"
 #include "xla/stream_executor/stream.h"
 #include "xla/stream_executor/stream_executor.h"
+#include "xla/stream_executor/gpu/gpu_command_buffer.h"
 #include "xla/types.h"  // IWYU pragma: keep
 #include "tsl/concurrency/ref_count.h"
 #include "tsl/platform/env.h"
@@ -501,10 +502,18 @@ absl::Status ComputationIdCmd::Initialize(const Thunk::InitializeParams& params,
     if (memset_kernels_.contains(params.executor)) return absl::OkStatus();
   }
 
+#if defined(GOOGLE_CUDA)
   TF_ASSIGN_OR_RETURN(std::unique_ptr<se::Kernel> kernel,
                       CreateKernel("memset32", 3, kMemset32Kernel,
                                    /*cubin_data=*/{}, params.executor,
                                    /*shared_mem_bytes=*/0));
+#else
+  se::MultiKernelLoaderSpec loader_spec(3);
+  loader_spec.AddInProcessSymbol(se::gpu::GetMemset32Kernel(), "memset32");
+
+  TF_ASSIGN_OR_RETURN(std::unique_ptr<se::Kernel> kernel,
+                      se::Kernel::Create(params.executor, loader_spec));
+#endif
 
   absl::MutexLock lock(&mutex_);
   memset_kernels_.emplace(params.executor, std::move(kernel));

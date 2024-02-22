@@ -115,7 +115,9 @@ cc_library(
         "@tsl//tsl/platform:logging",
         "@tsl//tsl/platform:statusor",
         "@tsl//tsl/profiler/lib:scoped_annotation",
-    ],
+    ] + if_rocm_is_configured([
+        "//xla/stream_executor/rocm:hip_memset32_kernel",
+    ]),
 )
 
 cc_library(

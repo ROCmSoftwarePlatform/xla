@@ -375,6 +375,8 @@ class GpuCommandBuffer : public CommandBuffer {
 // A no-op kernel required for creating barriers inside command buffers because
 // empty nodes are not supported within conditional CUDA graphs (in CUDA 12.3).
 void* GetNoOpKernel();
+// TODO(rocm) comment
+void* GetMemset32Kernel();
 
 // See `cuda_conditional_kernels.cc` for CUDA implementation. These are
 // various kernels that update Gpu conditionals based on the device memory
