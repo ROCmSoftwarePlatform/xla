@@ -162,7 +162,7 @@ public:
     auto blaslt_time = tsl::proto_utils::FromDurationProto(
                                              blaslt_result.value().run_time());    
     if(blaslt_time > blas_time) {
-      VLOG(1) << "Rewriting to blas-lt (" << blaslt_time << ") to blas (" <<
+      VLOG(1) << "Rewriting blas-lt (" << blaslt_time << ") to blas (" <<
             blas_time << ") call";
       blas_result.value().mutable_gemm()->set_needs_rewrite(true);
       return blas_result;
@@ -371,7 +371,7 @@ private:
         continue;
       }
       i--, total_ms /= i; // skip the first warm-up iteration
-      VLOG(2) << "gemm algorithm " << profile_result.algorithm() << " took "
+      VLOG(1) << "gemm algorithm " << profile_result.algorithm() << " took "
             << total_ms << "ms, number of iterations: " << i;
 
       *result.mutable_run_time() = tsl::proto_utils::ToDurationProto(
@@ -572,23 +572,42 @@ StatusOr<bool> RunOnInstruction(HloInstruction* gemm,
 
   TF_RETURN_IF_ERROR(gemm->set_backend_config(backend_config));
   if (gemm_rewritten) {
-      GemmWorkspaceRewriteVisitor visitor(config.GetGpuComputeCapability());
-      TF_RETURN_IF_ERROR(visitor.HandleCustomCall(gemm));
+    GemmWorkspaceRewriteVisitor visitor(config.GetGpuComputeCapability());
+    TF_RETURN_IF_ERROR(visitor.HandleCustomCall(gemm));
   }
   return old_algorithm != backend_config.selected_algorithm() || 
          gemm_rewritten;
 }
 
-StatusOr<bool> RunOnComputation(HloComputation* computation,
-                                AutotuneConfig config) {
-  bool changed = false;
-  for (HloInstruction* instr : computation->instructions()) {
-    if (IsCublasGemm(*instr)) {
-      TF_ASSIGN_OR_RETURN(bool result, RunOnInstruction(instr, config));
-      changed |= result;
-    }
+class GemmAutotunerVisitor : public DfsHloRewriteVisitor {
+
+  AutotuneConfig config_;
+  bool changed_ = false;
+
+ public:
+  explicit GemmAutotunerVisitor(const AutotuneConfig& config)
+      : config_(config) {}
+
+  bool IsChanged() const {
+    return changed_;
   }
-  return changed;
+
+  Status HandleCustomCall(HloInstruction *instr) override {
+
+    if (IsCublasGemm(*instr)) {
+      TF_ASSIGN_OR_RETURN(bool result, RunOnInstruction(instr, config_));
+      changed_ |= result;
+    }
+    return OkStatus();
+  }
+};
+
+StatusOr<bool> RunOnComputation(HloComputation* computation,
+                                const AutotuneConfig& config) {
+
+  GemmAutotunerVisitor visitor(config);
+  TF_RETURN_IF_ERROR(computation->Accept(&visitor));
+  return visitor.IsChanged();
 }
 
 }  // namespace
