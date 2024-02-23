@@ -352,6 +352,7 @@ CommandBufferCmd::BufferUsageVector ComputationIdCmd::buffers() {
 
 absl::Status ComputationIdCmd::Initialize(const Thunk::InitializeParams& params,
                                           StateManager& state) {
+#if defined(GOOGLE_CUDA)
   {
     absl::MutexLock lock(&mutex_);
     if (memset_kernels_.contains(params.executor)) return absl::OkStatus();
@@ -364,6 +365,7 @@ absl::Status ComputationIdCmd::Initialize(const Thunk::InitializeParams& params,
 
   absl::MutexLock lock(&mutex_);
   memset_kernels_.emplace(params.executor, std::move(kernel));
+#endif // GOOGLE_CUDA
   return absl::OkStatus();
 }
 
@@ -385,6 +387,7 @@ absl::Status ComputationIdCmd::Record(const Thunk::ExecuteParams& params,
           << "; value=" << value;
   VLOG(5) << "  Id: " << dest_ << " (" << dst.opaque() << ")";
 
+#if defined(GOOGLE_CUDA)
   se::Kernel* memset_kernel = [&] {
     absl::MutexLock lock(&mutex_);
     return memset_kernels_[params.stream->parent()].get();
@@ -395,13 +398,12 @@ absl::Status ComputationIdCmd::Record(const Thunk::ExecuteParams& params,
         "Memset kernel not loaded on a command buffer executor");
   }
 
-  auto* memset32 = static_cast<
-      se::TypedKernel<int64_t, uint32_t, se::DeviceMemory<uint32_t>>*>(
-      memset_kernel);
-
-  return command_buffer->Launch(*memset32, se::ThreadDim(1), se::BlockDim(1),
-                                /*n=*/int64_t{1}, value,
-                                se::DeviceMemory<uint32_t>(dst));
+  auto args = se::PackKernelArgs(/*shmem_bytes=*/0, int64_t{1}, value, dst);
+  return command_buffer->Launch(se::ThreadDim(1), se::BlockDim(1),
+                                *memset_kernel, *args);
+#else
+  return command_buffer->Memset(&dst, value, /*num_elements=*/1);
+#endif // GOOGLE_CUDA
 }
 
 //===----------------------------------------------------------------------===//
