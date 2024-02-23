@@ -380,6 +380,7 @@ private:
       if (!autotune_config_.should_check_correctness()) {
         continue;
       }
+#if GOOGLE_CUDA  // redzone check is not yet available on ROCm
       TF_ASSIGN_OR_RETURN(
         se::RedzoneAllocator::RedzoneCheckStatus rz_check_status,
         redzone_allocator_->CheckRedzones());
@@ -392,7 +393,7 @@ private:
         CHECK(!autotune_config_.should_crash_on_check_failure());
         continue;
       }
-
+#endif
       if (!reference_algorithm) {
         stream_->ThenMemcpy(&reference_buffer, output_buffer_,
                          output_buffer_.size());
