@@ -33,7 +33,6 @@ limitations under the License.
 using gpusolverHandle_t = cusolverDnHandle_t;
 #else
 #include "rocm/rocm_config.h"
-#include <hip/hip_common.h>
 // Macros to ease the transition from rocsolver to hipsolver.
 #if TENSORFLOW_USE_HIPSOLVER
 #include "xla/stream_executor/rocm/hipsolver_wrapper.h"
