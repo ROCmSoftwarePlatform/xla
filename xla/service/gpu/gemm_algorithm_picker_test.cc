@@ -235,6 +235,178 @@ ENTRY main {
 }
 
 
+// TEST_P(GemmAlgorithmPickerTest, MatmulReplicatedXXX) {
+
+//   DebugOptions debug_options = GetDebugOptionsForTest();
+//   debug_options.set_xla_gpu_enable_cublaslt(false);
+//   debug_options.set_xla_gpu_autotune_level(0);
+//   const int64_t kNumReplicas = 8, kNumPartitions = 1;
+
+// #if 0
+//   const char* kModuleStr = R"(
+// HloModule SimpleGemm
+
+// ENTRY AddDotsFunc {
+//   x = f32[128,128] parameter(0)
+//   y = f32[128,128] parameter(1)
+//   ROOT dot_a = f32[128,128] dot(x, y), lhs_contracting_dims={1}, rhs_contracting_dims={0}
+// }
+// )";
+
+//   HloModuleConfig config;
+//   config.set_debug_options(debug_options);
+//   config.set_replica_count(kNumReplicas);
+//   config.set_num_partitions(1);
+// #else
+// absl::string_view kModuleStr = R"(
+//     HloModule test
+
+//     ENTRY test {
+//       x_f32 = f32[16,32] parameter(0)
+//       y_f32 = f32[16,32] parameter(1)
+//       x_scale = f32[] parameter(2)
+//       y_scale = f32[] parameter(3)
+//       x_scale_bcast = f32[16,32] broadcast(x_scale), dimensions={}
+//       y_scale_bcast = f32[16,32] broadcast(y_scale), dimensions={}
+//       x_unscaled = f32[16,32] multiply(x_f32, x_scale_bcast)
+//       y_unscaled = f32[16,32] multiply(y_f32, y_scale_bcast)
+//       collective_permute = f32[16,32]{1,0} collective-permute(x_unscaled), source_target_pairs={{0,0}, {1,1}, {2,4}, {3,5}, {4,2}, {5,3}, {6,6}, {7,7}}
+//       ROOT dot_a = f32[16,16] dot(collective_permute, y_unscaled), lhs_contracting_dims={1}, rhs_contracting_dims={1}
+//           }
+// )";
+
+//   HloModuleConfig config = GetModuleConfigForTest();
+//   config.set_debug_options(debug_options);
+//   //config.set_use_spmd_partitioning(true);
+//   config.set_replica_count(kNumReplicas);
+//   config.set_num_partitions(kNumPartitions);
+
+// {
+//   DeviceAssignment assn(/*replica_count=*/kNumReplicas,
+//                         /*computation_count=*/1);
+//   for (int64_t i = 0; i < kNumReplicas; ++i) {
+//     assn(i, 0) = i;
+//   }
+
+//   TF_ASSERT_OK_AND_ASSIGN(auto module,
+//                         ParseAndReturnVerifiedModule(kModuleStr, config));
+
+//   auto fake_arguments = xla::MakeFakeArguments(module.get()).value();
+//   std::vector<Literal*> fake_ptrs(fake_arguments.size());
+//   for(int i = 0; i < fake_arguments.size(); i++) {
+//     fake_ptrs[i] = &fake_arguments[i];
+//   }
+
+//   TF_ASSERT_OK_AND_ASSIGN(auto exec, HloTestBase::CreateExecutable(std::move(module), true));
+//   //VLOG(0) << "MY Module: " << exec->module().ToString();
+
+
+// // StatusOr<std::vector<Literal>> HloTestBase::ExecuteReplicated(
+// //     std::unique_ptr<HloModule> module, absl::Span<Literal* const> arguments,
+// //     int64_t num_replicas, DeviceAssignment* device_assignment,
+// //     bool run_hlo_passes, bool use_threads) {
+
+//   TF_ASSERT_OK_AND_ASSIGN(auto results,  HloTestBase::ExecuteReplicated(
+//     std::move(module), fake_ptrs,
+//     kNumReplicas, &assn, false /*run hlo passes*/, true /*use_threads*/));
+
+//   // TF_ASSERT_OK_AND_ASSIGN(std::vector<Literal> results, HloTestBase::ExecuteReplicated(
+//   //       /*executable_provider*/ [&](int64_t) { return exec.get(); },
+//   //       /*argument_count_provider*/ [&args](int64_t replica_id) { return 1; },
+//   //       /*argument_provider*/ [&args](int64_t replica_id, int64_t arg_id) 
+//   //       { 
+//   //         return &args[replica_id];
+//   //       },
+//   //       kNumReplicas, /*run_hlo_passes=*/false, &device_assignment));
+
+//   // for(int i = 0; i < 1; i++) {
+//   //     TF_ASSERT_OK_AND_ASSIGN(auto val, 
+//   //        HloTestBase::test_runner_.ExecuteWithExecutable(exec.get(), fake_arguments, nullptr));
+//   // }
+
+
+// }
+
+// #endif
+// }
+
+
+TEST_P(GemmAlgorithmPickerTest, MatmulReplicated) {
+
+        // collective_permute = f32[16,32]{1,0} collective-permute(x_unscaled), source_target_pairs={{0,1}, {1,2}, {2,3}, {3,4}, {4,5}, {5,6}, {6,7}, {7,0}}
+
+  absl::string_view kModuleStr = R"(
+    HloModule test
+
+    ENTRY test {
+      x_f32 = f32[16,32] parameter(0)
+      y_f32 = f32[16,32] parameter(1)
+      x_scale = f32[] parameter(2)
+      y_scale = f32[] parameter(3)
+      x_scale_bcast = f32[16,32] broadcast(x_scale), dimensions={}
+      y_scale_bcast = f32[16,32] broadcast(y_scale), dimensions={}
+      x_unscaled = f32[16,32] multiply(x_f32, x_scale_bcast)
+      y_unscaled = f32[16,32] multiply(y_f32, y_scale_bcast)
+      collective_permute = f32[16,32]{1,0} collective-permute(x_unscaled), source_target_pairs={{0,1}, {1,2}, {2,3}, {3,0}}
+      ROOT dot_a = f32[16,16] dot(collective_permute, y_unscaled), lhs_contracting_dims={1}, rhs_contracting_dims={1}
+   }
+)";
+    const int64_t kNumReplicas = 4;
+
+    HloModuleConfig config =
+        GetModuleConfigForTest(/*replica_count=*/kNumReplicas);
+    auto opts = GetDebugOptionsForTest();
+    opts.set_xla_gpu_autotune_level(0);
+    VLOG(0) << "Running with CUBLAS enabled: " << 
+        opts.xla_gpu_enable_cublaslt();
+    config.set_debug_options(opts);
+
+    TF_ASSERT_OK_AND_ASSIGN(auto module,
+                        ParseAndReturnVerifiedModule(kModuleStr, config));
+  DeviceAssignment assn(/*replica_count=*/kNumReplicas,
+                        /*computation_count=*/1);
+  for (int64_t i = 0; i < kNumReplicas; ++i) {
+    assn(i, 0) = i;
+  }
+#if 1
+
+  auto fake_arguments = xla::MakeFakeArguments(module.get()).value();
+  std::vector<Literal*> fake_ptrs(fake_arguments.size());
+  for(int i = 0; i < fake_arguments.size(); i++) {
+    fake_ptrs[i] = &fake_arguments[i];
+  }
+
+  TF_ASSERT_OK_AND_ASSIGN(std::vector<Literal> results,
+                          HloTestBase::ExecuteReplicated(
+          std::move(module), fake_ptrs, kNumReplicas, &assn, 
+          true /*run_hlo_passes*/, true /*use-threads*/));
+
+#else
+  TF_ASSERT_OK_AND_ASSIGN(auto executable, HloTestBase::CreateExecutable(std::move(module),
+                                         /*run_hlo_passes=*/true));
+  std::vector< Literal > args(kNumReplicas);
+  for(int i = 0; i < kNumReplicas; i++) {
+    args[i] = LiteralUtil::CreateFullWithDescendingLayout<float>(
+      {512}, (float)i);
+  }
+
+    TF_ASSERT_OK_AND_ASSIGN(std::vector<Literal> results, HloTestBase::ExecuteReplicated(
+        /*executable_provider*/ [&](int64_t) { return executable.get(); },
+        /*argument_count_provider*/ [&args](int64_t replica_id) { return 1; },
+        /*argument_provider*/ [&args](int64_t replica_id, int64_t arg_id) 
+        { 
+          return &args[replica_id];
+        },
+        kNumReplicas, /*run_hlo_passes=*/false, &assn));
+
+  ASSERT_EQ(results.size(), kNumReplicas);
+
+  for(int i = 0; i < kNumReplicas; i++) {
+    EXPECT_TRUE(LiteralTestUtil::Equal(args[(i - 1 + kNumReplicas)%kNumReplicas], results[i]));
+  }
+#endif
+}
+
 // Test that the alpha and beta fields of the GemmBackendConfig are updated.
 // A bias must be present for the beta value to be set.
 // In order to have a bias add fused, the bias term must be overwritable.
