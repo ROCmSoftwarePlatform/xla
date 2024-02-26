@@ -511,33 +511,45 @@ absl::Status GpuSolverContext::Potrf(
       workspace.ElementCount(), nullptr, 0, ToDevicePointer(lapack_info)));
   return status;
 }
-#elif TENSORFLOW_USE_ROCM
+#elif TENSORFLOW_USE_HIPSOLVER
 absl::Status GpuSolverContext::Potrf(se::blas::UpperLower uplo, int n,
                                      se::DeviceMemory<double> a, int lda,
                                      se::DeviceMemory<int> lapack_info,
                                      se::DeviceMemory<double> workspace) {
-  return absl::InternalError("Not implemented");
+  return ConvertStatus(GpuSolverDpotrf(
+      handle_.get(), GpuBlasUpperLower(uplo), n, ToDevicePointer(a), lda,
+      nullptr, 0,
+      ToDevicePointer(lapack_info)));
 }
 
 absl::Status GpuSolverContext::Potrf(se::blas::UpperLower uplo, int n,
                                      se::DeviceMemory<float> a, int lda,
                                      se::DeviceMemory<int> lapack_info,
                                      se::DeviceMemory<float> workspace) {
-  return absl::InternalError("Not implemented");
+  return ConvertStatus(GpuSolverSpotrf(
+      handle_.get(), GpuBlasUpperLower(uplo), n, ToDevicePointer(a), lda,
+      nullptr, 0,
+      ToDevicePointer(lapack_info)));
 }
 
 absl::Status GpuSolverContext::Potrf(
     se::blas::UpperLower uplo, int n, se::DeviceMemory<std::complex<float>> a,
     int lda, se::DeviceMemory<int> lapack_info,
     se::DeviceMemory<std::complex<float>> workspace) {
-  return absl::InternalError("Not implemented");
+  return ConvertStatus(GpuSolverCpotrf(
+      handle_.get(), GpuBlasUpperLower(uplo), n, ToDevicePointer(a), lda,
+      nullptr, 0,
+      ToDevicePointer(lapack_info)));
 }
 
 absl::Status GpuSolverContext::Potrf(
     se::blas::UpperLower uplo, int n, se::DeviceMemory<std::complex<double>> a,
     int lda, se::DeviceMemory<int> lapack_info,
     se::DeviceMemory<std::complex<double>> workspace) {
-  return absl::InternalError("Not implemented");
+  return ConvertStatus(GpuSolverZpotrf(
+      handle_.get(), GpuBlasUpperLower(uplo), n, ToDevicePointer(a), lda,
+      nullptr, 0,
+      ToDevicePointer(lapack_info)));
 }
 #endif
 
