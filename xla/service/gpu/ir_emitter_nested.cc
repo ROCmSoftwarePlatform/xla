@@ -280,12 +280,12 @@ llvm::Value* AddrCastToDefault(llvm::Value* arg, llvm::IRBuilder<>& b) {
   return arg;
 }
 
-void EmitAMDGPUAtomicAdd(llvm::IRBuilder<>* builder,
-                         llvm::Value* output_address, llvm::Value* source) {
+void EmitAMDGPUAtomicFAdd(llvm::IRBuilder<>* builder, IrEmitterContext& ir_emitter_context,
+                         llvm::Value* output_address, llvm::Value* source,
+                         PrimitiveType element_type) {
   CHECK(IsAMDGPU(builder->GetInsertBlock()->getModule()));
-  auto output_address_type =
-      llvm::dyn_cast<llvm::PointerType>(output_address->getType());
-  CHECK_NE(output_address_type, nullptr);
+  CHECK_NE(element_type, BF16); // For now we expect for BF16 op to be done trough FP32
+  auto output_address_type = llvm::cast<llvm::PointerType>(output_address->getType());
 
   auto output_ptr =
       (output_address_type->getPointerAddressSpace() == 3)
@@ -298,9 +298,39 @@ void EmitAMDGPUAtomicAdd(llvm::IRBuilder<>* builder,
                 llvm::PointerType::get(output_address_type->getContext(),
                                        /*AddressSpace=*/1));
 
-   if(source->getType()->getPrimitiveSizeInBits() == 16)
-  {
-    llvm::VectorType* half2type = llvm::VectorType::get(builder->getHalfTy(), llvm::ElementCount::getFixed(2));
+  bool is_shared_mem = output_address_type->getPointerAddressSpace() == 3;
+  const auto& debug_options = ir_emitter_context.hlo_module().config().debug_options();
+  const auto& compute_capability = ir_emitter_context.rocm_compute_capability();
+
+  if ((element_type == F32 || element_type == F64) &&
+      !is_shared_mem &&
+      // MI100/MI200 atomics flush denormals by default for fp32
+      (compute_capability.gfx9_mi300_or_later() ||
+       debug_options.xla_gpu_ftz() ||
+       element_type != F32)) {
+    llvm::FunctionType* callee_type = llvm::FunctionType::get(
+      source->getType(), {output_ptr->getType(), source->getType()}, false);
+
+    // Declares the callee if it is not declared already.
+    llvm::Function* callee = llvm::cast<llvm::Function>(
+        builder->GetInsertBlock()
+            ->getModule()
+            ->getOrInsertFunction(element_type == F32 ?
+                                  "llvm.amdgcn.global.atomic.fadd.f32.p1.f32" :
+                                  "llvm.amdgcn.global.atomic.fadd.f64.p1.f64",
+                                  callee_type)
+            .getCallee());
+
+    callee->addFnAttr(llvm::Attribute::NoUnwind);
+    callee->setMemoryEffects(llvm::MemoryEffects::argMemOnly());
+
+    builder->CreateCall(callee, {output_ptr, source});
+    return;
+  }
+
+  if ((element_type == F16 || element_type == BF16) &&
+      !is_shared_mem) {
+    llvm::VectorType* half2type = llvm::VectorType::get(source->getType(), llvm::ElementCount::getFixed(2));
     auto i16 = builder->getInt16Ty();
     auto i32 = builder->getInt32Ty();
     auto i64 = builder->getInt64Ty();
@@ -316,35 +346,38 @@ void EmitAMDGPUAtomicAdd(llvm::IRBuilder<>* builder,
     source = builder->CreateShl(intsrc, shift);
     source = builder->CreateBitCast(source, half2type); 
 
-    llvm::Module* module = builder->GetInsertBlock()->getModule();
-    std::vector<llvm::Type*> ir_input_types{half2ptr, half2type};
-
     llvm::FunctionType* callee_type = llvm::FunctionType::get(
-      half2type, ir_input_types, false);
+      half2type, {half2ptr, half2type}, false);
 
     // Declares the callee if it is not declared already.
-    llvm::Function* callee = llvm::dyn_cast<llvm::Function>(
+    llvm::Function* callee = llvm::cast<llvm::Function>(
         builder->GetInsertBlock()
             ->getModule()
-            ->getOrInsertFunction("llvm.amdgcn.global.atomic.fadd.v2f16.p1.v2f16", callee_type)
+            ->getOrInsertFunction(element_type == F16 ?
+                                  "llvm.amdgcn.global.atomic.fadd.v2f16.p1.v2f16" :
+                                  "llvm.amdgcn.global.atomic.fadd.v2bf16.p1",
+                                  callee_type)
             .getCallee());
 
     callee->addFnAttr(llvm::Attribute::NoUnwind);
     callee->setMemoryEffects(llvm::MemoryEffects::argMemOnly());
 
-    builder->CreateCall(callee, {output_ptr, source});//llvm_ir::AsArrayRef(operands));
+    builder->CreateCall(callee, {output_ptr, source});
     return;
   }
 
   builder->CreateAtomicRMW(
       llvm::AtomicRMWInst::FAdd, output_ptr, source, llvm::MaybeAlign(),
-      llvm::AtomicOrdering::SequentiallyConsistent,
+      llvm::AtomicOrdering::Monotonic,
       builder->getContext().getOrInsertSyncScopeID("agent"));
 }
 
-llvm::SyncScope::ID DetermineSyncScope(llvm::Module* module) {
-  return IsAMDGPU(module) ? module->getContext().getOrInsertSyncScopeID("agent")
-                          : llvm::SyncScope::System;
+std::tuple<llvm::SyncScope::ID, llvm::AtomicOrdering>
+DetermineSyncScopeAndOrdering(llvm::Module* module) {
+  return IsAMDGPU(module) ? std::make_tuple(module->getContext().getOrInsertSyncScopeID("agent"),
+                                            llvm::AtomicOrdering::Monotonic)
+                          : std::make_tuple(llvm::SyncScope::System,
+                                            llvm::AtomicOrdering::SequentiallyConsistent);
 }
 
 // A helper method for EmitAtomicOperationForNestedComputation. Certain
@@ -390,7 +423,7 @@ bool MaybeEmitDirectAtomicOperation(llvm::IRBuilder<>* builder,
     return false;
   }
 
-  auto sync_scope = DetermineSyncScope(module);
+  auto [sync_scope, ordering] = DetermineSyncScopeAndOrdering(module);
   if (root_opcode == HloOpcode::kAdd) {
     llvm::Triple target_triple = llvm::Triple(module->getTargetTriple());
     // NVPTX supports atomicAdd on F32 and integer types.
@@ -411,20 +444,23 @@ bool MaybeEmitDirectAtomicOperation(llvm::IRBuilder<>* builder,
       }
     }
 
-    if (target_triple.isAMDGPU() &&
-        (element_type == F32 ||
-         (element_type == F16 &&
-          ir_emitter_context.rocm_compute_capability()
-              .has_fp16_atomics_support()))) /* is atomic add supported? */ {
-      EmitAMDGPUAtomicAdd(builder, output_address, source);
-      return true;
+    if (target_triple.isAMDGPU()) {
+      auto cc = ir_emitter_context.rocm_compute_capability();
+      if ((element_type == F32 && cc.has_fp32_atomics_support()) ||
+          (element_type == F64 && cc.has_fp64_atomics_support()) ||
+          (element_type == F16 && cc.has_fp16_atomics_support()) ||
+          (element_type == BF16 && cc.has_bf16_atomics_support())) {
+        EmitAMDGPUAtomicFAdd(builder, ir_emitter_context, output_address,
+                             source, element_type);
+        return true;
+      }
     }
 
     if (is_atomic_integral) {
       // integral + integral
       builder->CreateAtomicRMW(
           llvm::AtomicRMWInst::Add, output_address, source, llvm::MaybeAlign(),
-          llvm::AtomicOrdering::SequentiallyConsistent, sync_scope);
+          ordering, sync_scope);
       return true;
     }
   }
@@ -441,7 +477,7 @@ bool MaybeEmitDirectAtomicOperation(llvm::IRBuilder<>* builder,
                         : llvm::AtomicRMWInst::UMax;
       builder->CreateAtomicRMW(
           opcode, output_address, source, llvm::MaybeAlign(),
-          llvm::AtomicOrdering::SequentiallyConsistent, sync_scope);
+          ordering, sync_scope);
       return true;
     } else if (element_type == F32) {
       // max(float, float) via AtomicMax and AtomicMin on int
@@ -494,7 +530,7 @@ bool MaybeEmitDirectAtomicOperation(llvm::IRBuilder<>* builder,
                     builder->CreateAtomicRMW(
                         llvm::AtomicRMWInst::Max, output_address,
                         source_float_as_int, llvm::MaybeAlign(),
-                        llvm::AtomicOrdering::SequentiallyConsistent,
+                        ordering,
                         sync_scope);
                   },
                   [&]() {
@@ -502,7 +538,7 @@ bool MaybeEmitDirectAtomicOperation(llvm::IRBuilder<>* builder,
                     builder->CreateAtomicRMW(
                         llvm::AtomicRMWInst::UMin, output_address,
                         source_float_as_int, llvm::MaybeAlign(),
-                        llvm::AtomicOrdering::SequentiallyConsistent,
+                        ordering,
                         sync_scope);
                   });
             });
@@ -518,7 +554,7 @@ bool MaybeEmitDirectAtomicOperation(llvm::IRBuilder<>* builder,
                       ? llvm::AtomicRMWInst::Min
                       : llvm::AtomicRMWInst::UMin;
     builder->CreateAtomicRMW(opcode, output_address, source, llvm::MaybeAlign(),
-                             llvm::AtomicOrdering::SequentiallyConsistent,
+                             ordering,
                              sync_scope);
     return true;
   }
@@ -685,10 +721,10 @@ absl::Status EmitAtomicOperationUsingCAS(llvm::IRBuilder<>* builder,
   // Emit code to perform the atomicCAS operation
   // (cas_old_output, success) = atomicCAS(memory_address, cas_old_output,
   //                                       cas_new_output);
+  auto [sync_scope, ordering] = DetermineSyncScopeAndOrdering(module);
   llvm::Value* ret_value = builder->CreateAtomicCmpXchg(
       atomic_memory_address, cas_old_output, cas_new_output, llvm::MaybeAlign(),
-      llvm::AtomicOrdering::SequentiallyConsistent,
-      llvm::AtomicOrdering::SequentiallyConsistent, DetermineSyncScope(module));
+      ordering, ordering, sync_scope);
 
   // Extract the memory value returned from atomicCAS and store it as
   // cas_old_output.
