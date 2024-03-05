@@ -446,9 +446,9 @@ bool MaybeEmitDirectAtomicOperation(llvm::IRBuilder<>* builder,
 
     if (target_triple.isAMDGPU()) {
       auto cc = ir_emitter_context.rocm_compute_capability();
-      if ((element_type == F32 && cc.has_fp32_atomics_support()) ||
+      if ((element_type == F32 && cc.has_fp32_atomics_support() && false) ||
           (element_type == F64 && cc.has_fp64_atomics_support()) ||
-          (element_type == F16 && cc.has_fp16_atomics_support()) ||
+          (element_type == F16 && cc.has_fp16_atomics_support() && false) ||
           (element_type == BF16 && cc.has_bf16_atomics_support())) {
         EmitAMDGPUAtomicFAdd(builder, ir_emitter_context, output_address,
                              source, element_type);
@@ -624,6 +624,20 @@ absl::Status EmitAtomicOperationUsingCAS(llvm::IRBuilder<>* builder,
   llvm::PointerType* output_address_type =
       llvm::dyn_cast<llvm::PointerType>(output_address->getType());
   CHECK_NE(output_address_type, nullptr);
+
+  output_address =
+      (output_address_type->getPointerAddressSpace() == 3)
+          // adds to shared memory are always atomic.
+          ? output_address
+          // the compiler will only generate a global_atomic_fadd if the pointer
+          // is in global addrspace (1)
+          : builder->CreateAddrSpaceCast(
+                output_address,
+                llvm::PointerType::get(output_address_type->getContext(),
+                                       /*AddressSpace=*/1));
+
+    output_address_type =
+      llvm::dyn_cast<llvm::PointerType>(output_address->getType());
 
   int element_size = llvm_ir::GetSizeInBits(element_type);
 

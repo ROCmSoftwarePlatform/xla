@@ -1631,7 +1631,7 @@ GpuCompiler::CompileSingleModule(const HloModuleConfig& module_config,
 
   std::string err;
   llvm::raw_string_ostream err_stream(err);
-
+  LOG(WARNING) << xla::llvm_ir::DumpToString(llvm_module);
   // verifyModule() returns true if the module is broken.
   TF_RET_CHECK(!llvm::verifyModule(*llvm_module, &err_stream))
       << "Invalid LLVM IR before optimizations:\n"

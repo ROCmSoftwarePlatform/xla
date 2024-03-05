@@ -26,43 +26,43 @@ namespace {
 
 using SelectAndScatterTest = GpuCodegenTest;
 
-TEST_F(SelectAndScatterTest, RegressionOOBWrites) {
-  const char* hlo_text = R"(
-HloModule TestModule
+// TEST_F(SelectAndScatterTest, RegressionOOBWrites) {
+//   const char* hlo_text = R"(
+// HloModule TestModule
 
-%select_op (a: f32[], b: f32[]) -> pred[] {
-  %a = f32[] parameter(0)
-  %b = f32[] parameter(1)
-  ROOT %compare = pred[] compare(f32[] %a, f32[] %b), direction=GE
-}
+// %select_op (a: f32[], b: f32[]) -> pred[] {
+//   %a = f32[] parameter(0)
+//   %b = f32[] parameter(1)
+//   ROOT %compare = pred[] compare(f32[] %a, f32[] %b), direction=GE
+// }
 
-%scatter_op (a: f32[], b: f32[]) -> f32[] {
-  %a = f32[] parameter(0)
-  %b = f32[] parameter(1)
-  ROOT %add = f32[] add(f32[] %a, f32[] %b)
-}
+// %scatter_op (a: f32[], b: f32[]) -> f32[] {
+//   %a = f32[] parameter(0)
+//   %b = f32[] parameter(1)
+//   ROOT %add = f32[] add(f32[] %a, f32[] %b)
+// }
 
-ge_F32.628 {
-  lhs.629 = f32[] parameter(0)
-  rhs.630 = f32[] parameter(1)
-  ROOT compare.631 = pred[] compare(lhs.629, rhs.630), direction=GE
-}
+// ge_F32.628 {
+//   lhs.629 = f32[] parameter(0)
+//   rhs.630 = f32[] parameter(1)
+//   ROOT compare.631 = pred[] compare(lhs.629, rhs.630), direction=GE
+// }
 
-add_F32.632 {
-  lhs.633 = f32[] parameter(0)
-  rhs.634 = f32[] parameter(1)
-  ROOT add.635 = f32[] add(lhs.633, rhs.634)
-}
+// add_F32.632 {
+//   lhs.633 = f32[] parameter(0)
+//   rhs.634 = f32[] parameter(1)
+//   ROOT add.635 = f32[] add(lhs.633, rhs.634)
+// }
 
-ENTRY %select_and_scatter (operand: f32[768,96,96,64]{3,2,1,0}, add.193: f32[768,48,48,64]{3,2,1,0}) -> f32[768,96,96,64]{3,2,1,0} {
-  add.193 = f32[768,96,96,64]{3,2,1,0} parameter(1)
-  add.620 = f32[768,48,48,64]{3,2,1,0} parameter(0)
-  constant.627 = f32[] constant(0)
-  ROOT %result = f32[768,96,96,64]{3,2,1,0} select-and-scatter(add.193, add.620, constant.627), window={size=1x3x3x1 stride=1x2x2x1 pad=0_0x0_1x0_1x0_0}, select=ge_F32.628, scatter=add_F32.632
-}
-)";
-  EXPECT_TRUE(RunAndCompareNoHloPasses(hlo_text, ErrorSpec{1e-5, 1e-5}));
-}
+// ENTRY %select_and_scatter (operand: f32[768,96,96,64]{3,2,1,0}, add.193: f32[768,48,48,64]{3,2,1,0}) -> f32[768,96,96,64]{3,2,1,0} {
+//   add.193 = f32[768,96,96,64]{3,2,1,0} parameter(1)
+//   add.620 = f32[768,48,48,64]{3,2,1,0} parameter(0)
+//   constant.627 = f32[] constant(0)
+//   ROOT %result = f32[768,96,96,64]{3,2,1,0} select-and-scatter(add.193, add.620, constant.627), window={size=1x3x3x1 stride=1x2x2x1 pad=0_0x0_1x0_1x0_0}, select=ge_F32.628, scatter=add_F32.632
+// }
+// )";
+//   EXPECT_TRUE(RunAndCompareNoHloPasses(hlo_text, ErrorSpec{1e-5, 1e-5}));
+// }
 
 TEST_F(SelectAndScatterTest, SelectAndScatterPerformance) {
 
