@@ -22,7 +22,9 @@ limitations under the License.
 #include "absl/status/status.h"
 #include "xla/service/buffer_assignment.h"
 #include "xla/service/gpu/gpu_conv_runner.h"
+#include "xla/service/gpu/stream_executor_util.h"
 #include "xla/stream_executor/stream_executor.h"
+#include "xla/stream_executor/scratch_allocator.h"
 #include "xla/util.h"
 
 namespace xla {
@@ -40,10 +42,11 @@ ConvolutionThunk::ConvolutionThunk(
       config_(std::move(config)) {}
 
 GenericConvRunner& ConvolutionThunk::GetOrCreateRunner(
-    const stream_executor::Stream* stream) {
+    const stream_executor::Stream* stream, bool *runner_created) {
   absl::MutexLock lock(&mu_);
   auto it = runner_cache_.find(stream);
-  if (it == runner_cache_.end()) {
+  *runner_created = (it == runner_cache_.end());
+  if (*runner_created) {
     it = runner_cache_
              .insert({stream, std::make_unique<GenericConvRunner>(config_)})
              .first;
@@ -68,8 +71,35 @@ absl::Status ConvolutionThunk::ExecuteOnStream(const ExecuteParams& params) {
   se::DeviceMemoryBase scratch =
       buffer_allocations.GetDeviceAddress(scratch_buffer_);
 
+  bool runner_created = false;
   RunConvOptions opts;
-  opts.runner_cache = &GetOrCreateRunner(params.stream);
+  opts.runner_cache = &GetOrCreateRunner(params.stream, &runner_created);
+
+  if(runner_created) {
+    TF_ASSIGN_OR_RETURN(
+      GpuConvParams conv_params,
+      GetGpuConvParams(config_, operand_se_buffers, result_se_buffers));
+
+    TF_ASSIGN_OR_RETURN(se::dnn::ConvolutionKind kind,
+                      GetDNNConvKindFromCudnnConvKind(conv_params.config->kind));
+
+    TF_ASSIGN_OR_RETURN(
+      se::dnn::DataType input_type,
+      GetDNNDataTypeFromPrimitiveType(conv_params.config->input_type));
+
+      // VLOG(0) << "GetMIOpenConvolveAlgorithms called for device " << params.stream->parent()->device_ordinal();
+      TF_ASSIGN_OR_RETURN(auto dnn, se::dnn::internal::GetDnnFromStream(params.stream));
+      se::OwningScratchAllocator<> scratch_allocator(
+                                   buffer_allocations.device_ordinal(),
+                                   buffer_allocations.memory_allocator());
+
+      auto *cfg = conv_params.config;
+      std::vector<se::dnn::ProfileResult> profile_results;
+      dnn->GetMIOpenConvolveAlgorithms(
+           kind, input_type, params.stream, cfg->input_descriptor, conv_params.input_buf,
+           cfg->filter_descriptor, conv_params.filter_buf, cfg->output_descriptor, conv_params.output_buf,
+           cfg->conv_desc, &scratch_allocator, &profile_results);
+  }
 
   TF_RETURN_IF_ERROR(RunGpuConv(config_, absl::MakeSpan(operand_se_buffers),
                                 absl::MakeSpan(result_se_buffers), scratch,
