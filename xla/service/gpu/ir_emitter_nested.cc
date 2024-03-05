@@ -657,17 +657,18 @@ absl::Status EmitAtomicOperationUsingCAS(llvm::IRBuilder<>* builder,
         builder->CreatePtrToInt(output_address, address_int_type);
     llvm::Value* mask = llvm::ConstantInt::get(address_int_type, 3);
     llvm::Value* offset = builder->CreateAnd(atomic_memory_address, mask);
-    mask = llvm::ConstantInt::get(address_int_type, -4);
-    atomic_memory_address = builder->CreateAnd(atomic_memory_address, mask);
-    atomic_memory_address =
-        builder->CreateIntToPtr(atomic_memory_address, atomic_address_type);
-    binop_output_address = builder->CreateAdd(
-        builder->CreatePtrToInt(cas_new_output_address, address_int_type),
-        offset);
-    binop_output_address = builder->CreateIntToPtr(
-        binop_output_address,
-        builder->getPtrTy(
-            cas_new_output_address->getType()->getPointerAddressSpace()));
+
+    // inttoptr (and (ptrtoint %output_address) -4)
+    atomic_memory_address = llvm_ir::EmitCallToIntrinsic(
+        llvm::Intrinsic::ptrmask,
+        {output_address, llvm::ConstantInt::get(address_int_type, -4)},
+        {atomic_address_type, address_int_type}, builder);
+
+    // inttoptr (add (ptrtoint %cas_new_output_address) offset)
+    binop_output_address = builder->CreateInBoundsGEP(
+        llvm::ArrayType::get(builder->getInt8Ty(), 4),
+        cas_new_output_address, offset, "");
+
   } else {
     atomic_memory_address = builder->CreatePointerBitCastOrAddrSpaceCast(
         output_address, atomic_address_type);
