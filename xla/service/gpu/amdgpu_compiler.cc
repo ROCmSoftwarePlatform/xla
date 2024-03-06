@@ -28,6 +28,9 @@ limitations under the License.
 #include "xla/service/gpu/conv_algorithm_picker.h"
 #include "xla/service/gpu/cublas_pad_for_gemms.h"
 #include "xla/service/gpu/cublas_padding_requirements.h"
+#include "xla/service/gpu/cudnn_pad_for_convolutions.h"
+#include "xla/service/gpu/cudnn_simplify_padding.h"
+#include "xla/service/gpu/cudnn_vectorize_convolutions.h"
 #include "xla/service/gpu/cusolver_rewriter.h"
 #include "xla/service/gpu/gemm_algorithm_picker.h"
 #include "xla/service/gpu/gemm_rewriter.h"
@@ -88,6 +91,8 @@ absl::Status AMDGPUCompiler::OptimizeHloConvolutionCanonicalization(
     HloModule* hlo_module, se::GpuComputeCapability gpu_version,
     se::dnn::VersionInfo dnn_version,
     se::DeviceMemoryAllocator* device_allocator) {
+  auto rocm_compute_capability =
+    std::get<se::RocmComputeCapability>(gpu_version);
   // Convert convolutions into CustomCalls to MIOpen, then canonicalize them
   // (PadInsertion).
   HloPassPipeline pipeline("conv_canonicalization");
@@ -96,13 +101,14 @@ absl::Status AMDGPUCompiler::OptimizeHloConvolutionCanonicalization(
       /*allow_mixed_precision=*/false);
 
   // Convert upsupported bf16 convolutions to f32.
-  ConvBfloat16Support conv_bf16_support(
-    std::get<se::RocmComputeCapability>(gpu_version));
+  ConvBfloat16Support conv_bf16_support(rocm_compute_capability);
   pipeline.AddPass<FloatNormalization>(&conv_bf16_support);
 
   pipeline.AddPass<GpusolverRewriter>();
   pipeline.AddPass<GpuConvRewriter>();
   pipeline.AddPass<GpuConvPaddingLegalization>();
+  pipeline.AddPass<CudnnPadForConvolutions>(rocm_compute_capability);
+  pipeline.AddPass<CudnnVectorizeConvolutions>(rocm_compute_capability);
 
   // The conv padding/vectorization passes which we need to get rid of.  They
   // also leave behind unnecessary tuple/get-tuple-element pairs that
@@ -118,6 +124,13 @@ absl::Status AMDGPUCompiler::OptimizeHloConvolutionCanonicalization(
   options.set_enable_conv_operand_swap(false);
   options.set_enable_unconditional_reduce_of_concat_replacement(false);
   pipeline.AddPass<HloPassFix<AlgebraicSimplifier>>(options);
+
+  // CudnnSimplifyPadding gets rid of some padding introduced by
+  // CudnnPadForConvolutions and used by CudnnVectorizeConvolutions.  The
+  // pattern-matches in this pass need to be run after inlining and simplifying
+  // tuples from CudnnVectorizeConvolutions.  We also need to run algsimp to
+  // e.g. clean up unnecessary nop `convert`s.
+  pipeline.AddPass<CudnnSimplifyPadding>();
 
   pipeline.AddPass<HloConstantFolding>();
   TF_RETURN_IF_ERROR(pipeline.Run(hlo_module).status());
