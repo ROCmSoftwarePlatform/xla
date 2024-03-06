@@ -81,6 +81,14 @@ CHECK-NOT: store atomic{{.*}}unordered, align 4
 }
 
 TEST_F(GpuAtomicTest, TestAddAtomicF32) {
+  if (is_built_with_rocm_ &&
+      !backend()
+           .default_stream_executor()
+           ->GetDeviceDescription()
+           .rocm_compute_capability()
+           .gfx9_mi100_or_later()) {
+    return;
+  }
   const char* hlo_string = R"(
     HloModule TensorFlowScatterV1
 
@@ -104,7 +112,7 @@ TEST_F(GpuAtomicTest, TestAddAtomicF32) {
 )";
 
   CompileAndVerifyIr(hlo_string, is_built_with_rocm_ ? R"(
-CHECK: atomicrmw fadd ptr addrspace(1) %[[ADDR:.*]], float %[[VALUE:.*]] syncscope("agent") seq_cst
+CHECK: call float @llvm.amdgcn.global.atomic.fadd.f32.p1.f32(ptr addrspace(1) %[[ADDR:.*]], float %[[VALUE:.*]])
 )"
                                                      : R"(
 CHECK: atomicrmw fadd ptr %[[ADDR:.*]], float %[[VALUE:.*]] seq_cst
@@ -113,11 +121,21 @@ CHECK: atomicrmw fadd ptr %[[ADDR:.*]], float %[[VALUE:.*]] seq_cst
 
 TEST_F(GpuAtomicTest, TestAddAtomicF64) {
   // Atomic add required sm_60 or above.
-  if (!backend()
+  if (!is_built_with_rocm_ &&
+      !backend()
            .default_stream_executor()
            ->GetDeviceDescription()
            .cuda_compute_capability()
            .IsAtLeast(6)) {
+    return;
+  }
+
+  if (is_built_with_rocm_ &&
+      !backend()
+           .default_stream_executor()
+           ->GetDeviceDescription()
+           .rocm_compute_capability()
+           .gfx9_mi200_or_later()) {
     return;
   }
 
@@ -143,7 +161,10 @@ TEST_F(GpuAtomicTest, TestAddAtomicF64) {
     }
 )";
 
-  CompileAndVerifyIr(hlo_string, R"(
+  CompileAndVerifyIr(hlo_string, is_built_with_rocm_ ? R"(
+CHECK: call double @llvm.amdgcn.global.atomic.fadd.f64.p1.f64(ptr addrspace(1) %[[ADDR:.*]], double %[[VALUE:.*]])
+)"
+                                                     : R"(
 CHECK: atomicrmw fadd ptr %[[ADDR:.*]], double %[[VALUE:.*]] seq_cst
 )");
 }
