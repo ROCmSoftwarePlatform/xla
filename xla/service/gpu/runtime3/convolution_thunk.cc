@@ -75,31 +75,34 @@ absl::Status ConvolutionThunk::ExecuteOnStream(const ExecuteParams& params) {
   RunConvOptions opts;
   opts.runner_cache = &GetOrCreateRunner(params.stream, &runner_created);
 
+#if TENSORFLOW_USE_ROCM
   if(runner_created) {
     TF_ASSIGN_OR_RETURN(
       GpuConvParams conv_params,
       GetGpuConvParams(config_, operand_se_buffers, result_se_buffers));
 
     TF_ASSIGN_OR_RETURN(se::dnn::ConvolutionKind kind,
-                      GetDNNConvKindFromCudnnConvKind(conv_params.config->kind));
+                      GetDNNConvKindFromCudnnConvKind(config_.kind));
 
     TF_ASSIGN_OR_RETURN(
       se::dnn::DataType input_type,
-      GetDNNDataTypeFromPrimitiveType(conv_params.config->input_type));
+      GetDNNDataTypeFromPrimitiveType(config_.input_type));
 
-      // VLOG(0) << "GetMIOpenConvolveAlgorithms called for device " << params.stream->parent()->device_ordinal();
-      TF_ASSIGN_OR_RETURN(auto dnn, se::dnn::internal::GetDnnFromStream(params.stream));
+      TF_ASSIGN_OR_RETURN(auto dnn, 
+                      se::dnn::internal::GetDnnFromStream(params.stream));
       se::OwningScratchAllocator<> scratch_allocator(
                                    buffer_allocations.device_ordinal(),
                                    buffer_allocations.memory_allocator());
 
-      auto *cfg = conv_params.config;
       std::vector<se::dnn::ProfileResult> profile_results;
       dnn->GetMIOpenConvolveAlgorithms(
-           kind, input_type, params.stream, cfg->input_descriptor, conv_params.input_buf,
-           cfg->filter_descriptor, conv_params.filter_buf, cfg->output_descriptor, conv_params.output_buf,
-           cfg->conv_desc, &scratch_allocator, &profile_results);
+           kind, input_type, params.stream, config_.input_descriptor, 
+           conv_params.input_buf, config_.filter_descriptor, 
+           conv_params.filter_buf, config_.output_descriptor, 
+           conv_params.output_buf, config_.conv_desc, 
+           &scratch_allocator, &profile_results);
   }
+#endif // TENSORFLOW_USE_ROCM
 
   TF_RETURN_IF_ERROR(RunGpuConv(config_, absl::MakeSpan(operand_se_buffers),
                                 absl::MakeSpan(result_se_buffers), scratch,
