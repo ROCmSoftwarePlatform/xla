@@ -1582,6 +1582,9 @@ ENTRY e {
 }
 
 TEST_F(TritonGemmTestAny, DoAddConstantToScalarAndBroadcastThat) {
+  if (CudaOrRocmCheck(Switch::False, Switch::True)) {
+    GTEST_SKIP() << "Not using autotuner on ROCM yet.";
+  }
   const std::string hlo_text = R"(
 HloModule t
 
@@ -1603,6 +1606,9 @@ ENTRY e {
 }
 
 TEST_F(TritonGemmTest, SameInput) {
+  if (CudaOrRocmCheck(Switch::False, Switch::True)) {
+    GTEST_SKIP() << "Not using autotuner on ROCM yet.";
+  }
   const std::string hlo_text = R"(
 HloModule m
 
