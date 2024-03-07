@@ -99,7 +99,8 @@ class Shape {
   static constexpr int64_t kUnboundedSize = std::numeric_limits<int64_t>::min();
 
   // Returns true if the shape has one or more dimensions with unbounded sizes.
-  // Tuple shapes are traversed recursively.
+  // Tuple shapes are traversed recursively, returns true if any element is
+  // unbounded dynamic.
   bool is_unbounded_dynamic() const;
 
   // Returns true if the given dimension is unbounded dynamic.
@@ -113,6 +114,11 @@ class Shape {
     dimensions_[dimension] = kUnboundedSize;
   }
 
+  // Returns true if the shape has one or more dimensions with bounded sizes.
+  // Tuple shapes are traversed recursively, returns true if any element is
+  // bounded dynamic.
+  bool is_bounded_dynamic() const;
+
   // Returns true if the given dimension is bounded dynamic.
   bool is_bounded_dynamic_dimension(int dimension) const {
     return is_dynamic_dimension(dimension) &&
@@ -122,6 +128,11 @@ class Shape {
   // Returns true if the given dimension is dynamically-sized.
   bool is_dynamic_dimension(int dimension) const {
     return dynamic_dimensions_[dimension];
+  }
+
+  // Returns true if the given dimension is statically-sized.
+  bool is_static_dimension(int dimension) const {
+    return !dynamic_dimensions_[dimension];
   }
 
   // Sets whether or not the given dimension is dynamically-sized.
@@ -274,6 +285,7 @@ class Shape {
       ignore_tiles_in_layout_ = true;
       ignore_element_size_in_layout_ = true;
       ignore_memory_space_in_layout_ = true;
+      ignore_tail_padding_alignment_in_elements_in_layout_ = true;
       return *this;
     }
     Equal& IgnoreElementType() {
@@ -292,6 +304,10 @@ class Shape {
       ignore_dimensions_ = true;
       return *this;
     }
+    Equal& IgnoreTailPaddingAlignmentInElements() {
+      ignore_tail_padding_alignment_in_elements_in_layout_ = true;
+      return *this;
+    }
 
    private:
     bool ignore_layout_ = false;
@@ -302,6 +318,7 @@ class Shape {
     bool ignore_fp_precision_ = false;
     bool ignore_dynamic_dimension_ = false;
     bool ignore_dimensions_ = false;
+    bool ignore_tail_padding_alignment_in_elements_in_layout_ = false;
   };
 
   // Test that all fields of the shape are the same, equivalent to Equal().

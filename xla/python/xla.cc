@@ -572,12 +572,26 @@ static void Init(py::module_& m) {
     xla::StatusOr<const PJRT_Api*> pjrt_api = pjrt::PjrtApi(platform_name);
     return pjrt_api.ok();
   });
-  m.def("load_pjrt_plugin",
-        [](std::string platform_name, std::string library_path) -> py::capsule {
+  m.def(
+      "load_pjrt_plugin",
+      [](std::string platform_name, std::optional<std::string> library_path,
+         std::optional<py::capsule> c_api) -> py::capsule {
+        if (library_path.has_value()) {
           const PJRT_Api* api = xla::ValueOrThrow(
-              pjrt::LoadPjrtPlugin(platform_name, library_path));
+              pjrt::LoadPjrtPlugin(platform_name, *library_path));
           return py::capsule(absl::bit_cast<void*>(api), "pjrt_c_api");
-        });
+        }
+        if (absl::string_view(c_api->name()) != "pjrt_c_api") {
+          throw py::value_error(
+              "c_api argument to load_pjrt_plugin is not a pjrt_c_api "
+              "capsule.");
+        }
+        xla::ThrowIfError(pjrt::SetPjrtApi(
+            platform_name, static_cast<const PJRT_Api*>(*c_api)));
+        return *c_api;
+      },
+      py::arg("platform_name"), py::arg("library_path") = std::nullopt,
+      py::arg("c_api") = std::nullopt);
   m.def("pjrt_plugin_initialized", [](std::string platform_name) -> bool {
     return xla::ValueOrThrow(pjrt::IsPjrtPluginInitialized(platform_name));
   });
@@ -590,7 +604,9 @@ static void Init(py::module_& m) {
   alloc_config.def(py::init<>())
       .def_readwrite("kind", &GpuAllocatorConfig::kind)
       .def_readwrite("memory_fraction", &GpuAllocatorConfig::memory_fraction)
-      .def_readwrite("preallocate", &GpuAllocatorConfig::preallocate);
+      .def_readwrite("preallocate", &GpuAllocatorConfig::preallocate)
+      .def_readwrite("collective_memory_size",
+                     &GpuAllocatorConfig::collective_memory_size);
   py::enum_<GpuAllocatorConfig::Kind>(alloc_config, "Kind")
       .value("DEFAULT", GpuAllocatorConfig::Kind::kDefault)
       .value("PLATFORM", GpuAllocatorConfig::Kind::kPlatform)
@@ -652,12 +668,25 @@ static void Init(py::module_& m) {
       py::arg("platform_name"),
       py::arg("options") = absl::flat_hash_map<std::string, PjRtValueType>(),
       py::arg("distributed_client") = nullptr);
+  // TODO(b/322357665): Delete this method after TPU plugin changes to use the
+  // standard registration.
   m.def("get_default_c_api_topology",
         [](std::string platform_name, std::string topology_name,
            const absl::flat_hash_map<std::string, PjRtValueType>& options)
             -> std::shared_ptr<PjRtTopologyDescription> {
           return xla::ValueOrThrow(
               GetCApiTopology(platform_name, topology_name, options));
+        });
+  m.def("get_c_api_topology",
+        [](py::capsule c_api, std::string topology_name,
+           const absl::flat_hash_map<std::string, PjRtValueType>& options)
+            -> std::shared_ptr<PjRtTopologyDescription> {
+          if (absl::string_view(c_api.name()) != "pjrt_c_api") {
+            throw py::value_error(
+                "Argument to get_c_api_topology was not a pjrt_c_api capsule.");
+          }
+          return xla::ValueOrThrow(GetCApiTopology(
+              static_cast<const PJRT_Api*>(c_api), topology_name, options));
         });
   m.def("get_topology_for_devices",
         [](std::vector<ClientAndPtr<PjRtDevice>> devices_and_clients) {
@@ -808,7 +837,11 @@ static void Init(py::module_& m) {
       },
       py::arg("dlpack"), py::arg("cpu_backend") = nullptr,
       py::arg("gpu_backend") = nullptr);
-
+  m.def("cuda_array_interface_to_buffer",
+        [](const pybind11::dict& cai, std::shared_ptr<PyClient> cuda_client) {
+          return xla::ValueOrThrow(
+              CudaArrayInterfaceToBuffer(cai, std::move(cuda_client)));
+        });
   BuildProfilerSubmodule(&m);
   BuildOpsSubmodule(&m);
   BuildOutfeedReceiverSubmodule(&m);
@@ -904,6 +937,16 @@ static void Init(py::module_& m) {
           "key_value_set",
           [](DistributedRuntimeClient& client, std::string key,
              std::string value) {
+            py::gil_scoped_release gil_release;
+            xla::ThrowIfError(client.KeyValueSet(key, value));
+          },
+          py::arg("key"), py::arg("value"))
+      // The key must be a string, but the value must a Python bytes object.
+      // Use `key_value_set_bytes()` and `blocking_key_value_get_bytes()`.
+      .def(
+          "key_value_set_bytes",
+          [](DistributedRuntimeClient& client, std::string key,
+             py::bytes value) {
             py::gil_scoped_release gil_release;
             xla::ThrowIfError(client.KeyValueSet(key, value));
           },

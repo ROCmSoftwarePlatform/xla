@@ -127,6 +127,7 @@ class PjRtCApiDevice : public PjRtDevice {
   bool IsAddressable() const override;
 
   int local_hardware_id() const override;
+  PjRtLocalHardwareId local_hardware_id_typed() const override;
 
   Status TransferToInfeed(const LiteralSlice& literal) override {
     return Unimplemented("PJRT C API does not support TransferToInfeed");
@@ -247,9 +248,13 @@ class PjRtCApiClient : public PjRtClient {
   absl::Span<PjRtDevice* const> addressable_devices() const override;
 
   StatusOr<PjRtDevice*> LookupDevice(int device_id) const override;
+  StatusOr<PjRtDevice*> LookupDevice(
+      PjRtGlobalDeviceId global_device_id) const override;
 
   StatusOr<PjRtDevice*> LookupAddressableDevice(
       int local_hardware_id) const override;
+  StatusOr<PjRtDevice*> LookupAddressableDevice(
+      PjRtLocalDeviceId local_device_id) const override;
 
   absl::Span<PjRtMemorySpace* const> memory_spaces() const override;
 
@@ -778,6 +783,14 @@ StatusOr<std::unique_ptr<PjRtClient>> GetCApiClient(
     const absl::flat_hash_map<std::string, PjRtValueType>& create_options = {},
     std::shared_ptr<KeyValueStoreInterface> kv_store = nullptr);
 
+absl::StatusOr<std::unique_ptr<PjRtTopologyDescription>> GetCApiTopology(
+    const PJRT_Api* c_api, absl::string_view topology_name,
+    const absl::flat_hash_map<std::string, PjRtValueType>& create_options);
+
+// A variant that takes `device_type` as an input, used for plugins that are not
+// registered with standard way (xla_bridge.register_plugin).
+// TODO(b/322357665): Delete this method after TPU plugin changes to use the
+// standard registration.
 StatusOr<std::unique_ptr<PjRtTopologyDescription>> GetCApiTopology(
     absl::string_view device_type, absl::string_view topology_name,
     const absl::flat_hash_map<std::string, PjRtValueType>& create_options = {});

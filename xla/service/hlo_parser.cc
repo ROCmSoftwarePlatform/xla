@@ -129,6 +129,7 @@ bool CanInferShape(HloOpcode code) {
     case HloOpcode::kDivide:
     case HloOpcode::kDomain:
     case HloOpcode::kDot:
+    case HloOpcode::kErf:
     case HloOpcode::kExp:
     case HloOpcode::kExpm1:
     case HloOpcode::kFft:
@@ -196,6 +197,7 @@ bool CanInferShape(HloOpcode code) {
     case HloOpcode::kAllReduceStart:
     case HloOpcode::kAllReduceDone:
     case HloOpcode::kAllToAll:
+    case HloOpcode::kCollectiveBroadcast:
     case HloOpcode::kCollectivePermute:
     case HloOpcode::kCollectivePermuteStart:
     case HloOpcode::kCollectivePermuteDone:
@@ -1014,6 +1016,7 @@ bool HloParserImpl::ParseHloModule(HloModule* module,
   absl::flat_hash_map<std::string, AttrConfig> attrs;
   std::optional<ComputationLayout> entry_computation_layout;
   std::optional<FrontendAttributes> frontend_attributes;
+  BoolList allow_spmd_sharding_propagation_to_parameters;
   BoolList allow_spmd_sharding_propagation_to_output;
 
   attrs["is_scheduled"] = {/*required=*/false, AttrTy::kBool, &is_scheduled};
@@ -1031,6 +1034,9 @@ bool HloParserImpl::ParseHloModule(HloModule* module,
                                        &entry_computation_layout};
   attrs["frontend_attributes"] = {
       /*required=*/false, AttrTy::kFrontendAttributes, &frontend_attributes};
+  attrs["allow_spmd_sharding_propagation_to_parameters"] = {
+      /*required=*/false, AttrTy::kBracedBoolListOrBool,
+      &allow_spmd_sharding_propagation_to_parameters};
   attrs["allow_spmd_sharding_propagation_to_output"] = {
       /*required=*/false, AttrTy::kBracedBoolListOrBool,
       &allow_spmd_sharding_propagation_to_output};
@@ -1088,6 +1094,11 @@ bool HloParserImpl::ParseHloModule(HloModule* module,
   }
   if (frontend_attributes) {
     module->set_frontend_attributes(frontend_attributes.value());
+  }
+  if (!allow_spmd_sharding_propagation_to_parameters.empty()) {
+    config.set_allow_spmd_sharding_propagation_to_parameters(
+        allow_spmd_sharding_propagation_to_parameters);
+    default_config = false;
   }
   if (!allow_spmd_sharding_propagation_to_output.empty()) {
     config.set_allow_spmd_sharding_propagation_to_output(
@@ -1504,6 +1515,7 @@ HloInstruction* HloParserImpl::CreateInstruction(  // NOLINT
     case HloOpcode::kCopyDone:
     case HloOpcode::kCos:
     case HloOpcode::kOptimizationBarrier:
+    case HloOpcode::kErf:
     case HloOpcode::kExp:
     case HloOpcode::kExpm1:
     case HloOpcode::kImag:
@@ -2105,14 +2117,15 @@ HloInstruction* HloParserImpl::CreateInstruction(  // NOLINT
           !ParseAttributes(attrs, allow_attributes)) {
         return nullptr;
       }
-      if (dynamic_cast<const HloChannelInstruction*>(operands[0]) == nullptr) {
-        return nullptr;
+
+      if (dynamic_cast<const HloChannelInstruction*>(operands[0]) != nullptr) {
+        if (channel_id != operands[0]->channel_id()) {
+          return nullptr;
+        }
       }
-      if (channel_id != operands[0]->channel_id()) {
-        return nullptr;
-      }
-      return builder->AddInstruction(
-          HloInstruction::CreateRecvDone(operands[0], *is_host_transfer));
+
+      return builder->AddInstruction(HloInstruction::CreateRecvDone(
+          operands[0], channel_id.value(), *is_host_transfer));
     }
     case HloOpcode::kSend: {
       optional<int64_t> channel_id;
@@ -3214,8 +3227,9 @@ HloInstruction* HloParserImpl::CreateInstruction(  // NOLINT
       return builder->AddInstruction(HloInstruction::CreateSetDimensionSize(
           *shape, operands[0], operands[1], (*dimensions)[0]));
     }
+    default:
+      return nullptr;
   }
-  return nullptr;
 }  // NOLINT(readability/fn_size)
 
 // ::= '{' (single_sharding | tuple_sharding) '}'
@@ -5664,6 +5678,7 @@ bool HloParserImpl::ParseLayoutIntAttribute(
 //   ::= '{' int64_list
 //       (':' dim_level_types
 //            tiles
+//            tail_padding_alignment_in_elements
 //            element_size_in_bits
 //            memory_space
 //            physical_shape
@@ -5687,6 +5702,7 @@ bool HloParserImpl::ParseLayout(Layout* layout) {
   int64_t memory_space = 0;
   std::optional<Shape> physical_shape;
   int64_t dynamic_shape_metadata_prefix_bytes = 0;
+  int64_t tail_padding_alignment_in_elements = 1;
 
   auto parse_and_add_item = [&]() {
     int64_t i;
@@ -5723,6 +5739,12 @@ bool HloParserImpl::ParseLayout(Layout* layout) {
       if (lexer_.GetKind() == TokKind::kIdent && lexer_.GetStrVal() == "T") {
         lexer_.Lex();
         ParseTiles(&tiles);
+      }
+
+      if (lexer_.GetKind() == TokKind::kIdent && lexer_.GetStrVal() == "L") {
+        lexer_.Lex();
+        ParseLayoutIntAttribute(&tail_padding_alignment_in_elements,
+                                "multiple padded to in elements");
       }
 
       if (lexer_.GetKind() == TokKind::kOctothorp) {
@@ -5782,11 +5804,11 @@ bool HloParserImpl::ParseLayout(Layout* layout) {
   for (int i = 0; i < tiles.size(); i++) {
     vec_tiles[i] = Tile(tiles[i]);
   }
-  *layout = LayoutUtil::MakeLayout(minor_to_major, dim_level_types, dim_unique,
-                                   dim_ordered, vec_tiles, index_primitive_type,
-                                   pointer_primitive_type, element_size_in_bits,
-                                   memory_space, std::move(physical_shape),
-                                   dynamic_shape_metadata_prefix_bytes);
+  *layout = LayoutUtil::MakeLayout(
+      minor_to_major, dim_level_types, dim_unique, dim_ordered, vec_tiles,
+      tail_padding_alignment_in_elements, index_primitive_type,
+      pointer_primitive_type, element_size_in_bits, memory_space,
+      std::move(physical_shape), dynamic_shape_metadata_prefix_bytes);
   return true;
 }
 

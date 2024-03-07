@@ -11,6 +11,7 @@ load("@local_config_rocm//rocm:build_defs.bzl", "if_rocm")
 load(
     "@tsl//tsl:tsl.bzl",
     "if_cuda_or_rocm",
+    "internal_visibility",
 )
 load("@tsl//tsl:tsl.default.bzl", "tsl_pybind_extension")
 load("@tsl//tsl/platform:build_config.bzl", "pyx_library", "tf_proto_library")
@@ -22,7 +23,9 @@ load(
 
 package(
     # copybara:uncomment default_applicable_licenses = ["//tensorflow:license"],
-    default_visibility = [":friends"],
+    default_visibility = internal_visibility([
+        ":friends",
+    ]),
     licenses = ["notice"],
 )
 
@@ -248,7 +251,9 @@ cc_library(
         "@com_google_absl//absl/hash",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
+        "@local_config_python//:python_headers",  # buildcleaner: keep
         "//xla/pjrt:exceptions",
+        "@tsl//tsl/platform",
         "@tsl//tsl/platform:logging",
         "@pybind11",
     ],
@@ -368,6 +373,7 @@ cc_library(
         "@pybind11_abseil//pybind11_abseil:absl_casters",
     ] + if_cuda([
         "@local_config_cuda//cuda:cuda_headers",
+        "//xla/stream_executor/cuda:cuda_driver",
     ]) + if_rocm([
         "@local_config_rocm//rocm:rocm_headers",
     ]),
@@ -926,7 +932,9 @@ cc_library(
         ":types",
         # placeholder for index annotation deps
         "@com_google_absl//absl/hash",
+        "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/synchronization",
         "@com_google_absl//absl/types:span",
         "//xla:array",
@@ -939,6 +947,9 @@ cc_library(
         "//xla/client:executable_build_options",
         "//xla/client:xla_builder",
         "//xla/client:xla_computation",
+        "//xla/ffi",
+        "//xla/ffi:ffi_api",
+        "//xla/ffi/api:c_api",
         "//xla/hlo/ir:hlo",
         "//xla/hlo/ir:hlo_module_group",
         "//xla/pjrt:exceptions",

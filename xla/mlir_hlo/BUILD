@@ -1,11 +1,12 @@
 load("@bazel_skylib//rules:build_test.bzl", "build_test")
 load("@llvm-project//mlir:tblgen.bzl", "gentbl_cc_library", "gentbl_filegroup", "td_library")
+load("@tsl//tsl:tsl.bzl", "internal_visibility")
 load("@tsl//tsl:tsl.default.bzl", "get_compatible_with_portable")
 load("@tsl//tsl/platform:rules_cc.bzl", "cc_library")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["//tensorflow:license"],
-    default_visibility = ["//visibility:public"],
+    default_visibility = internal_visibility(["//learning/brain/mlir:mhlo_friends"]),
     licenses = ["notice"],
 )
 
@@ -681,10 +682,10 @@ cc_library(
         "mhlo/transforms/mhlo_canonicalize_scatter/mhlo_canonicalize_scatter.cc",
         "mhlo/transforms/mhlo_flatten_tuple/mhlo_flatten_tuple.cc",
         "mhlo/transforms/mhlo_passes.h.inc",
+        "mhlo/transforms/mhlo_quant_legalize_to_int/mhlo_quant_legalize_to_int.cc",
         "mhlo/transforms/optimize_mhlo/optimize_mhlo.cc",
         "mhlo/transforms/optimize_mhlo/optimize_mhlo_pass.cc",
         "mhlo/transforms/prepare_for_export/prepare_for_export.cc",
-        "mhlo/transforms/rank_specialization/rank_specialization.cc",
         "mhlo/transforms/restrict_max_rank/restrict_max_rank.cc",
         "mhlo/transforms/shape_legalize_to_hlo/shape_legalize_to_hlo.cc",
         "mhlo/transforms/shape_reification/shape_reification_pass.cc",
@@ -741,6 +742,7 @@ cc_library(
         "@llvm-project//mlir:MathDialect",
         "@llvm-project//mlir:MemRefDialect",
         "@llvm-project//mlir:Pass",
+        "@llvm-project//mlir:QuantOps",
         "@llvm-project//mlir:SCFDialect",
         "@llvm-project//mlir:ShapeDialect",
         "@llvm-project//mlir:ShapeTransforms",
@@ -896,27 +898,6 @@ cc_library(
     hdrs = ["utils/placement_utils.h"],
     strip_include_prefix = ".",
     deps = ["@llvm-project//llvm:Support"],
-)
-
-cc_library(
-    name = "lhlo_elemental_utils",
-    srcs = ["lhlo/transforms/lhlo_elemental_utils.cc"],
-    hdrs = ["lhlo/transforms/lhlo_elemental_utils.h"],
-    strip_include_prefix = ".",
-    deps = [
-        ":codegen_utils",
-        ":lhlo",
-        ":map_lmhlo_to_scalar_op",
-        ":mlir_hlo",
-        "@llvm-project//llvm:Support",
-        "@llvm-project//mlir:FuncDialect",
-        "@llvm-project//mlir:GPUDialect",
-        "@llvm-project//mlir:IR",
-        "@llvm-project//mlir:MemRefDialect",
-        "@llvm-project//mlir:Pass",
-        "@llvm-project//mlir:SCFDialect",
-        "@llvm-project//mlir:Transforms",
-    ],
 )
 
 cc_library(
@@ -1134,7 +1115,6 @@ cc_library(
         ":stablehlo_legalize_to_hlo",
         ":transforms_passes",
         ":transforms_passes_inc_gen",
-        ":userange_analysis",
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:FuncDialect",
         "@llvm-project//mlir:IR",
@@ -1147,10 +1127,7 @@ cc_library(
 cc_library(
     name = "transforms_passes",
     srcs = [
-        "analysis/test_userange_analysis.cc",
-        "mhlo/analysis/test_shape_component_analysis.cc",
         "transforms/alloc_to_arg_pass.cc",
-        "transforms/buffer_packing.cc",
         "transforms/bufferize.cc",
         "transforms/bufferize_pass.cc",
         "transforms/collapse_parallel_loops_to_1d_pass.cc",
@@ -1179,7 +1156,6 @@ cc_library(
         ":shape_component_analysis",
         ":transforms_passes_inc_gen",
         ":type_conversion",
-        ":userange_analysis",
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:AffineDialect",
         "@llvm-project//mlir:AffineToStandard",
@@ -1331,20 +1307,6 @@ gentbl_cc_library(
     tblgen = "@llvm-project//mlir:mlir-tblgen",
     td_file = "transforms/gpu_passes.td",
     deps = ["@llvm-project//mlir:PassBaseTdFiles"],
-)
-
-cc_library(
-    name = "userange_analysis",
-    srcs = ["analysis/userange_analysis.cc"],
-    hdrs = ["analysis/userange_analysis.h"],
-    strip_include_prefix = ".",
-    deps = [
-        "@llvm-project//llvm:Support",
-        "@llvm-project//mlir:Analysis",
-        "@llvm-project//mlir:BufferizationTransforms",
-        "@llvm-project//mlir:IR",
-        "@llvm-project//mlir:LoopLikeInterface",
-    ],
 )
 
 cc_library(

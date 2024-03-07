@@ -23,10 +23,7 @@ cc_library(
     srcs = ["plugin_tracer.cc"],
     hdrs = ["plugin_tracer.h"],
     copts = tf_profiler_copts(),
-    visibility = [
-        "//third_party/xprof/plugin/tensorboard_plugin_profile/integration_tests/tpu/tensorflow:__pkg__",
-        "//xla:internal",
-    ],
+    visibility = ["//xla:internal"],
     deps = [
         ":profiler_c_api_hdrs",
         "//xla:status",
@@ -36,6 +33,7 @@ cc_library(
         "@tsl//tsl/profiler/lib:profiler_interface",
         "@tsl//tsl/profiler/protobuf:profiler_options_proto_cc",
         "@tsl//tsl/profiler/protobuf:xplane_proto_cc",
+        "@tsl//tsl/profiler/utils:xplane_schema",
     ],
     alwayslink = True,
 )

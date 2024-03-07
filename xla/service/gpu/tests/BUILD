@@ -2,11 +2,9 @@
 # verify the IR emitted.
 
 load("//xla/tests:build_defs.bzl", "xla_test")
-load("@bazel_skylib//rules:build_test.bzl", "build_test")
 load("//xla:lit.bzl", "enforce_glob", "lit_test_suite")
 load(
     "//xla:xla.bzl",
-    "xla_cc_binary",
     "xla_cc_test",
 )
 load(
@@ -57,6 +55,7 @@ cc_library(
         "//xla:shape_util",
         "//xla/service:gpu_plugin",
         "//xla/service/gpu:gpu_executable",
+        "//xla/stream_executor:platform_manager",
         "//xla/tests:filecheck",
         "//xla/tests:llvm_irgen_test_base",
         "//xla/tests:verified_hlo_module",
@@ -82,6 +81,20 @@ xla_cc_test(
     deps = [
         ":gpu_codegen_test",
         "//xla:literal_util",
+        "@tsl//tsl/platform:test_main",
+    ],
+)
+
+xla_test(
+    name = "float_conversions_test",
+    srcs = ["float_conversions_test.cc"],
+    backends = ["gpu"],
+    deps = [
+        ":gpu_codegen_test",
+        "//xla:error_spec",
+        "//xla/tests:test_utils",
+        "@com_google_absl//absl/strings:string_view",
+        "@tsl//tsl/platform:test",
         "@tsl//tsl/platform:test_main",
     ],
 )
@@ -448,6 +461,18 @@ xla_test(
 )
 
 xla_cc_test(
+    name = "concatenate_emitter_test",
+    srcs = ["concatenate_emitter_test.cc"],
+    tags = tf_cuda_tests_tags(),
+    deps = [
+        ":gpu_codegen_test",
+        "//xla/tests:hlo_test_base",
+        "@tsl//tsl/platform:test",
+        "@tsl//tsl/platform:test_main",
+    ],
+)
+
+xla_cc_test(
     name = "transpose_emitter_test",
     srcs = ["transpose_emitter_test.cc"],
     tags = tf_cuda_tests_tags(),
@@ -641,74 +666,27 @@ xla_cc_test(
     ],
 )
 
-build_test(
-    name = "hlo_to_llvm_ir_build_test",
-    targets = [
-        ":hlo_to_llvm_ir",
-    ],
-)
-
-xla_cc_binary(
-    name = "hlo_to_llvm_ir",
-    testonly = True,
-    srcs = ["hlo_to_llvm_ir.cc"],
-    copts = if_cuda_is_configured(["-DGOOGLE_CUDA=1"]) + if_rocm_is_configured([
-        "-DTENSORFLOW_USE_ROCM=1",
-    ]),
-    deps = [
-        "//xla:status",
-        "//xla/hlo/ir:hlo",
-        "//xla/service/gpu:buffer_sharing",
-        "//xla/service/gpu:compile_module_to_llvm_ir",
-        "//xla/service/gpu:gpu_compiler",
-        "//xla/service/gpu:gpu_device_info_for_tests",
-        "//xla/service/gpu:gpu_hlo_schedule",
-        "//xla/service/gpu:target_constants",
-        "//xla/service/gpu/llvm_gpu_backend",
-        "//xla/stream_executor",
-        "//xla/stream_executor:device_description",
-        "//xla/stream_executor:dnn",
-        "//xla/stream_executor/host:host_platform",
-        "//xla/tests:test_utils",
-        "//xla/tools:hlo_module_loader",
-        "@com_google_absl//absl/status",
-        "@llvm-project//llvm:Target",
-        "@tsl//tsl/platform:logging",
-        "@tsl//tsl/platform:platform_port",
-        "@tsl//tsl/util:command_line_flags",
-    ] + if_cuda_is_configured([
-        "//xla/stream_executor/cuda:cuda_platform_id",
-        "//xla/service/gpu:nvptx_compiler_impl",
-        "//xla/stream_executor/cuda:cublas_plugin",
-    ]) + if_rocm_is_configured([
-        "//xla/stream_executor/rocm:rocm_platform_id",  # build_cleaner: keep
-        "//xla/stream_executor/rocm:rocblas_plugin",
-        "//xla/stream_executor/rocm:rocm_helpers",
-        "//xla/service/gpu:amdgpu_compiler_impl",
-        "@tsl//tsl/platform:rocm_rocdl_path",  # build_cleaner: keep
-    ]),
-)
-
 lit_test_suite(
     name = "all_tests",
     srcs = enforce_glob(
         [
             "add_preds.hlo",
             "calling_convention.hlo",
-            "concat.hlo",
-            "constant.hlo",
             "copy.hlo",
-            "copy_nested.hlo",
             "dynamic_update_slice_inplace.hlo",
             "element_wise_row_vectorization.hlo",
             "fused_scatter.hlo",
-            "fused_slice_different_operands.hlo",
             "fused_slice.hlo",
-            "fusion.hlo",
             "kernel_reuse.hlo",
             "launch_dimensions.hlo",
             "pad_to_static.hlo",
+            "reduce_atomic_min.hlo",
+            "reduce_column_layout_change.hlo",
+            "reduce_f64_column.hlo",
+            "reduce_large_row_to_scalar.hlo",
+            "reduce_row_vectorized.hlo",
             "reduce_unnested.hlo",
+            "reduce_variadic_column.hlo",
             "reduction_vectorization_sm_all.hlo",
             "rng_get_and_update_state.hlo",
             "scatter.hlo",
@@ -716,6 +694,10 @@ lit_test_suite(
             "single_instruction.hlo",
             "slice_to_dynamic.hlo",
             "sorting.hlo",
+            "transpose_021.hlo",
+            "transpose_021_extra_output.hlo",
+            "transpose_210.hlo",
+            "transpose_210_extra_output.hlo",
             "triton_naming.hlo",
         ],
         include = [
@@ -724,10 +706,15 @@ lit_test_suite(
     ),
     args = if_cuda_is_configured([
         "--param=PTX=PTX",
+        "--param=GPU=a6000",
     ]) + if_rocm_is_configured([
         "--param=PTX=GCN",
+        "--param=GPU=mi200",
     ]),
     cfg = "//xla:lit.cfg.py",
+    data = [
+        ":test_utilities",
+    ],
     default_tags = tf_cuda_tests_tags(),
     tags_override = {
         "reduction_vectorization_sm_all.hlo": ["no_rocm"],
@@ -736,7 +723,22 @@ lit_test_suite(
         "reduce_unnested.hlo": ["no_rocm"],
     },
     tools = [
-        ":hlo_to_llvm_ir",
+        "//xla/tools:hlo-opt",
+        "@llvm-project//llvm:FileCheck",
+    ],
+)
+
+filegroup(
+    name = "test_utilities",
+    testonly = True,
+    data = [
+        "//xla/tools:hlo-opt",
+        "//xla/tools/hlo_opt:gpu_specs/a100_80.txtpb",
+        "//xla/tools/hlo_opt:gpu_specs/a6000.txtpb",
+        "//xla/tools/hlo_opt:gpu_specs/h100.txtpb",
+        "//xla/tools/hlo_opt:gpu_specs/mi200.txtpb",
+        "//xla/tools/hlo_opt:gpu_specs/p100.txtpb",
+        "//xla/tools/hlo_opt:gpu_specs/v100.txtpb",
         "@llvm-project//llvm:FileCheck",
     ],
 )
@@ -782,6 +784,7 @@ xla_cc_test(
         "//xla:shape_util",
         "//xla:types",
         "//xla:xla_proto_cc",
+        "//xla/stream_executor:platform_manager",
         "@com_google_absl//absl/strings",
         "@tsl//tsl/platform:status",
         "@tsl//tsl/platform:statusor",

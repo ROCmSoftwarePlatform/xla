@@ -439,13 +439,13 @@ cc_library(
         "//xla:debug_options_flags",
         "//xla:statusor",
         "//xla/hlo/ir:hlo",
+        "//xla/service:hlo_module_config",
         "//xla/service:hlo_parser",
         "@com_google_absl//absl/strings",
         "@tsl//tsl/platform:env",
         "@tsl//tsl/platform:logging",
         "@tsl//tsl/platform:path",
         "@tsl//tsl/platform:protobuf",
-        "@tsl//tsl/platform:regexp",
     ],
 )
 
@@ -497,27 +497,50 @@ xla_py_proto_library(
 )
 
 cc_library(
+    name = "hlo_decomposer_lib",
+    srcs = ["hlo_decomposer.cc"],
+    hdrs = ["hlo_decomposer.h"],
+    deps = [
+        "//xla:status",
+        "//xla/hlo/ir:hlo",
+        "//xla/service:call_graph",
+        "//xla/service:compilation_environments",
+        "@com_google_absl//absl/container:flat_hash_set",
+        "@tsl//tsl/platform:statusor",
+    ],
+)
+
+cc_library(
     name = "run_hlo_module_lib",
     srcs = ["run_hlo_module.cc"],
     hdrs = ["run_hlo_module.h"],
     deps = [
         ":hlo_control_flow_flattening",
+        ":hlo_decomposer_lib",
         ":hlo_module_loader",
         ":prepare_reference_module",
         ":run_hlo_module_proto_cc",
         "//xla:error_spec",
         "//xla:literal",
         "//xla:literal_comparison",
+        "//xla:status",
         "//xla:util",
         "//xla:xla_data_proto_cc",
         "//xla/hlo/ir:hlo",
+        "//xla/service:hlo_module_config",
         "//xla/service:hlo_proto_cc",
         "//xla/service:hlo_runner",
         "//xla/service:hlo_verifier",
         "//xla/tests:test_utils",
+        "@com_google_absl//absl/algorithm:container",
+        "@com_google_absl//absl/log",
+        "@com_google_absl//absl/log:check",
+        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:span",
+        "@tsl//tsl/platform:errors",
         "@tsl//tsl/platform:path",
         "@tsl//tsl/platform:status",
+        "@tsl//tsl/platform:statusor",
     ],
 )
 
@@ -705,5 +728,20 @@ xla_test(
         "@tsl//tsl/platform:statusor",
         "@tsl//tsl/platform:test",
         "@tsl//tsl/protobuf:error_codes_proto_impl_cc",
+    ],
+)
+
+xla_test(
+    name = "hlo_decomposer_test",
+    srcs = ["hlo_decomposer_test.cc"],
+    deps = [
+        ":hlo_decomposer_lib",
+        "//xla/hlo/ir:hlo",
+        "//xla/tests:filecheck",
+        "//xla/tests:hlo_test_base",
+        "@com_google_absl//absl/algorithm:container",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_googletest//:gtest_main",
+        "@tsl//tsl/platform:statusor",
     ],
 )

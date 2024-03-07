@@ -53,8 +53,8 @@ struct CudaComputeCapability {
     HOPPER = 9
   };
 
-  CudaComputeCapability() = default;
-  CudaComputeCapability(int major, int minor) {
+  constexpr CudaComputeCapability() = default;
+  constexpr CudaComputeCapability(int major, int minor) {
     this->major = major;
     this->minor = minor;
   }
@@ -222,6 +222,14 @@ class RocmComputeCapability {
 
 using GpuComputeCapability =
     std::variant<CudaComputeCapability, RocmComputeCapability>;
+
+static inline bool isCUDA(const GpuComputeCapability& gcc) {
+  return std::holds_alternative<CudaComputeCapability>(gcc);
+}
+
+static inline bool isROCm(const GpuComputeCapability& gcc) {
+  return std::holds_alternative<RocmComputeCapability>(gcc);
+}
 
 // Data that describes the execution target of the StreamExecutor, in terms of
 // important logical parameters. These include dimensionality limits and

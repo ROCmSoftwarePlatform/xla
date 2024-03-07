@@ -24,9 +24,13 @@ limitations under the License.
 #include "xla/service/algebraic_simplifier.h"
 #include "xla/service/call_inliner.h"
 #include "xla/service/dot_dimension_merger.h"
+#include "xla/service/float_normalization.h"
 #include "xla/service/gpu/conv_algorithm_picker.h"
 #include "xla/service/gpu/cublas_pad_for_gemms.h"
 #include "xla/service/gpu/cublas_padding_requirements.h"
+#include "xla/service/gpu/cudnn_pad_for_convolutions.h"
+#include "xla/service/gpu/cudnn_simplify_padding.h"
+#include "xla/service/gpu/cudnn_vectorize_convolutions.h"
 #include "xla/service/gpu/cusolver_rewriter.h"
 #include "xla/service/gpu/gemm_algorithm_picker.h"
 #include "xla/service/gpu/gemm_rewriter.h"
@@ -53,19 +57,58 @@ limitations under the License.
 namespace xla {
 namespace gpu {
 
+namespace {
+
+struct ConvBfloat16Support : public FloatSupport {
+
+  explicit ConvBfloat16Support(
+      const se::RocmComputeCapability& rocm)
+      : FloatSupport(BF16),
+      // TODO: MIOpen does not support bf16 convolutions yet
+        is_conv_bf16_supported_(rocm.has_bf16_dtype_support()) {}
+
+  bool SupportsLowPrecisionOperand(const HloInstruction& hlo,
+                                   int64_t operand_index) const override {
+    return (hlo.opcode() != HloOpcode::kConvolution) || is_conv_bf16_supported_;
+  }
+
+  bool SupportsLowPrecisionOutput(const HloInstruction& hlo) const override {
+    return (hlo.opcode() != HloOpcode::kConvolution) || is_conv_bf16_supported_;
+  }
+
+  bool SupportsMixedPrecisions(const HloInstruction& hlo) const override {
+    // Skip all HLOs other than convolutions.
+    return (hlo.opcode() != HloOpcode::kConvolution);
+  }
+
+ private:
+  bool is_conv_bf16_supported_;
+};
+
+}  // namespace
+
 absl::Status AMDGPUCompiler::OptimizeHloConvolutionCanonicalization(
     HloModule* hlo_module, se::GpuComputeCapability gpu_version,
     se::dnn::VersionInfo dnn_version,
     se::DeviceMemoryAllocator* device_allocator) {
+  auto rocm_compute_capability =
+    std::get<se::RocmComputeCapability>(gpu_version);
   // Convert convolutions into CustomCalls to MIOpen, then canonicalize them
   // (PadInsertion).
   HloPassPipeline pipeline("conv_canonicalization");
   pipeline.AddInvariantCheckerDebug<HloVerifier>(
       /*layout_sensitive=*/false,
       /*allow_mixed_precision=*/false);
+
+  // Convert upsupported bf16 convolutions to f32.
+  ConvBfloat16Support conv_bf16_support(rocm_compute_capability);
+  pipeline.AddPass<FloatNormalization>(&conv_bf16_support);
+
   pipeline.AddPass<GpusolverRewriter>();
   pipeline.AddPass<GpuConvRewriter>();
   pipeline.AddPass<GpuConvPaddingLegalization>();
+  pipeline.AddPass<CudnnPadForConvolutions>(rocm_compute_capability);
+  pipeline.AddPass<CudnnVectorizeConvolutions>(rocm_compute_capability);
 
   // The conv padding/vectorization passes which we need to get rid of.  They
   // also leave behind unnecessary tuple/get-tuple-element pairs that
@@ -76,10 +119,18 @@ absl::Status AMDGPUCompiler::OptimizeHloConvolutionCanonicalization(
   // tf2xla bridge, DepthwiseConvolutionConverter and GpuConvRewriter
   // introduces reshapes and transposes that can be eliminated using
   // AlgebraicSimplifier  We run algsimp to a fixed point.
-  AlgebraicSimplifierOptions options;
+  AlgebraicSimplifierOptions options =
+      GetAlgebraicSimplifierOptions(hlo_module->config());
   options.set_enable_conv_operand_swap(false);
   options.set_enable_unconditional_reduce_of_concat_replacement(false);
   pipeline.AddPass<HloPassFix<AlgebraicSimplifier>>(options);
+
+  // CudnnSimplifyPadding gets rid of some padding introduced by
+  // CudnnPadForConvolutions and used by CudnnVectorizeConvolutions.  The
+  // pattern-matches in this pass need to be run after inlining and simplifying
+  // tuples from CudnnVectorizeConvolutions.  We also need to run algsimp to
+  // e.g. clean up unnecessary nop `convert`s.
+  pipeline.AddPass<CudnnSimplifyPadding>();
 
   pipeline.AddPass<HloConstantFolding>();
   TF_RETURN_IF_ERROR(pipeline.Run(hlo_module).status());
