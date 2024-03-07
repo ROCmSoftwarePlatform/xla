@@ -119,6 +119,9 @@ limitations under the License.
 #include "tsl/platform/path.h"
 #include "tsl/platform/status.h"
 #include "tsl/platform/statusor.h"
+#ifdef TENSORFLOW_USE_ROCM
+#include "tsl/platform/rocm_rocdl_path.h"
+#endif
 #include "tsl/platform/tensor_float_32_utils.h"
 #include "triton/Conversion/NVGPUToLLVM/NVGPUToLLVMPass.h"
 #include "triton/Conversion/TritonGPUToLLVM/Passes.h"
@@ -408,10 +411,17 @@ Value EmitElementwise(ImplicitLocOpBuilder& b, absl::string_view libdevice_path,
     if (dev_fn_id.ok()) {
       return b.create<mt::ExternElementwiseOp>(
           inputs[0].getType(), inputs, "libdevice", libdevice_path,
+#ifdef TENSORFLOW_USE_ROCM
+          ObtainDeviceFunctionName(dev_fn_id.value(),
+                                   hlo.shape().element_type(),
+                                   llvm::Triple("amdgcn-unknown-unknown")),
+          /*pure=*/true);
+#else
           ObtainDeviceFunctionName(dev_fn_id.value(),
                                    hlo.shape().element_type(),
                                    llvm::Triple("nvptx64-unknown-unknown")),
           /*pure=*/true);
+#endif
     }
   }
   const bool is_integer =
@@ -2018,11 +2028,23 @@ absl::StatusOr<std::unique_ptr<llvm::Module>> TranslateLLVMToLLVMIR(
 
 namespace {
 
-std::string GetLibdevicePath(const HloComputation* hlo_computation) {
+std::string GetLibdevicePath(const HloComputation* hlo_computation,
+                             const se::DeviceDescription& device_info) {
+#ifdef TENSORFLOW_USE_ROCM
+  std::string libdevice_dir = tsl::RocdlRoot();
+  auto compute_capability =
+      std::get_if<se::RocmComputeCapability>(&gpu_version);
+  if (!compute_capability) {
+    return xla::InternalError("Incompatible compute capability was specified.");
+  }
+  const std::string libdevice_path =
+    amdgpu::LibDevicePath(compute_capability->gcn_arch_name(), libdevice_dir);
+#else
   return nvptx::LibDevicePath(hlo_computation->parent()
                                   ->config()
                                   .debug_options()
                                   .xla_gpu_cuda_data_dir());
+#endif
 }
 
 }  // namespace
@@ -2062,7 +2084,7 @@ absl::StatusOr<mlir::OwningOpRef<mlir::ModuleOp>> CreateTritonModule(
   fn.addEntryBlock();
   b.setInsertionPointToStart(&fn.front());
 
-  TF_RETURN_IF_ERROR(ir_emitter(b, GetLibdevicePath(hlo_computation),
+  TF_RETURN_IF_ERROR(ir_emitter(b, GetLibdevicePath(hlo_computation, device_info),
                                 device_info, analysis, hlo_computation, fn,
                                 config));
 
@@ -2220,7 +2242,7 @@ absl::StatusOr<TritonWrapperResult> TritonWrapper(
   TF_ASSIGN_OR_RETURN(
       std::unique_ptr<llvm::Module> ll_triton_module,
       TranslateLLVMToLLVMIR(&llvm_module->getContext(), *triton_module,
-                            GetLibdevicePath(hlo_computation)));
+                            GetLibdevicePath(hlo_computation, device_info)));
   VLogModule(5, *ll_triton_module);
   if (should_verify) {
     VerifyModule(*ll_triton_module);
