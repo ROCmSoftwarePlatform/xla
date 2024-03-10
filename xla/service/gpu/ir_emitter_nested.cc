@@ -25,6 +25,7 @@ limitations under the License.
 #include "llvm/IR/Function.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Instructions.h"
+#include "llvm/IR/IntrinsicsAMDGPU.h"
 #include "llvm/TargetParser/Triple.h"
 #include "xla/hlo/ir/hlo_computation.h"
 #include "xla/hlo/ir/hlo_instruction.h"
@@ -308,23 +309,11 @@ void EmitAMDGPUAtomicFAdd(llvm::IRBuilder<>* builder, IrEmitterContext& ir_emitt
       (compute_capability.gfx9_mi300_or_later() ||
        debug_options.xla_gpu_ftz() ||
        element_type != F32)) {
-    llvm::FunctionType* callee_type = llvm::FunctionType::get(
-      source->getType(), {output_ptr->getType(), source->getType()}, false);
-
-    // Declares the callee if it is not declared already.
-    llvm::Function* callee = llvm::cast<llvm::Function>(
-        builder->GetInsertBlock()
-            ->getModule()
-            ->getOrInsertFunction(element_type == F32 ?
-                                  "llvm.amdgcn.global.atomic.fadd.f32.p1.f32" :
-                                  "llvm.amdgcn.global.atomic.fadd.f64.p1.f64",
-                                  callee_type)
-            .getCallee());
-
-    callee->addFnAttr(llvm::Attribute::NoUnwind);
-    callee->setMemoryEffects(llvm::MemoryEffects::argMemOnly());
-
-    builder->CreateCall(callee, {output_ptr, source});
+    llvm_ir::EmitCallToIntrinsic(
+        llvm::Intrinsic::amdgcn_global_atomic_fadd,
+        {output_ptr, source},
+        {source->getType(), output_ptr->getType(), source->getType()},
+        builder);
     return;
   }
 
@@ -346,23 +335,13 @@ void EmitAMDGPUAtomicFAdd(llvm::IRBuilder<>* builder, IrEmitterContext& ir_emitt
     source = builder->CreateShl(intsrc, shift);
     source = builder->CreateBitCast(source, half2type); 
 
-    llvm::FunctionType* callee_type = llvm::FunctionType::get(
-      half2type, {half2ptr, half2type}, false);
-
-    // Declares the callee if it is not declared already.
-    llvm::Function* callee = llvm::cast<llvm::Function>(
-        builder->GetInsertBlock()
-            ->getModule()
-            ->getOrInsertFunction(element_type == F16 ?
-                                  "llvm.amdgcn.global.atomic.fadd.v2f16.p1.v2f16" :
-                                  "llvm.amdgcn.global.atomic.fadd.v2bf16.p1",
-                                  callee_type)
-            .getCallee());
-
-    callee->addFnAttr(llvm::Attribute::NoUnwind);
-    callee->setMemoryEffects(llvm::MemoryEffects::argMemOnly());
-
-    builder->CreateCall(callee, {output_ptr, source});
+    llvm_ir::EmitCallToIntrinsic(
+        element_type == BF16 ?
+                        llvm::Intrinsic::amdgcn_global_atomic_fadd_v2bf16 :
+                        llvm::Intrinsic::amdgcn_global_atomic_fadd,
+        {output_ptr, source},
+        {source->getType(), output_ptr->getType(), source->getType()},
+        builder);
     return;
   }
 
