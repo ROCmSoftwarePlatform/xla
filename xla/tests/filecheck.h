@@ -27,13 +27,17 @@ namespace xla {
 // FileCheck can execute, returns true if and only if FileCheck succeeded in
 // matching the input.
 StatusOr<bool> RunFileCheck(const std::string& input,
-                            absl::string_view pattern);
+                            absl::string_view pattern,
+                            const std::vector<std::string> &args
+                              = std::vector<std::string>());
 
 // Runs FileCheck with the given pattern file over given input string. Provided
 // that FileCheck can execute, returns true if and only if FileCheck succeeded
 // in matching the input.
 StatusOr<bool> RunFileCheckWithPatternFile(const std::string& input,
-                                           const std::string& pattern_file);
+                                           const std::string& pattern_file,
+                                           const std::vector<std::string> &args
+                                             = std::vector<std::string>());
 
 }  // namespace xla
 

@@ -869,13 +869,14 @@ std::string HloTestBase::TestName() {
 
 void HloTestBase::MatchOptimizedHlo(absl::string_view hlo,
                                     absl::string_view pattern,
-                                    bool print_operand_shape) {
+                                    bool print_operand_shape,
+                                    const std::vector<std::string> &args) {
   TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<HloModule> optimized_module,
                           GetOptimizedModule(hlo));
   HloPrintOptions print_opts;
   print_opts.set_print_operand_shape(print_operand_shape);
   StatusOr<bool> filecheck_result =
-      RunFileCheck(optimized_module->ToString(print_opts), pattern);
+      RunFileCheck(optimized_module->ToString(print_opts), pattern, args);
   TF_ASSERT_OK(filecheck_result.status());
   EXPECT_TRUE(filecheck_result.value());
 }

@@ -131,12 +131,15 @@ class HloTestBase : public ManifestCheckingTest {
   // Compiles the given `hlo` with optimizations, and verifies that optimized
   // HLO matches the given FileCheck pattern.
   void MatchOptimizedHlo(absl::string_view hlo, absl::string_view pattern,
-                         bool print_operand_shape = false);
+                         bool print_operand_shape = false,
+                         const std::vector<std::string> &args
+                           = std::vector<std::string>());
 
   // LikeMatchOptimizedHlo, but checks operand shapes as well.
   void MatchOptimizedHloWithShapes(absl::string_view hlo,
                                    absl::string_view pattern) {
-    MatchOptimizedHlo(hlo, pattern, /*print_operand_shape=*/true);
+    MatchOptimizedHlo(hlo, pattern, /*print_operand_shape=*/true,
+                      /*args=*/std::vector<std::string>());
   }
 
   // Compiles and returns module with optimizations from a given HLO.

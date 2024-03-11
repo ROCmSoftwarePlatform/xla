@@ -29,7 +29,8 @@ limitations under the License.
 namespace xla {
 
 StatusOr<bool> RunFileCheck(const std::string& input,
-                            absl::string_view pattern) {
+                            absl::string_view pattern,
+                            const std::vector<std::string> &args) {
   // Generate an input file for the FileCheck pattern.
   std::string pattern_path;
   auto env = tsl::Env::Default();
@@ -38,11 +39,12 @@ StatusOr<bool> RunFileCheck(const std::string& input,
   }
   TF_RETURN_IF_ERROR(tsl::WriteStringToFile(env, pattern_path, pattern));
 
-  return RunFileCheckWithPatternFile(input, pattern_path);
+  return RunFileCheckWithPatternFile(input, pattern_path, args);
 }
 
 StatusOr<bool> RunFileCheckWithPatternFile(const std::string& input,
-                                           const std::string& pattern_file) {
+                                           const std::string& pattern_file,
+                                           const std::vector<std::string> &args) {
   // Invoke FileCheck to check whether input matches `pattern`.
   std::string file_check_path = tsl::GetDataDependencyFilepath(
       tsl::testing::kIsOpenSource
@@ -50,9 +52,16 @@ StatusOr<bool> RunFileCheckWithPatternFile(const std::string& input,
           : tsl::io::JoinPath("llvm", "llvm-project", "llvm", "FileCheck"));
 
   tsl::SubProcess file_check_process;
-  file_check_process.SetProgram(file_check_path,
-                                {file_check_path, "-v", "-dump-input=fail",
-                                 "--dump-input-filter=all", pattern_file});
+  std::vector<std::string> arguments = {file_check_path, "-v",
+                                              "-dump-input=fail",
+                                              "--dump-input-filter=all",
+                                              pattern_file};
+  arguments.insert(arguments.end(), args.begin(), args.end());
+  VLOG(-1) << "Zoran: RunFileCheckWithPatternFile 0";
+  for(std::string s:arguments) {
+    VLOG(-1) << s;
+  }
+  file_check_process.SetProgram(file_check_path, arguments);
   file_check_process.SetChannelAction(tsl::CHAN_STDIN, tsl::ACTION_PIPE);
   file_check_process.SetChannelAction(tsl::CHAN_STDERR, tsl::ACTION_PIPE);
   if (!file_check_process.Start()) {

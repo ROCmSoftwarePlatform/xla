@@ -975,6 +975,10 @@ TEST_F(TritonGemmTest, WorksWhenKIsDivisibleByBlockKButNotByBlockKTimesSplitK) {
   // The condition mentioned in the test name is fulfilled by
   // GemmKey(16, 64, 256, 8, 1, 4), which was part of the default configs for
   // Ampere at the time of the addition of this test case.
+  std::vector<std::string> args;
+  if (CudaOrRocmCheck(Switch::True, Switch::False)) {
+    args.push_back("--check-prefixes=CHECK,CHECK-PTX");
+  }
   constexpr absl::string_view kHloText = R"(
 HloModule extracted
 
@@ -995,8 +999,8 @@ ENTRY e {
 ; CHECK-NEXT: parameter
 ; CHECK-NEXT: fusion(
 ; CHECK-SAME: kind=kCustom
-; CHECK-SAME: "block_m":
-  )");
+; CHECK-PTX-SAME: "block_m":
+  )", false, args);
 
   // Not doing a comparison here, because the input matrices are quite big.
   // If I reduce their size then they can no longer trigger the error, that I
@@ -1004,6 +1008,10 @@ ENTRY e {
 }
 
 TEST_F(TritonGemmTest, MultipleDims) {
+  std::vector<std::string> args;
+  if (CudaOrRocmCheck(Switch::True, Switch::False)) {
+    args.push_back("--check-prefixes=CHECK,CHECK-PTX");
+  }
   const std::string hlo_text = R"(
 HloModule t
 
@@ -1021,14 +1029,17 @@ ENTRY e {
 ; CHECK-NEXT: parameter
 ; CHECK-NEXT: fusion(
 ; CHECK-SAME: kind=kCustom
-; CHECK-SAME: "block_m":
-  )");
+; CHECK-PTX-SAME: "block_m":
+  )", false, args);
 
   EXPECT_TRUE(RunAndCompare(hlo_text, ErrorSpec{/*aabs=*/1e-3, /*arel=*/1e-3}));
 }
 
 TEST_F(TritonGemmTest, NoPadding) {
-
+  std::vector<std::string> args;
+  if (CudaOrRocmCheck(Switch::True, Switch::False)) {
+    args.push_back("--check-prefixes=CHECK,CHECK-PTX");
+  }
   const char* hlo_text = R"(
 HloModule t
 
@@ -1047,15 +1058,19 @@ ENTRY e {
 ; CHECK-NEXT: ROOT
 ; CHECK-SAME: fusion(
 ; CHECK-SAME: kind=kCustom
-; CHECK-SAME: "block_m":
+; CHECK-PTX-SAME: "block_m":
 ; CHECK-NOT: pad
 ; CHECK-NOT: slice
-)");
+)", false, args);
 
   EXPECT_TRUE(RunAndCompare(hlo_text, ErrorSpec{/*aabs=*/1e-3, /*arel=*/1e-3}));
 }
 
 TEST_F(TritonGemmTest, SplitLhsNoncontractingTransposeRhs) {
+  std::vector<std::string> args;
+  if (CudaOrRocmCheck(Switch::True, Switch::False)) {
+    args.push_back("--check-prefixes=CHECK,CHECK-PTX");
+  }
   const std::string hlo_text = R"(
 HloModule t
 
@@ -1073,13 +1088,17 @@ ENTRY e {
 ; CHECK-NEXT: parameter
 ; CHECK-NEXT: fusion(
 ; CHECK-SAME: kind=kCustom
-; CHECK-SAME: "block_m":
-)");
+; CHECK-PTX-SAME: "block_m":
+)", false, args);
 
   EXPECT_TRUE(RunAndCompare(hlo_text, ErrorSpec{/*aabs=*/1e-2, /*arel=*/1e-2}));
 }
 
 TEST_F(TritonGemmTest, SplitLhsNoncontracting) {
+  std::vector<std::string> args;
+  if (CudaOrRocmCheck(Switch::True, Switch::False)) {
+    args.push_back("--check-prefixes=CHECK,CHECK-PTX");
+  }
   const std::string hlo_text = R"(
 HloModule t
 
@@ -1100,8 +1119,8 @@ ENTRY e {
 ; CHECK-NEXT: parameter
 ; CHECK-NEXT: fusion(
 ; CHECK-SAME: kind=kCustom
-; CHECK-SAME: "block_m":
-)");
+; CHECK-PTX-SAME: "block_m":
+)", false, args);
 
   EXPECT_TRUE(RunAndCompare(hlo_text, ErrorSpec{/*aabs=*/1e-3, /*arel=*/1e-3}));
 }
@@ -1159,6 +1178,10 @@ ENTRY r {
 }
 
 TEST_F(TritonGemmTest, DoNotFuseSplitRhsContractingTranspose) {
+  std::vector<std::string> args;
+  if (CudaOrRocmCheck(Switch::True, Switch::False)) {
+    args.push_back("--check-prefixes=CHECK,CHECK-PTX");
+  }
   const std::string hlo_text = R"(
 HloModule t
 
@@ -1177,13 +1200,17 @@ ENTRY e {
 ; CHECK: transpose
 ; CHECK: fusion
 ; CHECK-SAME: kind=kCustom
-; CHECK-SAME: "block_m":
-)");
+; CHECK-PTX-SAME: "block_m":
+)", false, args);
 
   EXPECT_TRUE(RunAndCompare(hlo_text, ErrorSpec{/*aabs=*/1e-3, /*arel=*/1e-3}));
 }
 
 TEST_F(TritonGemmTest, DoNotFuseSplitLhsContractingTranspose) {
+  std::vector<std::string> args;
+  if (CudaOrRocmCheck(Switch::True, Switch::False)) {
+    args.push_back("--check-prefixes=CHECK,CHECK-PTX");
+  }
   const std::string hlo_text = R"(
 HloModule t
 
@@ -1202,13 +1229,17 @@ ENTRY e {
 ; CHECK: transpose
 ; CHECK: fusion
 ; CHECK-SAME: kind=kCustom
-; CHECK-SAME: "block_m":
-)");
+; CHECK-PTX-SAME: "block_m":
+)", false, args);
 
   EXPECT_TRUE(RunAndCompare(hlo_text, ErrorSpec{/*aabs=*/1e-3, /*arel=*/1e-3}));
 }
 
 TEST_F(TritonGemmTest, BatchF32F16) {
+  std::vector<std::string> args;
+  if (CudaOrRocmCheck(Switch::True, Switch::False)) {
+    args.push_back("--check-prefixes=CHECK,CHECK-PTX");
+  }
   const std::string hlo_text = R"(
 HloModule t
 
@@ -1227,13 +1258,17 @@ ENTRY e {
 ; CHECK-NEXT: parameter
 ; CHECK-NEXT: fusion
 ; CHECK-SAME: kind=kCustom
-; CHECK-SAME: "block_m":
-)");
+; CHECK-PTX-SAME: "block_m":
+)", false, args);
 
   EXPECT_TRUE(RunAndCompare(hlo_text, ErrorSpec{/*aabs=*/1e-4, /*arel=*/1e-2}));
 }
 
 TEST_F(TritonGemmTest, NonMajorMostInputBatchWorksCorrectly) {
+  std::vector<std::string> args;
+  if (CudaOrRocmCheck(Switch::True, Switch::False)) {
+    args.push_back("--check-prefixes=CHECK,CHECK-PTX");
+  }
   const std::string hlo_text = R"(
 HloModule t
 
@@ -1252,13 +1287,17 @@ ENTRY e {
 ; CHECK-NEXT: parameter
 ; CHECK-NEXT: fusion
 ; CHECK-SAME: kind=kCustom
-; CHECK-SAME: "block_m":
-)");
+; CHECK-PTX-SAME: "block_m":
+)", false, args);
 
   EXPECT_TRUE(RunAndCompare(hlo_text, ErrorSpec{/*aabs=*/1e-3, /*arel=*/1e-3}));
 }
 
 TEST_F(TritonGemmTest, BatchTransposeF32F16) {
+  std::vector<std::string> args;
+  if (CudaOrRocmCheck(Switch::True, Switch::False)) {
+    args.push_back("--check-prefixes=CHECK,CHECK-PTX");
+  }
   const std::string hlo_text = R"(
 HloModule t
 
@@ -1278,13 +1317,17 @@ ENTRY e {
 ; CHECK-NEXT: parameter
 ; CHECK-NEXT: fusion
 ; CHECK-SAME: kind=kCustom
-; CHECK-SAME: "block_m":
-)");
+; CHECK-PTX-SAME: "block_m":
+)", false, args);
 
   EXPECT_TRUE(RunAndCompare(hlo_text, ErrorSpec{/*aabs=*/1e-4, /*arel=*/1e-2}));
 }
 
 TEST_F(TritonGemmTest, DoNotFuseArbitraryReshape) {
+  std::vector<std::string> args;
+  if (CudaOrRocmCheck(Switch::True, Switch::False)) {
+    args.push_back("--check-prefixes=CHECK,CHECK-PTX");
+  }
   const std::string hlo_text = R"(
 HloModule m
 
@@ -1303,8 +1346,8 @@ ENTRY e {
 ; CHECK: f32[5,3,4]{2,1,0} bitcast
 ; CHECK: fusion
 ; CHECK-SAME: kind=kCustom
-; CHECK-SAME: "block_m":
-)");
+; CHECK-PTX-SAME: "block_m":
+)", false, args);
 
   EXPECT_TRUE(RunAndCompare(hlo_text, ErrorSpec{/*aabs=*/1e-4, /*arel=*/1e-4}));
 }
@@ -1506,6 +1549,10 @@ ENTRY e {
 // The emitter just has to skip through the transpose - it's handled by the
 // tiled fusion analysis.
 TEST_F(TritonGemmTest, TritonEmitterCanHandleTransposes) {
+  std::vector<std::string> args;
+  if (CudaOrRocmCheck(Switch::True, Switch::False)) {
+    args.push_back("--check-prefixes=CHECK,CHECK-PTX");
+  }
   MatchOptimizedHlo(R"(
 t {
   p0 = f16[55,77,111]{2,1,0} parameter(0)
@@ -1527,10 +1574,9 @@ ENTRY e {
                     // multiple times and assign block sizes on success.
                     R"(
 ; CHECK: f16[77,99,111]{2,1,0} transpose
-; CHECK: block_m
-)");
+; CHECK-PTX: block_m
+)", false, args);
 }
-
 TEST_F(TritonGemmTest, SingleElementTileIsHandled) {
   if (CudaOrRocmCheck(Switch::False, Switch::True)) {
     GTEST_SKIP() << "Not using autotuner on ROCM yet..";
@@ -1576,6 +1622,10 @@ class TritonGemmTestAny : public TritonGemmTest {
 };
 
 TEST_F(TritonGemmTestAny, DoF32F32) {
+  std::vector<std::string> args;
+  if (CudaOrRocmCheck(Switch::True, Switch::False)) {
+    args.push_back("--check-prefixes=CHECK,CHECK-PTX");
+  }
   const std::string hlo_text = R"(
 HloModule t
 
@@ -1589,8 +1639,8 @@ ENTRY e {
   MatchOptimizedHlo(hlo_text, R"(
 ; CHECK: fusion
 ; CHECK-SAME: kind=kCustom
-; CHECK-SAME: block_m
-)");
+; CHECK-PTX-SAME: block_m
+)", false, args);
 
   EXPECT_TRUE(RunAndCompare(hlo_text, ErrorSpec{/*aabs=*/1e-3, /*arel=*/1e-3}));
 }
@@ -1971,6 +2021,10 @@ e {
 }
 
 TEST_F(TritonGemmLevel2TestAny, MinimumHandlesNaNsOnTheLeft) {
+  std::vector<std::string> args;
+  if (CudaOrRocmCheck(Switch::True, Switch::False)) {
+    args.push_back("--check-prefixes=CHECK,CHECK-PTX");
+  }
   constexpr absl::string_view kHloText = R"(
 HloModule t
 
@@ -1987,13 +2041,17 @@ ENTRY e {
   MatchOptimizedHlo(kHloText, R"(
 ; CHECK: fusion
 ; CHECK-SAME: kind=kCustom
-; CHECK-SAME: block_m
-)");
+; CHECK-PTX-SAME: block_m
+)", false, args);
 
   EXPECT_TRUE(RunAndCompare(kHloText, ErrorSpec{/*aabs=*/1e-3, /*arel=*/1e-3}));
 }
 
 TEST_F(TritonGemmLevel2TestAny, MinimumHandlesNaNsOnTheRight) {
+  std::vector<std::string> args;
+  if (CudaOrRocmCheck(Switch::True, Switch::False)) {
+    args.push_back("--check-prefixes=CHECK,CHECK-PTX");
+  }
   constexpr absl::string_view kHloText = R"(
 HloModule t
 
@@ -2010,13 +2068,17 @@ ENTRY e {
   MatchOptimizedHlo(kHloText, R"(
 ; CHECK: fusion
 ; CHECK-SAME: kind=kCustom
-; CHECK-SAME: block_m
-)");
+; CHECK-PTX-SAME: block_m
+)", false, args);
 
   EXPECT_TRUE(RunAndCompare(kHloText, ErrorSpec{/*aabs=*/1e-3, /*arel=*/1e-3}));
 }
 
 TEST_F(TritonGemmLevel2TestAny, MaximumHandlesNaNsOnTheLeft) {
+  std::vector<std::string> args;
+  if (CudaOrRocmCheck(Switch::True, Switch::False)) {
+    args.push_back("--check-prefixes=CHECK,CHECK-PTX");
+  }
   constexpr absl::string_view kHloText = R"(
 HloModule t
 
@@ -2033,13 +2095,17 @@ ENTRY e {
   MatchOptimizedHlo(kHloText, R"(
 ; CHECK: fusion
 ; CHECK-SAME: kind=kCustom
-; CHECK-SAME: block_m
-)");
+; CHECK-PTX-SAME: block_m
+)", false, args);
 
   EXPECT_TRUE(RunAndCompare(kHloText, ErrorSpec{/*aabs=*/1e-3, /*arel=*/1e-3}));
 }
 
 TEST_F(TritonGemmLevel2TestAny, MaximumHandlesNaNsOnTheRight) {
+  std::vector<std::string> args;
+  if (CudaOrRocmCheck(Switch::True, Switch::False)) {
+    args.push_back("--check-prefixes=CHECK,CHECK-PTX");
+  }
   constexpr absl::string_view kHloText = R"(
 HloModule t
 
@@ -2056,13 +2122,17 @@ ENTRY e {
   MatchOptimizedHlo(kHloText, R"(
 ; CHECK: fusion
 ; CHECK-SAME: kind=kCustom
-; CHECK-SAME: block_m
-)");
+; CHECK-PTX-SAME: block_m
+)", false, args);
 
   EXPECT_TRUE(RunAndCompare(kHloText, ErrorSpec{/*aabs=*/1e-3, /*arel=*/1e-3}));
 }
 
 TEST_F(TritonGemmLevel2TestAny, MinimumReturnsLHS) {
+  std::vector<std::string> args;
+  if (CudaOrRocmCheck(Switch::True, Switch::False)) {
+    args.push_back("--check-prefixes=CHECK,CHECK-PTX");
+  }
   constexpr absl::string_view kHloText = R"(
 HloModule t
 
@@ -2080,14 +2150,18 @@ ENTRY e {
   MatchOptimizedHlo(kHloText, R"(
 ; CHECK: fusion
 ; CHECK-SAME: kind=kCustom
-; CHECK-SAME: block_m
-)");
+; CHECK-PTX-SAME: block_m
+)", false, args);
 
   EXPECT_TRUE(RunAndCompare(kHloText, ErrorSpec{/*aabs=*/1e-3,
                                                 /*arel=*/1e-3}));
 }
 
 TEST_F(TritonGemmLevel2TestAny, MinimumReturnsRHS) {
+  std::vector<std::string> args;
+  if (CudaOrRocmCheck(Switch::True, Switch::False)) {
+    args.push_back("--check-prefixes=CHECK,CHECK-PTX");
+  }
   constexpr absl::string_view kHloText = R"(
 HloModule t
 
@@ -2105,14 +2179,18 @@ ENTRY e {
   MatchOptimizedHlo(kHloText, R"(
 ; CHECK: fusion
 ; CHECK-SAME: kind=kCustom
-; CHECK-SAME: block_m
-)");
+; CHECK-PTX-SAME: block_m
+)", false, args);
 
   EXPECT_TRUE(RunAndCompare(kHloText, ErrorSpec{/*aabs=*/1e-3,
                                                 /*arel=*/1e-3}));
 }
 
 TEST_F(TritonGemmLevel2TestAny, MaximumReturnsLHS) {
+  std::vector<std::string> args;
+  if (CudaOrRocmCheck(Switch::True, Switch::False)) {
+    args.push_back("--check-prefixes=CHECK,CHECK-PTX");
+  }
   constexpr absl::string_view kHloText = R"(
 HloModule t
 
@@ -2130,14 +2208,18 @@ ENTRY e {
   MatchOptimizedHlo(kHloText, R"(
 ; CHECK: fusion
 ; CHECK-SAME: kind=kCustom
-; CHECK-SAME: block_m
-)");
+; CHECK-PTX-SAME: block_m
+)", false, args);
 
   EXPECT_TRUE(RunAndCompare(kHloText, ErrorSpec{/*aabs=*/1e-3,
                                                 /*arel=*/1e-3}));
 }
 
 TEST_F(TritonGemmLevel2TestAny, MaximumReturnsRHS) {
+  std::vector<std::string> args;
+  if (CudaOrRocmCheck(Switch::True, Switch::False)) {
+    args.push_back("--check-prefixes=CHECK,CHECK-PTX");
+  }
   constexpr absl::string_view kHloText = R"(
 HloModule t
 
@@ -2155,8 +2237,8 @@ ENTRY e {
   MatchOptimizedHlo(kHloText, R"(
 ; CHECK: fusion
 ; CHECK-SAME: kind=kCustom
-; CHECK-SAME: block_m
-)");
+; CHECK-PTX-SAME: block_m
+)", false, args);
 
   EXPECT_TRUE(RunAndCompare(kHloText, ErrorSpec{/*aabs=*/1e-3,
                                                 /*arel=*/1e-3}));
