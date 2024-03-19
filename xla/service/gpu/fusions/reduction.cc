@@ -181,7 +181,6 @@ class ReductionEmitter {
       FusedIrEmitter& fused_emitter, const ReductionOutputMap& result_ir_arrays,
       const Shape& input_shape);
 
-  void MaybeEmitFenceForAMDGPU();
   void EmitSyncThreads();
 
   int ReducedDimensionSize() const {
@@ -349,18 +348,7 @@ ReductionGroupEmitter::ReductionGroupEmitter(
   }
 }
 
-void ReductionEmitter::MaybeEmitFenceForAMDGPU() {
-  auto* module = builder_->GetInsertBlock()->getModule();
-  if (IsAMDGPU(module) &&
-      ir_emitter_context_.rocm_compute_capability().fence_before_barrier()) {
-    builder_->CreateFence(
-        llvm::AtomicOrdering::SequentiallyConsistent,
-        builder_->getContext().getOrInsertSyncScopeID("workgroup"));
-  }
-}
-
 void ReductionEmitter::EmitSyncThreads() {
-  MaybeEmitFenceForAMDGPU();
   EmitCallToTargetIntrinsic(TargetIntrinsicID::kBarrierId, {}, {}, builder_);
 }
 

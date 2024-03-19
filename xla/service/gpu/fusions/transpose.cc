@@ -80,20 +80,8 @@ Tiling ComputeTransposeTiling(const TransposeDescription& tiled_transpose) {
   return Tiling(input_dims, tile_sizes, num_threads);
 }
 
-void MaybeEmitFenceForAMDGPU(llvm::IRBuilder<>* builder,
-                             IrEmitterContext& ir_emitter_context) {
-  auto* module = builder->GetInsertBlock()->getModule();
-  if (IsAMDGPU(module) &&
-      ir_emitter_context.rocm_compute_capability().fence_before_barrier()) {
-    builder->CreateFence(
-        llvm::AtomicOrdering::SequentiallyConsistent,
-        builder->getContext().getOrInsertSyncScopeID("workgroup"));
-  }
-}
-
 void EmitSyncThreads(llvm::IRBuilder<>* builder,
                      IrEmitterContext& ir_emitter_context) {
-  MaybeEmitFenceForAMDGPU(builder, ir_emitter_context);
   EmitCallToTargetIntrinsic(TargetIntrinsicID::kBarrierId, {}, {}, builder);
 }
 

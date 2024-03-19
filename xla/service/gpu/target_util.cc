@@ -140,7 +140,16 @@ struct TargetIntrinsics GetIntrinsic(TargetIntrinsicID intrin) {
       };
     }
     case TargetIntrinsicID::kBarrierId: {
-      return {llvm::Intrinsic::nvvm_barrier0, llvm::Intrinsic::amdgcn_s_barrier,
+      return {llvm::Intrinsic::nvvm_barrier0,
+              [](llvm::IRBuilder<>* b_) -> llvm::CallInst* {
+                // Not needed for older gfx, but no way to query
+                // device_description.fence_before_barrier here.
+                b_->CreateFence(
+                    llvm::AtomicOrdering::SequentiallyConsistent,
+                    b_->getContext().getOrInsertSyncScopeID("workgroup"));
+                return llvm_ir::EmitCallToIntrinsic(
+                    llvm::Intrinsic::amdgcn_s_barrier, {}, {}, b_);
+              },
               [](llvm::IRBuilder<>* b_) -> llvm::CallInst* {
                 return EmitDeviceFunctionCall(
                     "_Z22__spirv_ControlBarrierjjj",
