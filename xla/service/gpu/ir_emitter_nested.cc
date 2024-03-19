@@ -281,12 +281,15 @@ llvm::Value* AddrCastToDefault(llvm::Value* arg, llvm::IRBuilder<>& b) {
   return arg;
 }
 
-void EmitAMDGPUAtomicFAdd(llvm::IRBuilder<>* builder, IrEmitterContext& ir_emitter_context,
-                         llvm::Value* output_address, llvm::Value* source,
-                         PrimitiveType element_type) {
+void EmitAMDGPUAtomicFAdd(llvm::IRBuilder<>* builder,
+                          IrEmitterContext& ir_emitter_context,
+                          llvm::Value* output_address, llvm::Value* source,
+                          PrimitiveType element_type) {
   CHECK(IsAMDGPU(builder->GetInsertBlock()->getModule()));
-  CHECK_NE(element_type, BF16); // For now we expect for BF16 op to be done trough FP32
-  auto output_address_type = llvm::cast<llvm::PointerType>(output_address->getType());
+  // For now we expect for BF16 op to be done trough FP32
+  CHECK_NE(element_type, BF16);
+  auto output_address_type =
+      llvm::cast<llvm::PointerType>(output_address->getType());
 
   auto output_ptr =
       (output_address_type->getPointerAddressSpace() == 3)
@@ -300,32 +303,30 @@ void EmitAMDGPUAtomicFAdd(llvm::IRBuilder<>* builder, IrEmitterContext& ir_emitt
                                        /*AddressSpace=*/1));
 
   bool is_shared_mem = output_address_type->getPointerAddressSpace() == 3;
-  const auto& debug_options = ir_emitter_context.hlo_module().config().debug_options();
+  const auto& debug_options =
+      ir_emitter_context.hlo_module().config().debug_options();
   const auto& compute_capability = ir_emitter_context.rocm_compute_capability();
 
-  if ((element_type == F32 || element_type == F64) &&
-      !is_shared_mem &&
+  if ((element_type == F32 || element_type == F64) && !is_shared_mem &&
       // MI100/MI200 atomics flush denormals by default for fp32
       (compute_capability.gfx9_mi300_or_later() ||
-       debug_options.xla_gpu_ftz() ||
-       element_type != F32)) {
+       debug_options.xla_gpu_ftz() || element_type != F32)) {
     llvm_ir::EmitCallToIntrinsic(
-        llvm::Intrinsic::amdgcn_global_atomic_fadd,
-        {output_ptr, source},
-        {source->getType(), output_ptr->getType(), source->getType()},
-        builder);
+        llvm::Intrinsic::amdgcn_global_atomic_fadd, {output_ptr, source},
+        {source->getType(), output_ptr->getType(), source->getType()}, builder);
     return;
   }
 
-  if ((element_type == F16 || element_type == BF16) &&
-      !is_shared_mem) {
-    llvm::VectorType* half2type = llvm::VectorType::get(source->getType(), llvm::ElementCount::getFixed(2));
+  if ((element_type == F16 || element_type == BF16) && !is_shared_mem) {
+    llvm::VectorType* half2type = llvm::VectorType::get(
+        source->getType(), llvm::ElementCount::getFixed(2));
     auto i16 = builder->getInt16Ty();
     auto i32 = builder->getInt32Ty();
     auto i64 = builder->getInt64Ty();
     auto half2ptr = llvm::PointerType::get(half2type, 1);
     auto intptr = builder->CreatePtrToInt(output_address, i64);
-    auto alignment = builder->CreateAnd(intptr, llvm::ConstantInt::get(i64, 2ull));
+    auto alignment =
+        builder->CreateAnd(intptr, llvm::ConstantInt::get(i64, 2ull));
     intptr = builder->CreateAnd(intptr, llvm::ConstantInt::get(i64, ~3ull));
     output_ptr = builder->CreateIntToPtr(intptr, half2ptr);
 
@@ -333,15 +334,13 @@ void EmitAMDGPUAtomicFAdd(llvm::IRBuilder<>* builder, IrEmitterContext& ir_emitt
     auto i16src = builder->CreateBitCast(source, i16);
     auto intsrc = builder->CreateZExt(i16src, i32);
     source = builder->CreateShl(intsrc, shift);
-    source = builder->CreateBitCast(source, half2type); 
+    source = builder->CreateBitCast(source, half2type);
 
     llvm_ir::EmitCallToIntrinsic(
-        element_type == BF16 ?
-                        llvm::Intrinsic::amdgcn_global_atomic_fadd_v2bf16 :
-                        llvm::Intrinsic::amdgcn_global_atomic_fadd,
+        element_type == BF16 ? llvm::Intrinsic::amdgcn_global_atomic_fadd_v2bf16
+                             : llvm::Intrinsic::amdgcn_global_atomic_fadd,
         {output_ptr, source},
-        {source->getType(), output_ptr->getType(), source->getType()},
-        builder);
+        {source->getType(), output_ptr->getType(), source->getType()}, builder);
     return;
   }
 
@@ -353,10 +352,12 @@ void EmitAMDGPUAtomicFAdd(llvm::IRBuilder<>* builder, IrEmitterContext& ir_emitt
 
 std::tuple<llvm::SyncScope::ID, llvm::AtomicOrdering>
 DetermineSyncScopeAndOrdering(llvm::Module* module) {
-  return IsAMDGPU(module) ? std::make_tuple(module->getContext().getOrInsertSyncScopeID("agent"),
-                                            llvm::AtomicOrdering::Monotonic)
-                          : std::make_tuple(llvm::SyncScope::System,
-                                            llvm::AtomicOrdering::SequentiallyConsistent);
+  return IsAMDGPU(module)
+             ? std::make_tuple(
+                   module->getContext().getOrInsertSyncScopeID("agent"),
+                   llvm::AtomicOrdering::Monotonic)
+             : std::make_tuple(llvm::SyncScope::System,
+                               llvm::AtomicOrdering::SequentiallyConsistent);
 }
 
 // A helper method for EmitAtomicOperationForNestedComputation. Certain
@@ -437,9 +438,8 @@ bool MaybeEmitDirectAtomicOperation(llvm::IRBuilder<>* builder,
 
     if (is_atomic_integral) {
       // integral + integral
-      builder->CreateAtomicRMW(
-          llvm::AtomicRMWInst::Add, output_address, source, llvm::MaybeAlign(),
-          ordering, sync_scope);
+      builder->CreateAtomicRMW(llvm::AtomicRMWInst::Add, output_address, source,
+                               llvm::MaybeAlign(), ordering, sync_scope);
       return true;
     }
   }
@@ -454,9 +454,8 @@ bool MaybeEmitDirectAtomicOperation(llvm::IRBuilder<>* builder,
       auto opcode = primitive_util::IsSignedIntegralType(element_type)
                         ? llvm::AtomicRMWInst::Max
                         : llvm::AtomicRMWInst::UMax;
-      builder->CreateAtomicRMW(
-          opcode, output_address, source, llvm::MaybeAlign(),
-          ordering, sync_scope);
+      builder->CreateAtomicRMW(opcode, output_address, source,
+                               llvm::MaybeAlign(), ordering, sync_scope);
       return true;
     } else if (element_type == F32) {
       // max(float, float) via AtomicMax and AtomicMin on int
@@ -508,16 +507,14 @@ bool MaybeEmitDirectAtomicOperation(llvm::IRBuilder<>* builder,
                     // atomicMax((int *)address, __float_as_int(val))
                     builder->CreateAtomicRMW(
                         llvm::AtomicRMWInst::Max, output_address,
-                        source_float_as_int, llvm::MaybeAlign(),
-                        ordering,
+                        source_float_as_int, llvm::MaybeAlign(), ordering,
                         sync_scope);
                   },
                   [&]() {
                     // atomicMin((unsigned int *)address, __float_as_uint(val))
                     builder->CreateAtomicRMW(
                         llvm::AtomicRMWInst::UMin, output_address,
-                        source_float_as_int, llvm::MaybeAlign(),
-                        ordering,
+                        source_float_as_int, llvm::MaybeAlign(), ordering,
                         sync_scope);
                   });
             });
@@ -533,8 +530,7 @@ bool MaybeEmitDirectAtomicOperation(llvm::IRBuilder<>* builder,
                       ? llvm::AtomicRMWInst::Min
                       : llvm::AtomicRMWInst::UMin;
     builder->CreateAtomicRMW(opcode, output_address, source, llvm::MaybeAlign(),
-                             ordering,
-                             sync_scope);
+                             ordering, sync_scope);
     return true;
   }
 
@@ -645,8 +641,8 @@ absl::Status EmitAtomicOperationUsingCAS(llvm::IRBuilder<>* builder,
 
     // inttoptr (add (ptrtoint %cas_new_output_address) offset)
     binop_output_address = builder->CreateInBoundsGEP(
-        llvm::ArrayType::get(builder->getInt8Ty(), 4),
-        cas_new_output_address, offset, "");
+        llvm::ArrayType::get(builder->getInt8Ty(), 4), cas_new_output_address,
+        offset, "");
 
   } else {
     atomic_memory_address = builder->CreatePointerBitCastOrAddrSpaceCast(
