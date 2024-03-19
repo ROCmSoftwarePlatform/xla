@@ -38,7 +38,6 @@ limitations under the License.
 #include "llvm/IR/FPEnv.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Intrinsics.h"
-#include "llvm/IR/IntrinsicsAMDGPU.h"
 #include "llvm/IR/IntrinsicsNVPTX.h"
 #include "llvm/IR/Type.h"
 #include "llvm/IR/Value.h"
@@ -189,26 +188,14 @@ llvm::Value* EmitAMDGPUShflDown(llvm::Value* value, llvm::Value* offset,
   llvm::Module* module = b->GetInsertBlock()->getModule();
   CHECK_EQ(value->getType()->getPrimitiveSizeInBits(), 32);
   auto* i32_ty = b->getInt32Ty();
-  auto offset_const = llvm::cast<llvm::ConstantInt>(offset)->getZExtValue();
-  CHECK(llvm::isPowerOf2_64(offset_const) && offset_const <= 16);
-
-  if (offset_const == 16) {
-    offset = b->CreateMul(offset, b->getInt32(0x20));
-    offset = b->CreateAdd(offset, b->getInt32(0x1f));
-    llvm::Function* intrinsic =
-        llvm::Intrinsic::getDeclaration(module, llvm::Intrinsic::amdgcn_ds_swizzle, {});
-    llvm::Value* result = b->CreateCall(
-      intrinsic, {b->CreateBitCast(value, i32_ty), offset});
-    return b->CreateBitCast(result, value->getType());
-  }
-
-  const int row_shl0 = 0x100;
-  offset = b->CreateAdd(offset, b->getInt32(row_shl0));
-  llvm::Function* intrinsic =
-      llvm::Intrinsic::getDeclaration(module, llvm::Intrinsic::amdgcn_mov_dpp, i32_ty);
-  llvm::Value* all_mask = b->getInt32(0xf);
-  llvm::Value* result = b->CreateCall(
-      intrinsic, {b->CreateBitCast(value, i32_ty), offset, all_mask, all_mask, b->getTrue()});
+  llvm::FunctionCallee shfl_fn = module->getOrInsertFunction(
+      llvm_ir::AsStringRef("__ockl_readuplane_i32"),
+      llvm::FunctionType::get(/*Result=*/i32_ty, {i32_ty, i32_ty},
+                              /*isVarArg=*/false));
+  // AMDGPU device function requires first argument as i32.
+  llvm::Value* result =
+      b->CreateCall(shfl_fn, {b->CreateBitCast(value, i32_ty), offset});
+  // AMDGPU device function always returns an i32 type.
   return b->CreateBitCast(result, value->getType());
 }
 
