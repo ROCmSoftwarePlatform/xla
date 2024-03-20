@@ -286,8 +286,7 @@ void EmitAMDGPUAtomicFAdd(llvm::IRBuilder<>* builder,
                           llvm::Value* output_address, llvm::Value* source,
                           PrimitiveType element_type) {
   CHECK(IsAMDGPU(builder->GetInsertBlock()->getModule()));
-  // For now we expect for BF16 op to be done trough FP32
-  CHECK_NE(element_type, BF16);
+
   auto output_address_type =
       llvm::cast<llvm::PointerType>(output_address->getType());
 
@@ -340,7 +339,12 @@ void EmitAMDGPUAtomicFAdd(llvm::IRBuilder<>* builder,
         element_type == BF16 ? llvm::Intrinsic::amdgcn_global_atomic_fadd_v2bf16
                              : llvm::Intrinsic::amdgcn_global_atomic_fadd,
         {output_ptr, source},
-        {source->getType(), output_ptr->getType(), source->getType()}, builder);
+        element_type == BF16
+            ? absl::Span<llvm::Type* const>{output_ptr->getType()}
+            : absl::Span<llvm::Type* const>{source->getType(),
+                                            output_ptr->getType(),
+                                            source->getType()},
+        builder);
     return;
   }
 
