@@ -3566,7 +3566,6 @@ cc_library(
         ":compile_module_to_llvm_ir",
         ":conv_layout_normalization",
         ":copy_fusion",
-        ":cudnn_fusion_compiler",
         ":custom_kernel_fusion_rewriter",
         ":dot_dimension_sorter",
         ":dot_operand_converter",
@@ -3770,6 +3769,8 @@ cc_library(
         "//xla/service:logical_buffer",
         "//xla/stream_executor/rocm:rocm_platform_id",
         "@tsl//tsl/platform:numbers",
+    ]) + if_cuda_is_configured([
+        ":cudnn_fusion_compiler",
     ]) + xla_export_hlo_deps() + [
         ":command_buffer_scheduling",
         ":fusion_merger_triton",
