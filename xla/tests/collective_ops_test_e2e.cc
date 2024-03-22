@@ -27,6 +27,7 @@ limitations under the License.
 #include "xla/tests/hlo_test_base.h"
 #include "xla/tests/literal_test_util.h"
 #include "xla/tests/test_macros.h"
+#include "xla/tests/test_utils.h"
 
 namespace xla {
 namespace {
@@ -224,6 +225,69 @@ XLA_TEST_P(AsyncCollectiveOps, AsyncAllGatherMixedTypes) {
     std::vector<Literal> results = result.DecomposeTuple();
     LiteralTestUtil::ExpectR1Equal<uint32_t>({10, 15, 11, 16}, results[0]);
     LiteralTestUtil::ExpectR1Equal<float>({10.0, 15.0, 11.0, 16.0}, results[1]);
+  }
+}
+
+XLA_TEST_P(AsyncCollectiveOps, CollectivePermute_Rotate) {
+  // const char* const kModuleStr = R"(
+  // HloModule test
+  // ENTRY test_computation {
+  //   replica = u32[] replica-id()
+  //   ten = u32[] constant(10)
+  //   sum = u32[] add(replica, ten)
+  //   p = u32[2] broadcast(sum), dimensions={}
+  //   permute = u32[2] collective-permute(p), source_target_pairs={{0,1}, {1,2}, {2,3}, {3,0}}
+  //   ROOT copy = u32[2] copy(permute)
+  // }
+  // )";
+  const char* const kModuleStr = R"(
+  HloModule test
+  ENTRY test_computation {
+    p = f32[512] parameter(0)
+    permute = f32[512] collective-permute(p), source_target_pairs={{0,1}, {1,2}, {2,3}, {3,0}}
+    ROOT copy = f32[512] copy(permute)
+  }
+  )";
+//  %collective-permute.154 = f16[2048,2268]{1,0} collective-permute(f16[2048,2268]{1,0} %get-tuple-element.127), channel_id=4, source_target_pairs={{0,1},{1,2},{2,3},{3,0}}, metadata={op_name="jit(mm_collective_contracting_fwdbwd)/jit(main)/transpose(jvp(jit(shmap_body)))/while/body/ppermute[axis_name=mp perm=((0, 1), (1, 2), (2, 3), (3, 0))]" source_file="/tf/jax/test_rccl_sendrecv.py" source_line=224}
+//  %get-tuple-element.127 = f16[2048,2268]{1,0} get-tuple-element((s32[], s32[], f16[2048,768]{1,0}, f16[9072,768]{1,0}, f16[2048,2268]{1,0}, /*index=5*/s32[], f16[9072,768]{1,0}, f16[2048,768]{1,0}) %arg_tuple.122), index=4
+  const int64_t kNumReplicas = 4;
+
+    HloModuleConfig config =
+        GetModuleConfigForTest(/*replica_count=*/kNumReplicas);
+
+    TF_ASSERT_OK_AND_ASSIGN(auto module,
+                        ParseAndReturnVerifiedModule(kModuleStr, config));
+
+    //const auto fake_arguments = xla::MakeFakeArguments(module.get()).value();
+  TF_ASSERT_OK_AND_ASSIGN(auto executable, HloTestBase::CreateExecutable(std::move(module),
+                                         /*run_hlo_passes=*/true));
+  std::vector< Literal > args(kNumReplicas);
+  for(int i = 0; i < kNumReplicas; i++) {
+    args[i] = LiteralUtil::CreateFullWithDescendingLayout<float>(
+      {512}, (float)i);
+  }
+
+  // TF_ASSERT_OK_AND_ASSIGN(std::vector<Literal> results,
+  //                         ExecuteReplicated(executable.get(), kNumReplicas));
+
+    DeviceAssignment device_assignment = MakeDeviceAssn(kNumReplicas);
+    std::vector<Literal> results;
+
+    for(int i = 0; i < 10; i++) {
+      VLOG(0) << "Running " << i;
+      TF_ASSERT_OK_AND_ASSIGN(results, HloTestBase::ExecuteReplicated(
+        /*executable_provider*/ [&](int64_t) { return executable.get(); },
+        /*argument_count_provider*/ [&args](int64_t replica_id) { return 1; },
+        /*argument_provider*/ [&args](int64_t replica_id, int64_t arg_id) 
+        { 
+          return &args[replica_id];
+        },
+        kNumReplicas, /*run_hlo_passes=*/false, &device_assignment));
+    }
+  ASSERT_EQ(results.size(), kNumReplicas);
+
+  for(int i = 0; i < kNumReplicas; i++) {
+    EXPECT_TRUE(LiteralTestUtil::Equal(args[(i - 1 + kNumReplicas)%kNumReplicas], results[i]));
   }
 }
 
@@ -499,20 +563,28 @@ TEST_F(CollectiveOpsTestE2E, WhileLoopReduceScatterCodeMotion) {
 // Verify that all-to-all with split dims is not decomposed to tuples.
 TEST_F(CollectiveOpsTestE2E, NoAllToAllDecomposition) {
   const absl::string_view kModuleStr = R"(
-  HloModule test
-  ENTRY test_computation {
-    id = u32[] replica-id()
-    id2 = u32[2, 2] broadcast(id), dimensions={}
-    a0 = u32[2, 2] constant({{10, 15}, {20, 25}})
-    a1 = u32[2, 2] add(id2, a0)
-    all2all = u32[2, 2] all-to-all(a1), replica_groups={{0,1}}, dimensions={0}
-    ROOT out = u32[4] reshape(all2all)
-  }
+    HloModule test
+
+    ENTRY test {
+      x_f32 = f32[16,32] parameter(0)
+      y_f32 = f32[16,32] parameter(1)
+      x_scale = f32[] parameter(2)
+      y_scale = f32[] parameter(3)
+      x_scale_bcast = f32[16,32] broadcast(x_scale), dimensions={}
+      y_scale_bcast = f32[16,32] broadcast(y_scale), dimensions={}
+      x_unscaled = f32[16,32] multiply(x_f32, x_scale_bcast)
+      y_unscaled = f32[16,32] multiply(y_f32, y_scale_bcast)
+      all_to_all = f32[16,32] all-to-all(x_unscaled), channel_id=1, replica_groups={{0,1,2,3},{4,5,6,7}}, dimensions={0}
+      ROOT dot_a = f32[16,16] dot(all_to_all, y_unscaled), lhs_contracting_dims={1}, rhs_contracting_dims={1}
+          }
   )";
-  const int64_t kNumReplicas = 2;
+  const int64_t kNumReplicas = 1;
 
   HloModuleConfig config =
       GetModuleConfigForTest(/*replica_count=*/kNumReplicas);
+  config.set_use_spmd_partitioning(true);
+  config.set_num_partitions(8);
+
   TF_ASSERT_OK_AND_ASSIGN(auto module,
                           ParseAndReturnVerifiedModule(kModuleStr, config));
 

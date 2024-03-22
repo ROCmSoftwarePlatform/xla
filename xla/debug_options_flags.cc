@@ -230,6 +230,8 @@ DebugOptions DefaultDebugOptionsIgnoringFlags() {
   opts.set_xla_gpu_nccl_p2p_max_nchannels(0);
 
   opts.set_xla_gpu_autotune_gemm_rtol(0.1f);
+
+  opts.set_xla_gpu_qccl_collectives(0);
   opts.set_xla_gpu_enable_dot_decomposer(true);
 
   return opts;
@@ -736,6 +738,11 @@ void MakeDebugOptionsFlags(std::vector<tsl::Flag>* flag_list,
       float_setter_for(&DebugOptions::set_xla_gpu_autotune_gemm_rtol),
       debug_options->xla_gpu_autotune_gemm_rtol(),
       "Relative precision for comparing GEMM solutions vs the reference one"));
+  flag_list->push_back(tsl::Flag(
+      "xla_gpu_qccl_collectives",
+      int32_setter_for(&DebugOptions::set_xla_gpu_qccl_collectives),
+      debug_options->xla_gpu_qccl_collectives(),
+      "Use alternative collectives implementation"));
   flag_list->push_back(tsl::Flag(
       "xla_gpu_enable_dot_decomposer",
       bool_setter_for(&DebugOptions::set_xla_gpu_enable_dot_decomposer),

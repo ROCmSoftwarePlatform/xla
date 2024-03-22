@@ -587,6 +587,7 @@ cc_library(
         "//xla/service/gpu:nccl_api",
         "//xla/service/gpu:nccl_collective_thunks",
         "//xla/service/gpu:thunk",
+        "//xla/service/gpu:qccl_library",
         "//xla/stream_executor",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",

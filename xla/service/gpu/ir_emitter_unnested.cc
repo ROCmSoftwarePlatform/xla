@@ -2217,7 +2217,8 @@ Status IrEmitterUnnested::EmitCollectivePermute(
         /*destination_buffer=*/result_slice};
     auto thunk = std::make_unique<NcclCollectivePermuteStartThunk>(
         Thunk::ThunkInfo::WithProfileAnnotation(instr), NcclApi::Default(),
-        instr, replica_count, partition_count, buffer);
+        instr, replica_count, partition_count, buffer, 
+        ir_emitter_context_->debug_options());
     collectives_async_events_.try_emplace(instr, thunk->async_events());
     AddThunkToThunkSequence(std::move(thunk));
   }
@@ -2295,9 +2296,16 @@ absl::Status IrEmitterUnnested::EmitNcclThunk(
   }
 
   if (should_use_nccl_thunk) {
-    auto thunk = std::make_unique<NcclThunkType>(
+    std::unique_ptr< NcclThunkType > thunk;
+    if constexpr (std::is_same_v< NcclThunkType, NcclAllToAllStartThunk >) {
+      thunk = std::make_unique<NcclThunkType>(
+        Thunk::ThunkInfo::WithProfileAnnotation(inst), NcclApi::Default(), inst,
+        /*buffers=*/std::move(buffers), hlo_config.debug_options());
+    } else {
+      thunk = std::make_unique<NcclThunkType>(
         Thunk::ThunkInfo::WithProfileAnnotation(inst), NcclApi::Default(), inst,
         /*buffers=*/std::move(buffers));
+    }
     collectives_async_events_.insert({async_start, thunk->async_events()});
     AddThunkToThunkSequence(std::move(thunk));
     return absl::OkStatus();

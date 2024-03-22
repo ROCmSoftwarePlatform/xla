@@ -700,9 +700,13 @@ message DebugOptions {
   // Relative precision for comparing different GEMM solutions 
   float xla_gpu_autotune_gemm_rtol = 276;
 
-  bool xla_gpu_enable_dot_decomposer = 277;
+  // Whether to use alternative collective permute operation
+  int32 xla_gpu_qccl_collectives = 277;
 
-  // Next id: 278
+  // Next ID: 278
+  bool xla_gpu_enable_dot_decomposer = 278;
+
+  // Next id: 279
 
   // Extra options to pass to the compilation backend (e.g. LLVM); specific
   // interpretation of these values is left to the backend.

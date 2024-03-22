@@ -47,12 +47,14 @@ limitations under the License.
 #include "xla/service/gpu/nccl_clique.h"
 #include "xla/service/gpu/nccl_clique_key.h"
 #include "xla/service/gpu/thunk.h"
+#include "xla/service/gpu/qccl_library.h"
 #include "xla/service/rendezvous.h"
 #include "xla/shape.h"
 #include "xla/status.h"
 #include "xla/statusor.h"
 #include "xla/stream_executor/event.h"
 #include "xla/stream_executor/gpu/gpu_activation.h"
+#include "xla/stream_executor/gpu/gpu_stream.h"
 #include "xla/stream_executor/stream.h"
 #include "xla/util.h"
 #include "tsl/platform/errors.h"
@@ -215,7 +217,10 @@ NcclCollectiveThunk::NcclCollectiveThunk(Kind kind, ThunkInfo thunk_info,
                                          NcclApi* nccl_api, bool is_sync)
     : Thunk(kind, thunk_info),
       nccl_api_(nccl_api),
-      async_events_(is_sync ? nullptr : new AsyncEvents()) {}
+      async_events_(is_sync ? nullptr : new AsyncEvents()) {
+
+  qcclSyncInit();
+}
 
 static absl::StatusOr<NcclCliqueKey> GetNcclCliqueKey(
     const Thunk::CollectiveExecuteParams& params,

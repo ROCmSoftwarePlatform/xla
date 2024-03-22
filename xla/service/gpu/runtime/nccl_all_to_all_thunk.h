@@ -35,10 +35,12 @@ class NcclAllToAllStartThunk : public NcclCollectiveThunk {
  public:
   NcclAllToAllStartThunk(ThunkInfo thunk_info, NcclApi* nccl_api,
                          mlir::lmhlo_gpu::AllToAllStartOp op,
-                         std::vector<Buffer> buffers);
+                         std::vector<Buffer> buffers,
+                         const DebugOptions& debug_options);
   NcclAllToAllStartThunk(ThunkInfo thunk_info, NcclApi* nccl_api,
                          const HloAllToAllInstruction* instr,
-                         std::vector<Buffer> buffers);
+                         std::vector<Buffer> buffers,
+                         const DebugOptions& debug_options);
 
   // Returns whether the given instruction can be lowered to a nccl all-to-all
   // call.
@@ -57,12 +59,20 @@ class NcclAllToAllStartThunk : public NcclCollectiveThunk {
       const HloAllToAllInstruction* instr);
 
  protected:
+
+  bool IsQCCLAvailable();
+  absl::Status SetupQCCL();
+  absl::Status RunQCCL(int32_t num_participants, 
+          bool has_split_dimension, std::vector<DeviceBufferPair>& buffers,
+          se::Stream& stream);
+
   const NcclCollectiveConfig& config() const override { return config_.config; }
   absl::Status RunNcclCollective(const ExecuteParams& params,
                                  se::Stream& stream,
                                  NcclApi::NcclCommHandle comm) override;
 
  private:
+  bool qccl_available_ = false;
   const NcclAllToAllConfig config_;
   const std::vector<Buffer> buffers_;
 };
