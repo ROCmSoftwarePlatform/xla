@@ -43,15 +43,6 @@ namespace gpu {
 
 static NcclTimerHistogram s_ncclHisto(8, "collective_permute");
 
-NcclCollectivePermuteStartThunk::NcclCollectivePermuteStartThunk(
-    ThunkInfo thunk_info, NcclApi* nccl_api,
-    const HloCollectivePermuteInstruction* instr, int64_t replica_count,
-    int64_t partition_count, const Buffer& buffer)
-    : NcclCollectiveThunk(Thunk::kNcclCollectivePermuteStart, thunk_info,
-                          nccl_api, IsSyncCollective(instr)),
-      config_(GetNcclP2PConfig(instr, replica_count, partition_count)),
-      buffer_(buffer) {}
-
 /*static*/ NcclP2PConfig NcclCollectivePermuteStartThunk::GetNcclP2PConfig(
     const HloCollectivePermuteInstruction* instr, int64_t replica_count,
     int64_t partition_count) {
@@ -76,19 +67,14 @@ NcclCollectivePermuteStartThunk::NcclCollectivePermuteStartThunk(
     replica_group.add_replica_ids(i);
   }
 
-  const std::vector<std::pair<int64_t, int64_t>> source_target_pairs =
-      instr->source_target_pairs();
-
-  for (const std::pair<int64_t, int64_t>& source_target : source_target_pairs) {
-    int64_t source = source_target.first;
-    int64_t target = source_target.second;
-
-    collective_permute_config.id_to_source_target.insert({target, {}})
+  const auto& source_target_pairs = instr->source_target_pairs();
+  auto& map = collective_permute_config.id_to_source_target;
+  for (const auto& [source, target]: source_target_pairs) {
+    map.emplace(target, NcclP2PConfig::SourceTargetMapEntry{})
         .first->second.source = source;
-    collective_permute_config.id_to_source_target.insert({source, {}})
+    map.emplace(source, NcclP2PConfig::SourceTargetMapEntry{})
         .first->second.target = target;
   }
-
   return collective_permute_config;
 }
 
@@ -135,6 +121,11 @@ absl::Status NcclCollectivePermuteStartThunk::RunNcclCollective(
       config_.config.group_mode == CollectiveOpGroupMode::kCrossReplica
           ? current_logical_id.replica_id
           : current_logical_id.computation_id;
+
+  if(IsQCCLAvailable()) {
+    return RunQCCL(device_buffers[0], stream, current_id);
+  }
+
   std::string device_string = GetDeviceString(*params.collective_params);
 
   const NcclP2PConfig::SourceTargetMapEntry source_target =

@@ -700,7 +700,10 @@ message DebugOptions {
   // Relative precision for comparing different GEMM solutions 
   float xla_gpu_autotune_gemm_rtol = 276;
 
-  // Next id: 277
+  // Whether to use alternative collective permute operation
+  int32 xla_gpu_new_collective_permute = 277;
+
+  // Next ID: 278
 
   // Extra options to pass to the compilation backend (e.g. LLVM); specific
   // interpretation of these values is left to the backend.
