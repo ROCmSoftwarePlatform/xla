@@ -223,6 +223,8 @@ DebugOptions DefaultDebugOptionsIgnoringFlags() {
 
   opts.set_xla_gpu_autotune_gemm_rtol(0.1f);
 
+  opts.set_xla_gpu_new_collective_permute(0);
+
   return opts;
 }
 
@@ -663,11 +665,16 @@ void MakeDebugOptionsFlags(std::vector<tsl::Flag>* flag_list,
       debug_options->xla_gpu_autotune_level(),
       "Set GEMM and Convolution auto-tuning level. 0 = off; 1 = on; 2 = "
       "on+init; 3 = on+init+reinit; 4 = on+init+reinit+check."));
-    flag_list->push_back(tsl::Flag(
+  flag_list->push_back(tsl::Flag(
       "xla_gpu_autotune_gemm_rtol",
       float_setter_for(&DebugOptions::set_xla_gpu_autotune_gemm_rtol),
       debug_options->xla_gpu_autotune_gemm_rtol(),
       "Relative precision for comparing GEMM solutions vs the reference one"));
+  flag_list->push_back(tsl::Flag(
+      "xla_gpu_new_collective_permute",
+      int32_setter_for(&DebugOptions::set_xla_gpu_new_collective_permute),
+      debug_options->xla_gpu_new_collective_permute(),
+      "Use alternative collective permute implementation"));
   flag_list->push_back(tsl::Flag(
       "xla_force_host_platform_device_count",
       int32_setter_for(&DebugOptions::set_xla_force_host_platform_device_count),

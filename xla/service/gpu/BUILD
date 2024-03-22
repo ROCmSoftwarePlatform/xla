@@ -9,6 +9,7 @@ load(
     "//xla/service/gpu:build_defs.bzl",
     "build_cub_sort_kernels",
     "get_cub_sort_kernel_types",
+    "gpu_kernel_library",
 )
 load(
     "//xla/stream_executor:build_defs.bzl",
@@ -840,11 +841,29 @@ cc_library(
     ],
 )
 
+gpu_kernel_library(
+    name = "qccl_library",
+    srcs = if_gpu_is_configured(["qccl_library.cu.cc"]),
+    hdrs = if_gpu_is_configured(["qccl_library.h"]),
+    local_defines = if_cuda_is_configured(["GOOGLE_CUDA=1"]) + if_rocm_is_configured([
+        "TENSORFLOW_USE_ROCM=1",
+    ]),
+    deps = if_gpu_is_configured([
+        "//xla/stream_executor/gpu:gpu_types_header",
+        "@tsl//tsl/platform:logging",
+    ]) + if_cuda_is_configured([
+        "@local_config_cuda//cuda:cuda_headers",
+    ]) + if_rocm_is_configured([
+        "@local_config_rocm//rocm:rocm_headers",
+    ]),
+)
+
 cc_library(
     name = "nccl_collective_thunks",
     srcs = [
         "nccl_all_to_all_thunk.cc",
         "nccl_collective_permute_thunk.cc",
+        "qccl_collective_permute.cc",
         "nccl_collective_thunk.cc",
         "nccl_p2p_thunk_common.cc",
         "nccl_recv_thunk.cc",
@@ -862,6 +881,7 @@ cc_library(
         "TENSORFLOW=1",
     ]),
     deps = [
+        ":qccl_library",
         ":backend_configs_cc",
         ":buffer_allocations",
         ":gpu_executable_run_options",

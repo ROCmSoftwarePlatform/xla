@@ -46,23 +46,6 @@ namespace gpu {
 
 using mlir::lmhlo_gpu::CollectivePermuteStartOp;
 
-NcclCollectivePermuteStartThunk::NcclCollectivePermuteStartThunk(
-    ThunkInfo thunk_info, NcclApi* nccl_api, CollectivePermuteStartOp op,
-    int64_t replica_count, int64_t partition_count, const Buffer& buffer)
-    : NcclCollectiveThunk(Thunk::kNcclCollectivePermuteStart, thunk_info,
-                          nccl_api, op.getIsSync()),
-      config_(GetNcclP2PConfig(op, replica_count, partition_count)),
-      buffer_(buffer) {}
-
-NcclCollectivePermuteStartThunk::NcclCollectivePermuteStartThunk(
-    ThunkInfo thunk_info, NcclApi* nccl_api,
-    const HloCollectivePermuteInstruction* instr, int64_t replica_count,
-    int64_t partition_count, const Buffer& buffer)
-    : NcclCollectiveThunk(Thunk::kNcclCollectivePermuteStart, thunk_info,
-                          nccl_api, IsSyncCollective(instr)),
-      config_(GetNcclP2PConfig(instr, replica_count, partition_count)),
-      buffer_(buffer) {}
-
 /*static*/ NcclP2PConfig NcclCollectivePermuteStartThunk::GetNcclP2PConfig(
     CollectivePermuteStartOp op, int64_t replica_count,
     int64_t partition_count) {
@@ -87,19 +70,14 @@ NcclCollectivePermuteStartThunk::NcclCollectivePermuteStartThunk(
     replica_group.add_replica_ids(i);
   }
 
-  const std::vector<std::pair<int64_t, int64_t>> source_target_pairs =
-      ConvertNx2Attribute(op.getSourceTargetPairs()).value();
+  const auto source_target_pairs =
+      std::move(ConvertNx2Attribute(op.getSourceTargetPairs())).value();
 
-  for (const std::pair<int64_t, int64_t>& source_target : source_target_pairs) {
-    int64_t source = source_target.first;
-    int64_t target = source_target.second;
-
-    collective_permute_config.id_to_source_target.insert({target, {}})
-        .first->second.source = source;
-    collective_permute_config.id_to_source_target.insert({source, {}})
-        .first->second.target = target;
+  auto& map = collective_permute_config.id_to_source_target;
+  for (const auto& [source, target]: source_target_pairs) {
+    map.emplace(target, NcclP2PConfig::SourceTargetMapEntry{source, {}});
+    map.emplace(source, NcclP2PConfig::SourceTargetMapEntry{{}, target});
   }
-
   return collective_permute_config;
 }
 
@@ -127,19 +105,14 @@ NcclCollectivePermuteStartThunk::NcclCollectivePermuteStartThunk(
     replica_group.add_replica_ids(i);
   }
 
-  const std::vector<std::pair<int64_t, int64_t>> source_target_pairs =
-      instr->source_target_pairs();
-
-  for (const std::pair<int64_t, int64_t>& source_target : source_target_pairs) {
-    int64_t source = source_target.first;
-    int64_t target = source_target.second;
-
-    collective_permute_config.id_to_source_target.insert({target, {}})
+  const auto& source_target_pairs = instr->source_target_pairs();
+  auto& map = collective_permute_config.id_to_source_target;
+  for (const auto& [source, target]: source_target_pairs) {
+    map.emplace(target, NcclP2PConfig::SourceTargetMapEntry{})
         .first->second.source = source;
-    collective_permute_config.id_to_source_target.insert({source, {}})
+    map.emplace(source, NcclP2PConfig::SourceTargetMapEntry{})
         .first->second.target = target;
   }
-
   return collective_permute_config;
 }
 
@@ -221,6 +194,11 @@ absl::Status NcclCollectivePermuteStartThunk::RunNcclCollective(
       config_.config.group_mode == CollectiveOpGroupMode::kCrossReplica
           ? current_logical_id.replica_id
           : current_logical_id.computation_id;
+
+  if(IsQCCLAvailable()) {
+    return RunQCCL(device_buffers[0], stream, current_id);
+  }
+
   std::string device_string = GetDeviceString(*params.collective_params);
 
   const NcclP2PConfig::SourceTargetMapEntry source_target =

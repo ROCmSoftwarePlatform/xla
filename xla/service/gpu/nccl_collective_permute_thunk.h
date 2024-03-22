@@ -17,6 +17,7 @@ limitations under the License.
 #define XLA_SERVICE_GPU_NCCL_COLLECTIVE_PERMUTE_THUNK_H_
 
 #include <cstdint>
+#include <memory>
 
 #include "xla/service/collective_ops_utils.h"
 #include "xla/service/gpu/nccl_collective_thunk.h"
@@ -24,6 +25,8 @@ limitations under the License.
 
 namespace xla {
 namespace gpu {
+
+struct NodeMatrix;
 
 // Thunk that performs a NCCL-based collective permute.
 class NcclCollectivePermuteStartThunk : public NcclCollectiveThunk {
@@ -49,12 +52,16 @@ class NcclCollectivePermuteStartThunk : public NcclCollectiveThunk {
                                   mlir::lmhlo_gpu::CollectivePermuteStartOp op,
                                   int64_t replica_count,
                                   int64_t partition_count,
-                                  const Buffer& buffer);
+                                  const Buffer& buffer,
+                                  const DebugOptions& debug_options);
   NcclCollectivePermuteStartThunk(ThunkInfo thunk_info, NcclApi* nccl_api,
                                   const HloCollectivePermuteInstruction* instr,
                                   int64_t replica_count,
                                   int64_t partition_count,
-                                  const Buffer& buffer);
+                                  const Buffer& buffer,
+                                  const DebugOptions& debug_options);
+
+  ~NcclCollectivePermuteStartThunk();
 
   static absl::Status CheckImplementable(
       mlir::lmhlo_gpu::CollectivePermuteStartOp op, int64_t replica_count,
@@ -64,6 +71,11 @@ class NcclCollectivePermuteStartThunk : public NcclCollectiveThunk {
 
  protected:
   const NcclCollectiveConfig& config() const override { return config_.config; }
+  
+  bool IsQCCLAvailable();
+  absl::Status SetupQCCL();
+  absl::Status RunQCCL(DeviceBufferPair& buffer, se::Stream& stream, int64_t current_id);
+
   absl::Status RunNcclCollective(const ExecuteParams& params,
                                  se::Stream& stream,
                                  NcclApi::NcclCommHandle comm) override;
@@ -71,6 +83,10 @@ class NcclCollectivePermuteStartThunk : public NcclCollectiveThunk {
  private:
   const NcclP2PConfig config_;
   const Buffer buffer_;
+  std::unique_ptr< NodeMatrix > commGraph_;
+
+  size_t nExtraPeers_; // if zero, all traffic is sent directly
+  double splitFactor_; // this much of traffic is sent to target GPUs directly
 };
 
 absl::Status RunCollectivePermute(

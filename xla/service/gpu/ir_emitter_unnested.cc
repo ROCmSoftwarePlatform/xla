@@ -3518,7 +3518,8 @@ Status IrEmitterUnnested::EmitCollectivePermute(mlir::Operation* op) {
         /*destination_buffer=*/result_slice};
     auto thunk = std::make_unique<NcclCollectivePermuteStartThunk>(
         Thunk::ThunkInfo::WithProfileAnnotation(op), NcclApi::Default(),
-        collective_permute_op, replica_count, partition_count, buffer);
+        collective_permute_op, replica_count, partition_count, buffer,
+         ir_emitter_context_->debug_options());
     collectives_async_events_.try_emplace(op, thunk->async_events());
     AddThunkToThunkSequence(std::move(thunk));
   }
@@ -3563,7 +3564,8 @@ Status IrEmitterUnnested::EmitCollectivePermute(
         /*destination_buffer=*/result_slice};
     auto thunk = std::make_unique<NcclCollectivePermuteStartThunk>(
         Thunk::ThunkInfo::WithProfileAnnotation(instr), NcclApi::Default(),
-        instr, replica_count, partition_count, buffer);
+        instr, replica_count, partition_count, buffer, 
+        ir_emitter_context_->debug_options());
     collectives_async_events_.try_emplace(instr, thunk->async_events());
     AddThunkToThunkSequence(std::move(thunk));
   }
