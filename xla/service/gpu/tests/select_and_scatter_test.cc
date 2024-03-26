@@ -64,6 +64,17 @@ ENTRY %select_and_scatter (operand: f32[768,96,96,64]{3,2,1,0}, add.193: f32[768
   EXPECT_TRUE(RunAndCompareNoHloPasses(hlo_text, ErrorSpec{1e-5, 1e-5}));
 }
 
+template <class T>
+std::vector<T*> MakePointerVector(std::vector<T>& input_vec) {
+  std::vector<T*> output_pointers;
+  output_pointers.reserve(input_vec.size());
+  for (auto& input : input_vec) {
+    output_pointers.push_back(&input);
+  }
+  return output_pointers;
+}
+
+
 TEST_F(SelectAndScatterTest, SelectAndScatterPerformance) {
 
   std::ifstream ifs("/tf/xla/input.hlo");
@@ -73,15 +84,37 @@ TEST_F(SelectAndScatterTest, SelectAndScatterPerformance) {
   std::stringstream buffer;
   buffer << ifs.rdbuf();
 
-  TF_ASSERT_OK_AND_ASSIGN(auto module, ParseAndReturnVerifiedModule(buffer.str()));
-  auto fake_arguments = xla::MakeFakeArguments(module.get()).value();
+  HloModuleConfig config = GetModuleConfigForTest();
 
+  TF_ASSERT_OK_AND_ASSIGN(auto module, ParseAndReturnVerifiedModule(buffer.str(), 
+          config));
+
+  auto fake_arguments = xla::MakeFakeArguments(module.get()).value();
+  auto arg_ptrs = MakePointerVector<xla::Literal>(fake_arguments);
+
+  ErrorSpec error_spec{1e-2, 1e-2};
+#if 0
+  auto ref_module = module->Clone();  
   TF_ASSERT_OK_AND_ASSIGN(auto exec, CreateExecutable(std::move(module), true));
 
+  auto& ref_runner = HloTestBase::reference_runner_;
+  TF_ASSERT_OK_AND_ASSIGN(
+      auto ref_exec, ref_runner.CreateExecutable(std::move(ref_module), true));
+
+  TF_ASSERT_OK_AND_ASSIGN(auto truth, 
+        ref_runner.ExecuteWithExecutable(ref_exec.get(), arg_ptrs, nullptr));
+
   for(int i = 0; i < 20; i++) {
-     TF_ASSERT_OK_AND_ASSIGN(auto val, 
-        HloTestBase::test_runner_.ExecuteWithExecutable(exec.get(), fake_arguments, nullptr));
+    TF_ASSERT_OK_AND_ASSIGN(auto test_res, 
+        HloTestBase::test_runner_.ExecuteWithExecutable(exec.get(), arg_ptrs, nullptr));
+    if(i == 0) {
+      EXPECT_TRUE(LiteralTestUtil::Near(truth, test_res, error_spec));
+    }
   }
+#else
+  EXPECT_TRUE(RunAndCompare(std::move(module), 
+      absl::Span< xla::Literal * const>(arg_ptrs.data(), arg_ptrs.size()), error_spec));
+#endif
 }
 
 }  // namespace
