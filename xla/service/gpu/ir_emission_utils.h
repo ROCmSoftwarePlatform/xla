@@ -57,7 +57,7 @@ inline constexpr int64_t kMinTotalDimensionsToTransposeTiled = 64 * 128;
 bool IsMatrixMultiplication(const HloInstruction& dot);
 bool IsMatrixVectorMultiplication(const HloInstruction& dot);
 
-inline constexpr int64_t WarpSize() { return 32; }
+inline constexpr int64_t WarpSize() { return 64; }
 
 // Fusions that implemented with pre-compiled device kernels have
 // FusionBackendConfig.kind requel to this string.
