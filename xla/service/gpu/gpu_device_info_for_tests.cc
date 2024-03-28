@@ -64,11 +64,11 @@ stream_executor::DeviceDescription TestGpuDeviceInfo::AMDMI210DeviceInfo() {
   return b.BuildObject();
 }
 
-stream_executor::DeviceDescription TestGpuDeviceInfo::CudaOrRocmDeviceInfo() {
-#if defined(TENSORFLOW_USE_ROCM)
-  return AMDMI210DeviceInfo();
+stream_executor::DeviceDescription TestGpuDeviceInfo::TestCudaOrRocmDeviceInfo() {
+#if !defined(TENSORFLOW_USE_ROCM)
+  return RTXA6000DeviceInfo()
 #else
-  return RTXA6000DeviceInfo();
+  return AMDMI210DeviceInfo();
 #endif // GOOGLE_CUDA
 }
 

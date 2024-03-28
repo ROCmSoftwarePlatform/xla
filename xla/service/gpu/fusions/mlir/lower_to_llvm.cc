@@ -16,7 +16,6 @@ limitations under the License.
 #include <memory>
 #include <utility>
 
-#include "llvm/Support/LogicalResult.h"
 #include "mlir/Conversion/AffineToStandard/AffineToStandard.h"
 #include "mlir/Conversion/ArithToLLVM/ArithToLLVM.h"
 #include "mlir/Conversion/ComplexToLLVM/ComplexToLLVM.h"
