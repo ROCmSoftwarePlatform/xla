@@ -68,7 +68,7 @@ class PriorityFusionTest : public HloTestBase {
     for (auto computation : module->computations()) {
       if (!computation->FusionInstruction()) continue;
 
-      auto device_info = TestGpuDeviceInfo::RTXA6000DeviceInfo();
+      auto device_info = TestGpuDeviceInfo::TestCudaOrRocmDeviceInfo();
       auto analysis = HloFusionAnalysis::Create(
           Cast<HloFusionInstruction>(computation->FusionInstruction()),
           &device_info);

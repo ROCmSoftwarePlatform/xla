@@ -46,7 +46,7 @@ TEST_F(HloFusionAnalysisTest, DoesNotPeekOutsideBoundary) {
       ROOT %bitcast = s32[] bitcast(%reduce)
     })"));
 
-  auto device_info = TestGpuDeviceInfo::RTXA6000DeviceInfo();
+  auto device_info = TestGpuDeviceInfo::TestCudaOrRocmDeviceInfo();
 
   auto* root = module->entry_computation()->root_instruction();
   auto analysis = AnalyzeFusion(*root, device_info);
@@ -84,7 +84,7 @@ TEST_F(HloFusionAnalysisTest, ReductionWithMultipleUsers) {
       ROOT %fusion = (f32[], f32[]) fusion(%p0, %p1), kind=kLoop, calls=fused_computation
     })"));
 
-  auto device_info = TestGpuDeviceInfo::RTXA6000DeviceInfo();
+  auto device_info = TestGpuDeviceInfo::TestCudaOrRocmDeviceInfo();
 
   auto analysis = HloFusionAnalysis::Create(
       FusionBackendConfig::default_instance(),
@@ -118,7 +118,7 @@ TEST_F(HloFusionAnalysisTest, ReductionEpilogueFusion) {
       ROOT %fusion = f32[] fusion(%p0, %p1), kind=kInput, calls=fused_computation
     })"));
 
-  auto device_info = TestGpuDeviceInfo::RTXA6000DeviceInfo();
+  auto device_info = TestGpuDeviceInfo::TestCudaOrRocmDeviceInfo();
 
   auto* root = module->entry_computation()->root_instruction();
   auto analysis = HloFusionAnalysis::Create(
@@ -151,7 +151,7 @@ TEST_F(HloFusionAnalysisTest, ReductionEpilogueFusionPartiallyFused) {
       ROOT %negate = f32[] negate(%fusion)
     })"));
 
-  auto device_info = TestGpuDeviceInfo::RTXA6000DeviceInfo();
+  auto device_info = TestGpuDeviceInfo::TestCudaOrRocmDeviceInfo();
 
   auto* root = module->entry_computation()->root_instruction();
 
@@ -183,7 +183,7 @@ TEST_F(HloFusionAnalysisTest, ReductionEpilogueFusionPartiallyFusedInConsumer) {
       ROOT %fusion = f32[] fusion(%reduce), kind=kInput, calls=fusion
     })"));
 
-  auto device_info = TestGpuDeviceInfo::RTXA6000DeviceInfo();
+  auto device_info = TestGpuDeviceInfo::TestCudaOrRocmDeviceInfo();
 
   auto* root = module->entry_computation()->root_instruction();
   auto analysis =
@@ -220,7 +220,7 @@ TEST_F(HloFusionAnalysisTest, ReductionEpilogueFusionPartiallyFusedInBoth) {
       ROOT %fusion.2 = f32[] fusion(%fusion.1), kind=kInput, calls=fusion.2
     })"));
 
-  auto device_info = TestGpuDeviceInfo::RTXA6000DeviceInfo();
+  auto device_info = TestGpuDeviceInfo::TestCudaOrRocmDeviceInfo();
 
   auto* root = module->entry_computation()->root_instruction();
   auto analysis =
@@ -253,7 +253,7 @@ TEST_F(HloFusionAnalysisTest, ReduceMultiOutputFusionWithTransposeBitcast) {
       ROOT %fusion = (f32[1024]{0}, f32[512, 1024]{0,1}) fusion(%p0, %p1), kind=kInput, calls=fusion
     })"));
 
-  auto device_info = TestGpuDeviceInfo::RTXA6000DeviceInfo();
+  auto device_info = TestGpuDeviceInfo::TestCudaOrRocmDeviceInfo();
 
   auto* root = module->entry_computation()->root_instruction();
   auto analysis =
@@ -286,7 +286,7 @@ TEST_F(HloFusionAnalysisTest, InvalidReduceMultiOutputFusion) {
       ROOT %fusion = (f32[1024]{0}, f32[1024]{0}) fusion(%p0, %p1), kind=kInput, calls=fusion
     })"));
 
-  auto device_info = TestGpuDeviceInfo::RTXA6000DeviceInfo();
+  auto device_info = TestGpuDeviceInfo::TestCudaOrRocmDeviceInfo();
 
   auto* root = module->entry_computation()->root_instruction();
   auto analysis =
@@ -345,7 +345,7 @@ TEST_F(HloFusionAnalysisTest, ConcatFusion) {
       ROOT %fusion = f32[256] fusion(%p0, %p1), kind=kInput, calls=fused_computation
     })"));
 
-  auto device_info = TestGpuDeviceInfo::RTXA6000DeviceInfo();
+  auto device_info = TestGpuDeviceInfo::TestCudaOrRocmDeviceInfo();
 
   auto* root = module->entry_computation()->root_instruction();
   auto analysis = HloFusionAnalysis::Create(

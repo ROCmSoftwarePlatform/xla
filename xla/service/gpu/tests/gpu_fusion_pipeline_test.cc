@@ -46,7 +46,7 @@ class GpuFusionPipelineTest : public GpuCodegenTest {
                               std::optional<absl::string_view> expected) {
     HloPassPipeline pipeline("gpu-fusion");
     const se::DeviceDescription device_info =
-        TestGpuDeviceInfo::RTXA6000DeviceInfo();
+        TestGpuDeviceInfo::TestCudaOrRocmDeviceInfo();
     pipeline.AddPass<GpuInstructionFusion>(/*may_duplicate=*/false,
                                            device_info);
     pipeline.AddPass<GpuInstructionFusion>(/*may_duplicate=*/true, device_info);

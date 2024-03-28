@@ -47,7 +47,7 @@ class LoopTest : public HloTestBase {
 
  protected:
   stream_executor::DeviceDescription device_info_ =
-      TestGpuDeviceInfo::RTXA6000DeviceInfo();
+      TestGpuDeviceInfo::TestCudaOrRocmDeviceInfo();
   AffineMapPrinter printer_;
   mlir::MLIRContext mlir_context_;
 };

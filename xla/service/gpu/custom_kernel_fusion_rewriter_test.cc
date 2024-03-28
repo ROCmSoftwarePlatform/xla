@@ -87,7 +87,7 @@ TEST_F(CustomKernelFusionRewriterTest, SimpleGemm) {
   CustomKernelFusionPatternRegistry patterns;
   patterns.Emplace<SimpleGemmPattern>();
 
-  auto device = TestGpuDeviceInfo::RTXA6000DeviceInfo();
+  auto device = TestGpuDeviceInfo::TestCudaOrRocmDeviceInfo();
   CustomKernelFusionRewriter pass(&device, &patterns);
   RunAndFilecheckHloRewrite(hlo, std::move(pass), expected);
 }
@@ -130,7 +130,7 @@ TEST_F(CustomKernelFusionRewriterTest, SimpleGemmWithWorkspace) {
   CustomKernelFusionPatternRegistry patterns;
   patterns.Emplace<SimpleGemmPattern>(1024);
 
-  auto device = TestGpuDeviceInfo::RTXA6000DeviceInfo();
+  auto device = TestGpuDeviceInfo::TestCudaOrRocmDeviceInfo();
   CustomKernelFusionRewriter pass(&device, &patterns);
   RunAndFilecheckHloRewrite(hlo, std::move(pass), expected);
 }

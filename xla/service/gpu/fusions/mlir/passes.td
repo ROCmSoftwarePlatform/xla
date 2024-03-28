@@ -161,7 +161,10 @@ def LowerToLLVMPass :
     "mlir::func::FuncDialect", "mlir::LLVM::LLVMDialect"
   ];
 
-  let constructor = "CreateLowerToLLVMPass()";
+  let options = [
+    Option<"use_rocdl_", "use-rocdl", "bool", /*default=*/"false",
+           "Lower ops using rocdl dialect">,
+  ];
 }
 
 #endif  // XLA_SERVICE_GPU_FUSIONS_MLIR_PASSES_TD_

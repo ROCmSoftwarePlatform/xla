@@ -78,7 +78,7 @@ class CoalescingTest : public HloTestBase {
 
  protected:
   stream_executor::DeviceDescription device_info_ =
-      TestGpuDeviceInfo::RTXA6000DeviceInfo();
+      TestGpuDeviceInfo::TestCudaOrRocmDeviceInfo();
   mlir::MLIRContext mlir_context_;
 };
 

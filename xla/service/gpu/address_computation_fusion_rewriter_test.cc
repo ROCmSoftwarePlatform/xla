@@ -105,7 +105,7 @@ TEST_F(AddressComputationFusionRewriterTest, SimpleGemm) {
     ; CHECK:     }
   )";
 
-  auto device = TestGpuDeviceInfo::RTXA6000DeviceInfo();
+  auto device = TestGpuDeviceInfo::TestCudaOrRocmDeviceInfo();
   RunAndFilecheckHloRewrite(hlo, AddressComputationFusionRewriter(PLATFORM),
                             expected, [](HloModule* module) {
                               EXPECT_TRUE(module->has_schedule());
@@ -173,7 +173,7 @@ TEST_F(AddressComputationFusionRewriterTest, SimpleGemmWithWorkspace) {
     ; CHECK:     }
   )";
 
-  auto device = TestGpuDeviceInfo::RTXA6000DeviceInfo();
+  auto device = TestGpuDeviceInfo::TestCudaOrRocmDeviceInfo();
   RunAndFilecheckHloRewrite(hlo, AddressComputationFusionRewriter(PLATFORM),
                             expected, [](HloModule* module) {
                               EXPECT_TRUE(module->has_schedule());
@@ -239,7 +239,7 @@ TEST_F(AddressComputationFusionRewriterTest, SimpleGemmNotRoot) {
     ; CHECK:     }
   )";
 
-  auto device = TestGpuDeviceInfo::RTXA6000DeviceInfo();
+  auto device = TestGpuDeviceInfo::TestCudaOrRocmDeviceInfo();
   RunAndFilecheckHloRewrite(hlo, AddressComputationFusionRewriter(PLATFORM),
                             expected, [](HloModule* module) {
                               EXPECT_TRUE(module->has_schedule());
@@ -308,7 +308,7 @@ TEST_F(AddressComputationFusionRewriterTest,
     ; CHECK:     }
   )";
 
-  auto device = TestGpuDeviceInfo::RTXA6000DeviceInfo();
+  auto device = TestGpuDeviceInfo::TestCudaOrRocmDeviceInfo();
   RunAndFilecheckHloRewrite(hlo, AddressComputationFusionRewriter(PLATFORM),
                             expected, [](HloModule* module) {
                               EXPECT_TRUE(module->has_schedule());
@@ -371,7 +371,7 @@ TEST_F(AddressComputationFusionRewriterTest,
     }
   )";
 
-  auto device = TestGpuDeviceInfo::RTXA6000DeviceInfo();
+  auto device = TestGpuDeviceInfo::TestCudaOrRocmDeviceInfo();
   RunAndFilecheckHloRewrite(hlo, AddressComputationFusionRewriter(PLATFORM),
                             std::nullopt);
 }
@@ -438,7 +438,7 @@ TEST_F(AddressComputationFusionRewriterTest, SimpleGemmSlicingNotParameter) {
     ; CHECK:     }
   )";
 
-  auto device = TestGpuDeviceInfo::RTXA6000DeviceInfo();
+  auto device = TestGpuDeviceInfo::TestCudaOrRocmDeviceInfo();
   RunAndFilecheckHloRewrite(hlo, AddressComputationFusionRewriter(PLATFORM),
                             expected, [](HloModule* module) {
                               EXPECT_TRUE(module->has_schedule());
@@ -480,7 +480,7 @@ TEST_F(AddressComputationFusionRewriterTest, SimpleGemmNotContiguousSlice) {
     }
   )";
 
-  auto device = TestGpuDeviceInfo::RTXA6000DeviceInfo();
+  auto device = TestGpuDeviceInfo::TestCudaOrRocmDeviceInfo();
   RunAndFilecheckHloRewrite(hlo, AddressComputationFusionRewriter(PLATFORM),
                             std::nullopt);
 }
@@ -523,7 +523,7 @@ TEST_F(AddressComputationFusionRewriterTest, SimpleGemmNonNoOpInSliceChain) {
     }
   )";
 
-  auto device = TestGpuDeviceInfo::RTXA6000DeviceInfo();
+  auto device = TestGpuDeviceInfo::TestCudaOrRocmDeviceInfo();
   RunAndFilecheckHloRewrite(hlo, AddressComputationFusionRewriter(PLATFORM),
                             std::nullopt);
 }
@@ -602,7 +602,7 @@ TEST_F(AddressComputationFusionRewriterTest, SimpleGemmDuplicateOperand) {
     ; CHECK:     }
   )";
 
-  auto device = TestGpuDeviceInfo::RTXA6000DeviceInfo();
+  auto device = TestGpuDeviceInfo::TestCudaOrRocmDeviceInfo();
   RunAndFilecheckHloRewrite(hlo, AddressComputationFusionRewriter(PLATFORM),
                             expected, [](HloModule* module) {
                               EXPECT_TRUE(module->has_schedule());
@@ -668,7 +668,7 @@ TEST_F(AddressComputationFusionRewriterTest, SimpleGemmReverseOperandOrder) {
     ; CHECK:     }
   )";
 
-  auto device = TestGpuDeviceInfo::RTXA6000DeviceInfo();
+  auto device = TestGpuDeviceInfo::TestCudaOrRocmDeviceInfo();
   RunAndFilecheckHloRewrite(hlo, AddressComputationFusionRewriter(PLATFORM),
                             expected, [](HloModule* module) {
                               EXPECT_TRUE(module->has_schedule());
@@ -734,7 +734,7 @@ TEST_F(AddressComputationFusionRewriterTest, SimpleGemmReverseOperandOrder2) {
     ; CHECK:     }
   )";
 
-  auto device = TestGpuDeviceInfo::RTXA6000DeviceInfo();
+  auto device = TestGpuDeviceInfo::TestCudaOrRocmDeviceInfo();
   RunAndFilecheckHloRewrite(hlo, AddressComputationFusionRewriter(PLATFORM),
                             expected, [](HloModule* module) {
                               EXPECT_TRUE(module->has_schedule());
@@ -801,7 +801,7 @@ TEST_F(AddressComputationFusionRewriterTest, SimpleGemmOperandAliasingOutput) {
     ; CHECK:     }
   )";
 
-  auto device = TestGpuDeviceInfo::RTXA6000DeviceInfo();
+  auto device = TestGpuDeviceInfo::TestCudaOrRocmDeviceInfo();
   RunAndFilecheckHloRewrite(hlo, AddressComputationFusionRewriter(PLATFORM),
                             expected, [](HloModule* module) {
                               EXPECT_TRUE(module->has_schedule());
@@ -862,7 +862,7 @@ TEST_F(AddressComputationFusionRewriterTest, SimpleGemmOperandsFromSameSlice) {
     ; CHECK:     }
   )";
 
-  auto device = TestGpuDeviceInfo::RTXA6000DeviceInfo();
+  auto device = TestGpuDeviceInfo::TestCudaOrRocmDeviceInfo();
   RunAndFilecheckHloRewrite(hlo, AddressComputationFusionRewriter(PLATFORM),
                             expected, [](HloModule* module) {
                               EXPECT_TRUE(module->has_schedule());
@@ -935,7 +935,7 @@ TEST_F(AddressComputationFusionRewriterTest, SimpleCustomCall) {
     ; CHECK:     }
   )";
 
-  auto device = TestGpuDeviceInfo::RTXA6000DeviceInfo();
+  auto device = TestGpuDeviceInfo::TestCudaOrRocmDeviceInfo();
   RunAndFilecheckHloRewrite(hlo->ToString(),
                             AddressComputationFusionRewriter(PLATFORM),
                             expected, [](HloModule* module) {
@@ -992,7 +992,7 @@ TEST_F(AddressComputationFusionRewriterTest, SimpleCustomCallLegacy) {
     ; CHECK:     }
   )";
 
-  auto device = TestGpuDeviceInfo::RTXA6000DeviceInfo();
+  auto device = TestGpuDeviceInfo::TestCudaOrRocmDeviceInfo();
   RunAndFilecheckHloRewrite(hlo->ToString(),
                             AddressComputationFusionRewriter(PLATFORM),
                             expected, [](HloModule* module) {
@@ -1024,7 +1024,7 @@ TEST_F(AddressComputationFusionRewriterTest, UnalignedSlice) {
       }));
   TF_CHECK_OK(hlo->set_schedule(std::move(schedule)));
 
-  auto device = TestGpuDeviceInfo::RTXA6000DeviceInfo();
+  auto device = TestGpuDeviceInfo::TestCudaOrRocmDeviceInfo();
   RunAndFilecheckHloRewrite(hlo->ToString(),
                             AddressComputationFusionRewriter(PLATFORM),
                             std::nullopt);
@@ -1090,7 +1090,7 @@ TEST_F(AddressComputationFusionRewriterTest, DynamicSimpleGemm) {
     ; CHECK:     }
   )";
 
-  auto device = TestGpuDeviceInfo::RTXA6000DeviceInfo();
+  auto device = TestGpuDeviceInfo::TestCudaOrRocmDeviceInfo();
   RunAndFilecheckHloRewrite(hlo, AddressComputationFusionRewriter(PLATFORM),
                             expected, [](HloModule* module) {
                               EXPECT_TRUE(module->has_schedule());
@@ -1162,7 +1162,7 @@ TEST_F(AddressComputationFusionRewriterTest, DynamicSimpleGemmWithWorkspace) {
     ; CHECK:     }
   )";
 
-  auto device = TestGpuDeviceInfo::RTXA6000DeviceInfo();
+  auto device = TestGpuDeviceInfo::TestCudaOrRocmDeviceInfo();
   RunAndFilecheckHloRewrite(hlo, AddressComputationFusionRewriter(PLATFORM),
                             expected, [](HloModule* module) {
                               EXPECT_TRUE(module->has_schedule());
@@ -1232,7 +1232,7 @@ TEST_F(AddressComputationFusionRewriterTest, DynamicSimpleGemmNotRoot) {
     ; CHECK:     }
   )";
 
-  auto device = TestGpuDeviceInfo::RTXA6000DeviceInfo();
+  auto device = TestGpuDeviceInfo::TestCudaOrRocmDeviceInfo();
   RunAndFilecheckHloRewrite(hlo, AddressComputationFusionRewriter(PLATFORM),
                             expected, [](HloModule* module) {
                               EXPECT_TRUE(module->has_schedule());

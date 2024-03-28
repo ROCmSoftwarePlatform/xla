@@ -37,7 +37,7 @@ std::optional<Interval> GetRange(mlir::Value value);
 std::unique_ptr<mlir::Pass> CreateExpandFloatOpsPass(bool pre_ampere);
 std::unique_ptr<mlir::Pass> CreateLowerFuncPass();
 std::unique_ptr<mlir::Pass> CreateLowerTensorsPass();
-std::unique_ptr<mlir::Pass> CreateLowerToLLVMPass();
+std::unique_ptr<mlir::Pass> CreateLowerToLLVMPass(bool use_rocdl);
 std::unique_ptr<mlir::Pass> CreateLowerXlaGpuToScfPass();
 std::unique_ptr<mlir::Pass> CreateMergePointersToSameSlicePass();
 std::unique_ptr<mlir::Pass> CreatePropagateSliceIndicesPass();

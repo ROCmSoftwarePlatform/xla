@@ -49,6 +49,7 @@ limitations under the License.
 #include "mlir/Dialect/GPU/IR/GPUDialect.h"  // from @llvm-project
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"  // from @llvm-project
 #include "mlir/Dialect/LLVMIR/NVVMDialect.h"  // from @llvm-project
+#include "mlir/Dialect/LLVMIR/ROCDLDialect.h" // from @llvm-project
 #include "mlir/Dialect/Math/IR/Math.h"  // from @llvm-project
 #include "mlir/Dialect/MemRef/Transforms/Passes.h"  // from @llvm-project
 #include "mlir/Dialect/SCF/IR/SCF.h"  // from @llvm-project
@@ -68,6 +69,7 @@ limitations under the License.
 #include "mlir/Target/LLVMIR/Dialect/Builtin/BuiltinToLLVMIRTranslation.h"  // from @llvm-project
 #include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"  // from @llvm-project
 #include "mlir/Target/LLVMIR/Dialect/NVVM/NVVMToLLVMIRTranslation.h"  // from @llvm-project
+#include "mlir/Target/LLVMIR/Dialect/ROCDL/ROCDLToLLVMIRTranslation.h"  // from @llvm-project
 #include "mlir/Target/LLVMIR/Export.h"  // from @llvm-project
 #include "mlir/Transforms/Passes.h"  // from @llvm-project
 #include "xla/hlo/ir/hlo_instruction.h"
@@ -231,8 +233,6 @@ MlirFusionEmitterBase::CreateLLVMModule(
     const se::DeviceDescription& device, const HloFusionInstruction& fusion,
     const std::string& entry_function_name,
     const BufferAssignment* buffer_assignment) const {
-  TF_RET_CHECK(device.cuda_compute_capability().major >= 1)
-      << "Unsupported device type: " << device.name();
   TF_ASSIGN_OR_RETURN(
       auto module, CreateMLIRModule(mlir_context, fusion, entry_function_name,
                                     buffer_assignment));
@@ -268,9 +268,10 @@ MlirFusionEmitterBase::CreateLLVMModule(
   pm.addPass(mlir::createSymbolDCEPass());
   pm.addPass(mlir::createCSEPass());
   pm.addPass(CreateLowerTensorsPass());
+  // This condition covers ROCM also
   pm.addPass(CreateExpandFloatOpsPass(
       !device.cuda_compute_capability().IsAtLeastAmpere()));
-  pm.addPass(CreateLowerToLLVMPass());
+  pm.addPass(CreateLowerToLLVMPass(device.cuda_compute_capability().major == -1));
   pm.addPass(mlir::createReconcileUnrealizedCastsPass());
 
   if (pm.run(module.get()).failed()) {
@@ -300,12 +301,13 @@ MlirFusionEmitterBase::CreateMLIRModule(
                       mlir::cf::ControlFlowDialect, mlir::math::MathDialect,
                       mlir::scf::SCFDialect, mlir::mhlo::MhloDialect,
                       mlir::gpu::GPUDialect, mlir::NVVM::NVVMDialect,
-                      xla::gpu::XlaGpuDialect>();
+                      mlir::ROCDL::ROCDLDialect, xla::gpu::XlaGpuDialect>();
   mlir::DialectRegistry registry;
   mlir::func::registerInlinerExtension(registry);
   mlir::registerBuiltinDialectTranslation(registry);
   mlir::registerLLVMDialectTranslation(registry);
   mlir::registerNVVMDialectTranslation(registry);
+  mlir::registerROCDLDialectTranslation(registry);
   context.appendDialectRegistry(registry);
 
   mlir::OpBuilder builder(&context);

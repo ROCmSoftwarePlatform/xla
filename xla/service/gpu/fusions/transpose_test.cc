@@ -39,7 +39,7 @@ using ::testing::HasSubstr;
 class TransposeTest : public HloTestBase {
  protected:
   stream_executor::DeviceDescription device_info_ =
-      TestGpuDeviceInfo::RTXA6000DeviceInfo();
+      TestGpuDeviceInfo::TestCudaOrRocmDeviceInfo();
 };
 
 absl::StatusOr<std::unique_ptr<TransposeFusion>> GetTransposeFusion(

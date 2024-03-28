@@ -37,7 +37,7 @@ namespace {
 class ReductionTest : public HloTestBase {
  protected:
   stream_executor::DeviceDescription device_info_ =
-      TestGpuDeviceInfo::RTXA6000DeviceInfo();
+      TestGpuDeviceInfo::TestCudaOrRocmDeviceInfo();
 };
 
 class FakeReductionFusion : public ReductionFusionBase<KernelFusionInterface> {

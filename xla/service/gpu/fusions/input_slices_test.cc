@@ -64,7 +64,7 @@ TEST_F(InputSlicesTest, ThreadIndexing) {
                     .value();
 
   stream_executor::DeviceDescription device_info =
-      TestGpuDeviceInfo::RTXA6000DeviceInfo();
+      TestGpuDeviceInfo::TestCudaOrRocmDeviceInfo();
 
   auto* root = module->entry_computation()->root_instruction();
   auto analysis_fused = AnalyzeFusion(*root, device_info);
