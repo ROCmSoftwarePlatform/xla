@@ -74,6 +74,30 @@ std::vector<T*> MakePointerVector(std::vector<T>& input_vec) {
   return output_pointers;
 }
 
+void WriteLiteralToTempFile(const LiteralSlice& literal,
+                            const std::string& name) {
+  // Bazel likes for tests to write "debugging outputs" like these to
+  // TEST_UNDECLARED_OUTPUTS_DIR.  This plays well with tools that inspect test
+  // results, especially when they're run on remote machines.
+  std::string outdir{tsl::testing::TmpDir()};
+
+  auto* env = tsl::Env::Default();
+  std::string filename = outdir + absl::StrFormat("/tempfile-%d-%s", env->NowMicros(), name);
+  TF_CHECK_OK(tsl::WriteStringToFile(env, absl::StrCat(filename, ".txt"),
+                                     literal.ToString()));
+  LOG(ERROR) << "wrote Literal to " << name << " file: " << filename
+             << ".txt";
+}
+
+tsl::StatusOr<xla::Literal> ReadLiteralFromProto(const std::string& name) {
+
+  xla::LiteralProto proto;
+  auto* env = tsl::Env::Default();
+  TF_CHECK_OK(tsl::ReadBinaryProto(env, name, &proto));
+  //*proto.mutable_shape() = ShapeUtil::MakeShape(F32, {42, 2}).ToProto();
+
+  return xla::MutableLiteralBase::CreateFromProto(proto, true);
+}
 
 TEST_F(SelectAndScatterTest, SelectAndScatterPerformance) {
 
@@ -89,11 +113,13 @@ TEST_F(SelectAndScatterTest, SelectAndScatterPerformance) {
   TF_ASSERT_OK_AND_ASSIGN(auto module, ParseAndReturnVerifiedModule(buffer.str(), 
           config));
 
-  auto fake_arguments = xla::MakeFakeArguments(module.get()).value();
+  auto fake_arguments = xla::MakeFakeArguments(module.get(), 
+        true, /*pseudo-random*/
+        false /* use large range*/).value();
   auto arg_ptrs = MakePointerVector<xla::Literal>(fake_arguments);
 
   ErrorSpec error_spec{1e-2, 1e-2};
-#if 0
+#if 1
   auto ref_module = module->Clone();  
   TF_ASSERT_OK_AND_ASSIGN(auto exec, CreateExecutable(std::move(module), true));
 
@@ -102,12 +128,17 @@ TEST_F(SelectAndScatterTest, SelectAndScatterPerformance) {
       auto ref_exec, ref_runner.CreateExecutable(std::move(ref_module), true));
 
   TF_ASSERT_OK_AND_ASSIGN(auto truth, 
-        ref_runner.ExecuteWithExecutable(ref_exec.get(), arg_ptrs, nullptr));
+        ReadLiteralFromProto("/tf/xla/ROCM_results/expected.pb"));
+  VLOG(0) << "Read expected literal from file.. running test";
+  //TF_ASSERT_OK_AND_ASSIGN(auto truth, 
+  //ref_runner.ExecuteWithExecutable(ref_exec.get(), arg_ptrs, nullptr));
+  //WriteLiteralToTempFile(truth, "expected");
 
-  for(int i = 0; i < 20; i++) {
+  for(int i = 0; i < 1; i++) {
     TF_ASSERT_OK_AND_ASSIGN(auto test_res, 
         HloTestBase::test_runner_.ExecuteWithExecutable(exec.get(), arg_ptrs, nullptr));
     if(i == 0) {
+      //WriteLiteralToTempFile(test_res, "actual");
       EXPECT_TRUE(LiteralTestUtil::Near(truth, test_res, error_spec));
     }
   }

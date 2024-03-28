@@ -140,6 +140,7 @@ public:
     const GemmBackendConfig& backend_config = gpu_config.gemm_backend_config();
     epilogue_ = backend_config.epilogue();
     bool rewritable = IsRewritable(gemm, gemm_config);
+    VLOG(0) << IsCublasLtMatmul(*gemm) << " and " << rewritable;
     
     // GemmRewriter always prefers blas-lt over plain blas, therefore if blas
     // was chosen then blas-lt was not available for a given combination of
@@ -182,9 +183,9 @@ private:
 
   bool IsRewritable(const HloInstruction* gemm, const GemmConfig& gemm_config) {
 
-    if (epilogue_ == GemmBackendConfig::DEFAULT) {
-      return true;
-    }
+    // if (epilogue_ == GemmBackendConfig::DEFAULT) {
+    //   return true;
+    // }
     return false; // NOTE: currently only DEFAULT epilogues can be rewritten 
 
     if (!(epilogue_ == GemmBackendConfig::BIAS && gemm_config.beta == 0.0)) {
@@ -375,7 +376,7 @@ private:
         continue;
       }
       i--, total_ms /= i; // skip the first warm-up iteration
-      VLOG(2) << "gemm algorithm " << profile_result.algorithm() << " took "
+      VLOG(0) << "gemm algorithm " << profile_result.algorithm() << " took "
             << total_ms << "ms, number of iterations: " << i;
 
       *result.mutable_run_time() = tsl::proto_utils::ToDurationProto(
@@ -567,7 +568,7 @@ absl::StatusOr<bool> RunOnInstruction(HloInstruction* gemm,
 
   if (update_algorithm) {
     if (algorithm.has_gemm()) {
-      VLOG(1) << "Selected algorithm: " << algorithm.gemm().algorithm();
+      VLOG(0) << "Selected algorithm: " << algorithm.gemm().algorithm();
       backend_config.set_selected_algorithm(algorithm.gemm().algorithm());
     } else {
       backend_config.set_selected_algorithm(se::blas::kDefaultAlgorithm);

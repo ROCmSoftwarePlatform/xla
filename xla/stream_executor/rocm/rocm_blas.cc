@@ -709,6 +709,7 @@ bool ROCMBlas::GetBlasGemmAlgorithms(
         ret != rocblas_status_success) {
       return ret;
     }
+    VLOG(0) << "Total solutions found: " << num_sols;
     out_algorithms->resize(num_sols + 1);
     // Default solution must be the first one in the list to be selected
     // as a reference solution!

@@ -227,6 +227,75 @@ XLA_TEST_P(AsyncCollectiveOps, AsyncAllGatherMixedTypes) {
   }
 }
 
+XLA_TEST_P(AsyncCollectiveOps, CollectivePermute_Rotate) {
+  // const char* const kModuleStr = R"(
+  // HloModule test
+  // ENTRY test_computation {
+  //   replica = u32[] replica-id()
+  //   ten = u32[] constant(10)
+  //   sum = u32[] add(replica, ten)
+  //   p = u32[2] broadcast(sum), dimensions={}
+  //   permute = u32[2] collective-permute(p), source_target_pairs={{0,1}, {1,2}, {2,3}, {3,0}}
+  //   ROOT copy = u32[2] copy(permute)
+  // }
+  // )";
+  const char* const kModuleStr = R"(
+  HloModule test
+  ENTRY test_computation {
+    p = f32[8192,8024] parameter(0)
+    permute = f32[8192,8024] collective-permute(p), source_target_pairs={{0,1}, {1,2}, {2,3}, {3,0}}
+    ROOT copy = f32[8192,8024] copy(permute)
+  }
+  )";
+//  %collective-permute.154 = f16[2048,2268]{1,0} collective-permute(f16[2048,2268]{1,0} %get-tuple-element.127), channel_id=4, source_target_pairs={{0,1},{1,2},{2,3},{3,0}}, metadata={op_name="jit(mm_collective_contracting_fwdbwd)/jit(main)/transpose(jvp(jit(shmap_body)))/while/body/ppermute[axis_name=mp perm=((0, 1), (1, 2), (2, 3), (3, 0))]" source_file="/tf/jax/test_rccl_sendrecv.py" source_line=224}
+//  %get-tuple-element.127 = f16[2048,2268]{1,0} get-tuple-element((s32[], s32[], f16[2048,768]{1,0}, f16[9072,768]{1,0}, f16[2048,2268]{1,0}, /*index=5*/s32[], f16[9072,768]{1,0}, f16[2048,768]{1,0}) %arg_tuple.122), index=4
+  const int64_t kNumReplicas = 4;
+
+    HloModuleConfig config =
+        GetModuleConfigForTest(/*replica_count=*/kNumReplicas);
+
+    TF_ASSERT_OK_AND_ASSIGN(auto module,
+                        ParseAndReturnVerifiedModule(kModuleStr, config));
+
+    //const auto fake_arguments = xla::MakeFakeArguments(module.get()).value();
+  TF_ASSERT_OK_AND_ASSIGN(auto executable, HloTestBase::CreateExecutable(std::move(module),
+                                         /*run_hlo_passes=*/true));
+  std::vector< Literal > args(kNumReplicas);
+  for(int i = 0; i < kNumReplicas; i++) {
+    args[i] = LiteralUtil::CreateFullWithDescendingLayout<float>(
+      {8192,8024}, (float)i);
+  }
+
+  // TF_ASSERT_OK_AND_ASSIGN(std::vector<Literal> results,
+  //                         ExecuteReplicated(executable.get(), kNumReplicas));
+
+    DeviceAssignment device_assignment = MakeDeviceAssn(kNumReplicas);
+    std::vector<Literal> results;
+
+    auto call = [&](){
+      TF_ASSERT_OK_AND_ASSIGN(results, HloTestBase::ExecuteReplicated(
+        /*executable_provider*/ [&](int64_t) { return executable.get(); },
+        /*argument_count_provider*/ [&args](int64_t replica_id) { return 1; },
+        /*argument_provider*/ [&args](int64_t replica_id, int64_t arg_id) 
+        { 
+          return &args[replica_id];
+        },
+        kNumReplicas, /*run_hlo_passes=*/false, &device_assignment));
+    };
+
+    call();
+    for(int i = 0; i < 50; i++) {
+      XLA_SCOPED_LOGGING_TIMER_LEVEL("perf", 0);
+      //VLOG(0) << "Running " << i;
+      call();
+    }
+  ASSERT_EQ(results.size(), kNumReplicas);
+
+  for(int i = 0; i < kNumReplicas; i++) {
+    EXPECT_TRUE(LiteralTestUtil::Equal(args[(i - 1 + kNumReplicas)%kNumReplicas], results[i]));
+  }
+}
+
 XLA_TEST_P(AsyncCollectiveOps, AsyncCollectivePermute) {
   const absl::string_view kModuleStr = R"(
   HloModule test
