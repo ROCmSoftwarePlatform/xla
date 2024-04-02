@@ -670,11 +670,35 @@ absl::StatusOr<AutotuneResult> PickBestResult(
   // Consider the lowest measurements within the error margin as equivalent and
   // within them prefer algorithms that use the least amount of scratch memory.
   SortAutotuningResultsByRunTime(filtered_results);
-  auto top_within_error = TopResultsWithinMeasurementError(filtered_results);
-  return *absl::c_min_element(top_within_error, [](const AutotuneResult& lhs,
-                                                   const AutotuneResult& rhs) {
-    return lhs.scratch_bytes() < rhs.scratch_bytes();
-  });
+
+  constexpr absl::Duration kMeasurementError = absl::Microseconds(50);
+
+  const auto& top_algo = filtered_results.front();
+  auto min_time = tsl::proto_utils::FromDurationProto(top_algo.run_time());
+  
+  uint32_t top_id = 0;
+  for(uint32_t i = 1; i < filtered_results.size(); i++) {
+    
+    const auto& res = filtered_results[i];
+    uint32_t algo_id = res.gemm().algorithm();
+    auto tm = tsl::proto_utils::FromDurationProto(res.run_time());
+
+    if(tm > min_time + kMeasurementError) break;
+    if(algo_id < (uint32_t)filtered_results[top_id].gemm().algorithm()) {
+      top_id = i;
+    }
+    VLOG(1) << "gemm algorithm " << res.gemm().algorithm() << " took "
+            << tsl::proto_utils::FromDurationProto(res.run_time())
+            << " buf " << res.scratch_bytes();
+  }
+  const auto& selected = filtered_results[top_id];
+  VLOG(1) << "Algorithm selected: " << selected.gemm().algorithm();
+  return selected;
+  // auto top_within_error = TopResultsWithinMeasurementError(filtered_results);
+  // return *absl::c_min_element(top_within_error, [](const AutotuneResult& lhs,
+  //                                                  const AutotuneResult& rhs) {
+  //   return lhs.scratch_bytes() < rhs.scratch_bytes();
+  // });
 }
 
 }  // namespace gpu
