@@ -480,8 +480,8 @@ Status NcclCollectiveThunk::ExecuteOnStream(const ExecuteParams& params) {
 
     RendezvousSingle(first_call_rendezvous_flag_, rendezvous_name,
                      rendezvous_key, num_local_participants,
-                     /*warn_stuck_timeout=*/absl::Seconds(10),
-                     /*terminate_timeout=*/absl::Seconds(30));
+                     /*warn_stuck_timeout=*/absl::Seconds(30),
+                     /*terminate_timeout=*/absl::Seconds(60));
   }
 
   return absl::OkStatus();
