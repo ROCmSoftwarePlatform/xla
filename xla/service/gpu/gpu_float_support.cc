@@ -73,8 +73,6 @@ bool GpuFloatSupport::IsSupported(const HloInstruction& hlo) const {
     // Other special ops.
     case HloOpcode::kBitcast:
       return true;
-    case HloOpcode::kMultiply:
-      return LowPrecisionType() == BF16;
     default:
       return false;
   }
