@@ -1330,7 +1330,7 @@ ReductionFusion::ComputeReductionCodegenInfo(
       // num_threads_x is a power of two, but it may be less than 32. If dim_y
       // is also small, we may have to increase the bound so the total number of
       // threads is a multiple of 32.
-      while ((num_threads_x * num_threads_y) % 32) ++num_threads_y;
+      while ((num_threads_x * num_threads_y) % 64) ++num_threads_y;
     } else {
       num_threads_y = kThreadsPerBlockTarget / num_threads_x;
     }
