@@ -671,33 +671,36 @@ absl::StatusOr<AutotuneResult> PickBestResult(
   // within them prefer algorithms that use the least amount of scratch memory.
   SortAutotuningResultsByRunTime(filtered_results);
 
-  constexpr absl::Duration kMeasurementError = absl::Microseconds(75);
+  constexpr absl::Duration kMeasurementError = absl::Microseconds(150);
+  absl::Duration top_time, default_time;  
+  int32_t top_id = 0, default_id = -1;
 
-  const auto& top_algo = filtered_results.front();
-  auto min_time = tsl::proto_utils::FromDurationProto(top_algo.run_time());
-  
-  uint32_t top_id = 0;
-  for(uint32_t i = 1; i < filtered_results.size(); i++) {
-    
+  for(uint32_t i = 0; i < filtered_results.size(); i++) {    
     const auto& res = filtered_results[i];
     uint32_t algo_id = res.gemm().algorithm();
     auto tm = tsl::proto_utils::FromDurationProto(res.run_time());
-
-    if(tm > min_time + kMeasurementError) break;
+    if(i == 0) top_time = tm;
+    else if(tm > top_time + kMeasurementError) break;
+    // we do not want to be slower than the default algorithm, so keep it
+    if(algo_id == se::blas::kDefaultAlgorithm) {
+      default_id = i;
+      default_time = tm;
+    }
     if(algo_id < (uint32_t)filtered_results[top_id].gemm().algorithm()) {
-      top_id = i;
+      top_id = i; // choose the one with the smallest ID
     }
     VLOG(1) << "gemm algorithm " << res.gemm().algorithm() << " took "
             << tsl::proto_utils::FromDurationProto(res.run_time());
   }
   const auto& selected = filtered_results[top_id];
+  if(default_id >= 0 && 
+        tsl::proto_utils::FromDurationProto(selected.run_time()) >
+        default_time) {
+    VLOG(1) << "Choosing default algorithm..";
+    return filtered_results[default_id];
+  }
   VLOG(1) << "Algorithm selected: " << selected.gemm().algorithm();
   return selected;
-  // auto top_within_error = TopResultsWithinMeasurementError(filtered_results);
-  // return *absl::c_min_element(top_within_error, [](const AutotuneResult& lhs,
-  //                                                  const AutotuneResult& rhs) {
-  //   return lhs.scratch_bytes() < rhs.scratch_bytes();
-  // });
 }
 
 }  // namespace gpu

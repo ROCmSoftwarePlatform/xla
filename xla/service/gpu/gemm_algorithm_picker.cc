@@ -91,7 +91,7 @@ class GemmAutotuner {
   // maximal number of tuning iterations for each solution
   constexpr static uint32_t s_max_tuning_iters = 10;
   // maximal running time in ms for each solution
-  constexpr static uint32_t s_max_running_time_ms = 30;
+  constexpr static uint32_t s_max_running_time_ms = 60;
 
   const AutotuneConfig& autotune_config_;
   se::DeviceMemoryBase lhs_buffer_, rhs_buffer_, output_buffer_;
