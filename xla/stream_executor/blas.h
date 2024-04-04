@@ -156,6 +156,9 @@ class ProfileResult {
  public:
   bool is_valid() const { return is_valid_; }
   void set_is_valid(bool val) { is_valid_ = val; }
+  bool is_fallback() const { return is_fallback_; }
+  void set_is_fallback(bool val) { is_fallback_ = val; }
+  
   AlgorithmType algorithm() const { return algorithm_; }
   void set_algorithm(AlgorithmType val) { algorithm_ = val; }
   float elapsed_time_in_ms() const { return elapsed_time_in_ms_; }
@@ -163,6 +166,7 @@ class ProfileResult {
 
  private:
   bool is_valid_ = false;
+  bool is_fallback_ = false;
   AlgorithmType algorithm_ = kDefaultAlgorithm;
   float elapsed_time_in_ms_ = std::numeric_limits<float>::max();
 };

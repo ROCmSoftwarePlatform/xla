@@ -375,8 +375,9 @@ private:
         continue;
       }
       i--, total_ms /= i; // skip the first warm-up iteration
-      VLOG(2) << "gemm algorithm " << profile_result.algorithm() << " took "
-            << total_ms << "ms, number of iterations: " << i;
+      VLOG(0) << "gemm algorithm " << profile_result.algorithm() << " took "
+            << total_ms << "ms, number of iterations: " << i 
+            << " fallback: " << profile_result.is_fallback();
 
       *result.mutable_run_time() = tsl::proto_utils::ToDurationProto(
           absl::Milliseconds(total_ms));
@@ -401,6 +402,7 @@ private:
         stream_->ThenMemcpy(&reference_buffer, output_buffer_,
                          output_buffer_.size());
         reference_algorithm = profile_result.algorithm();
+        VLOG(0) << "Setting reference algo: " << profile_result.algorithm();
       } else {
         // Perform the comparison.
         TF_ASSIGN_OR_RETURN(bool outputs_match,
@@ -567,7 +569,7 @@ absl::StatusOr<bool> RunOnInstruction(HloInstruction* gemm,
 
   if (update_algorithm) {
     if (algorithm.has_gemm()) {
-      VLOG(1) << "Selected algorithm: " << algorithm.gemm().algorithm();
+      VLOG(1) << "Final selected algorithm: " << algorithm.gemm().algorithm();
       backend_config.set_selected_algorithm(algorithm.gemm().algorithm());
     } else {
       backend_config.set_selected_algorithm(se::blas::kDefaultAlgorithm);

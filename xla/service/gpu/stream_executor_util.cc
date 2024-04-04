@@ -671,16 +671,20 @@ absl::StatusOr<AutotuneResult> PickBestResult(
   // within them prefer algorithms that use the least amount of scratch memory.
   SortAutotuningResultsByRunTime(filtered_results);
 
-  constexpr absl::Duration kMeasurementError = absl::Microseconds(150);
-  absl::Duration top_time, default_time;  
+  constexpr absl::Duration kMeasurementError = absl::Microseconds(100);
+  absl::Duration max_time, default_time; // maximal time to consider and default time  
   int32_t top_id = 0, default_id = -1;
-
+  constexpr float factor = 1.2; // consider solutions which are at most 20% worse than the best one
+ 
   for(uint32_t i = 0; i < filtered_results.size(); i++) {    
     const auto& res = filtered_results[i];
     uint32_t algo_id = res.gemm().algorithm();
     auto tm = tsl::proto_utils::FromDurationProto(res.run_time());
-    if(i == 0) top_time = tm;
-    else if(tm > top_time + kMeasurementError) break;
+    if(i == 0) {
+      max_time = std::min(tm * factor, tm + kMeasurementError);
+      VLOG(0) << "Considering algorithm within [" << tm << "; " << max_time << "] ms";
+    } 
+    else if(tm > max_time) break;
     // we do not want to be slower than the default algorithm, so keep it
     if(algo_id == se::blas::kDefaultAlgorithm) {
       default_id = i;
@@ -689,17 +693,17 @@ absl::StatusOr<AutotuneResult> PickBestResult(
     if(algo_id < (uint32_t)filtered_results[top_id].gemm().algorithm()) {
       top_id = i; // choose the one with the smallest ID
     }
-    VLOG(1) << "gemm algorithm " << res.gemm().algorithm() << " took "
+    VLOG(0) << "gemm algorithm " << res.gemm().algorithm() << " took "
             << tsl::proto_utils::FromDurationProto(res.run_time());
   }
   const auto& selected = filtered_results[top_id];
   if(default_id >= 0 && 
         tsl::proto_utils::FromDurationProto(selected.run_time()) >
         default_time) {
-    VLOG(1) << "Choosing default algorithm..";
+    VLOG(0) << "Choosing default algorithm..";
     return filtered_results[default_id];
   }
-  VLOG(1) << "Algorithm selected: " << selected.gemm().algorithm();
+  VLOG(0) << "Algorithm selected: " << selected.gemm().algorithm();
   return selected;
 }
 

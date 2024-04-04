@@ -115,15 +115,16 @@ TEST_F(SelectAndScatterTest, SelectAndScatterPerformance) {
   TF_ASSERT_OK_AND_ASSIGN(auto module, ParseAndReturnVerifiedModule(buffer.str(), 
           config));
 
-  auto fake_arguments = xla::MakeFakeArguments(module.get(), 
-        true, /*pseudo-random*/
-        false /* use large range*/).value();
-  auto arg_ptrs = MakePointerVector<xla::Literal>(fake_arguments);
-
   ErrorSpec error_spec{1e-2, 1e-3};
 #if 1
   auto ref_module = module->Clone();  
   TF_ASSERT_OK_AND_ASSIGN(auto exec, CreateExecutable(std::move(module), true));
+
+  auto fake_arguments = xla::MakeFakeArguments(ref_module.get(), 
+        true, /*pseudo-random*/
+        false /* use large range*/).value();
+  auto arg_ptrs = MakePointerVector<xla::Literal>(fake_arguments);
+
 
   auto& ref_runner = HloTestBase::reference_runner_;
   TF_ASSERT_OK_AND_ASSIGN(

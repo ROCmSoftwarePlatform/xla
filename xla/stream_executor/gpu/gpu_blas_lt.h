@@ -199,7 +199,7 @@ struct BlasLt {
     // returned in the order of increasing estimated compute time according to
     // an internal heuristic.
     virtual absl::StatusOr<std::vector<MatmulAlgorithm>> GetAlgorithms(
-        size_t max_algorithm_count = 128,
+        size_t max_algorithm_count = 256,
         size_t max_workspace_size = 1ll << 32) const = 0;
 
     virtual ~MatmulPlan() {}

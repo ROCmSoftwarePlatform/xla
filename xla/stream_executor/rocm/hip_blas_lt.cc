@@ -425,9 +425,13 @@ absl::Status BlasLt::MatmulPlan::DoMatmul(
     TF_ASSIGN_OR_RETURN(absl::Duration elapsed, timer->GetElapsedDuration());
     // set algorithm ID to be unique (otherwise it gets kDefaultAlgorithm ID)
     auto roc_algo = (const rocblaslt_matmul_algo *)palgo; 
-    auto pindex = (int *)roc_algo->data;
+    auto pindex = (const int32_t *)roc_algo->data;
+    // auto aa = pindex + 1;
+    // VLOG(0) << "index: " << *pindex << 
+    //      " fallback: " << roc_algo->fallback << " aa " << *aa;
     profile_result->set_algorithm(static_cast<blas::AlgorithmType>(*pindex));
     profile_result->set_is_valid(true);
+    profile_result->set_is_fallback(roc_algo->fallback);
     profile_result->set_elapsed_time_in_ms(absl::ToDoubleMilliseconds(elapsed));
   }
   return absl::OkStatus();
@@ -465,7 +469,7 @@ struct HipToNativeT<HIP_C_64F> {
 
 }  // namespace
 
-absl::Status BlasLt::MatmulPlan::ExecuteOnStream(
+absl::Status BlasLt::MatmulPlan::ExecuteOnStream( 
     Stream* stream, DeviceMemoryBase a, DeviceMemoryBase b, DeviceMemoryBase c,
     DeviceMemoryBase d, DeviceMemoryBase bias, DeviceMemoryBase aux,
     DeviceMemoryBase a_scale, DeviceMemoryBase b_scale,
