@@ -16,6 +16,7 @@ limitations under the License.
 #include <fstream>
 #include <sstream>
 #include "xla/error_spec.h"
+#include "xla/service/custom_call_target_registry.h"
 #include "xla/service/gpu/tests/gpu_codegen_test.h"
 #include "xla/tests/hlo_test_base.h"
 #include "xla/tests/test_utils.h"
@@ -100,6 +101,23 @@ tsl::StatusOr<xla::Literal> ReadLiteralFromProto(const std::string& name) {
 
   return xla::MutableLiteralBase::CreateFromProto(proto, true);
 }
+
+static void threefry2x32(void *op1, void *op2, void *op3, void *op4) {
+  VLOG(0) << "Calling hip_threefry2x32!!";
+}
+
+static std::string GpuPlatformName() {
+  return absl::AsciiStrToUpper(
+      xla::PlatformUtil::CanonicalPlatformName("gpu").value());
+}
+
+XLA_REGISTER_CUSTOM_CALL_TARGET_WITH_SYM(
+    "cu_threefry2x32",
+    threefry2x32, GpuPlatformName());
+
+XLA_REGISTER_CUSTOM_CALL_TARGET_WITH_SYM(
+    "hip_threefry2x32",
+    threefry2x32, GpuPlatformName());
 
 TEST_F(SelectAndScatterTest, SelectAndScatterPerformance) {
 
