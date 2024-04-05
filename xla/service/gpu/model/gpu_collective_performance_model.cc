@@ -39,7 +39,7 @@ namespace xla {
 namespace gpu {
 
 namespace {
-
+#if GOOGLE_CUDA
 int64_t GetNcclMaxNumChannels(
     GpuPerformanceWithCollectiveModel::CollectiveAlgo algorithm) {
   int64_t max_nchannels = 0;
@@ -114,9 +114,10 @@ float GetMaxSysBwFromGpu(const se::CudaComputeCapability cc,
   }
   return -1;
 }
+#endif // GOOGLE_CUDA
 
 }  // namespace
-
+#if GOOGLE_CUDA
 // Returns NVLink bw in GB/s
 /*static*/
 float GpuPerformanceWithCollectiveModel::GetNvlinkBw(
@@ -131,6 +132,7 @@ float GpuPerformanceWithCollectiveModel::GetNvlinkBw(
              ? kSm60NvlinkBandwidth
              : kSm80NvlinkBandwidth;
 }
+#endif 
 
 /*static*/ bool GpuPerformanceWithCollectiveModel::InitNvml() {
 #if GOOGLE_CUDA
@@ -204,42 +206,46 @@ GpuPerformanceWithCollectiveModel::ComputeAllreduceTime(
   // We use nccl group call to launch multiple allreduces so launch overhead
   // only occurs once.
   absl::Duration total_time = kNcclKernelLaunchOverhead;
+#if GOOGLE_CUDA
   stream_executor::CudaComputeCapability compute_cap =
       gpu_device_info.cuda_compute_capability();
+#elif TENSORFLOW_USE_ROCM
+  stream_executor::RocmComputeCapability compute_cap =
+      gpu_device_info.rocm_compute_capability();
+#endif
+  // int64_t size_of_speed_array = kIntraNodeSpeeds.size();
+  // int64_t size_of_sm90_speed_array = kIntraNodeSpeedsSm90.size();
 
-  int64_t size_of_speed_array = kIntraNodeSpeeds.size();
-  int64_t size_of_sm90_speed_array = kIntraNodeSpeedsSm90.size();
+  // int num_speeds = compute_cap.major >= se::CudaComputeCapability::HOPPER
+  //                      ? size_of_sm90_speed_array
+  //                      : size_of_speed_array;
+  // const double* speeds = compute_cap.major >= se::CudaComputeCapability::HOPPER
+  //                            ? kIntraNodeSpeedsSm90.data()
+  //                            : kIntraNodeSpeeds.data();
 
-  int num_speeds = compute_cap.major >= se::CudaComputeCapability::HOPPER
-                       ? size_of_sm90_speed_array
-                       : size_of_speed_array;
-  const double* speeds = compute_cap.major >= se::CudaComputeCapability::HOPPER
-                             ? kIntraNodeSpeedsSm90.data()
-                             : kIntraNodeSpeeds.data();
+  // int speed_index = 0;
+  // float max_sys_bw =
+  //     GetMaxSysBwFromGpu(compute_cap, kLowLatencyMaxBandwidths.data());
 
-  int speed_index = 0;
-  float max_sys_bw =
-      GetMaxSysBwFromGpu(compute_cap, kLowLatencyMaxBandwidths.data());
+  // CHECK_GT(max_sys_bw, 0);
 
-  CHECK_GT(max_sys_bw, 0);
-
-  while ((speed_index < num_speeds - 1) && speeds[speed_index] > max_sys_bw) {
-    speed_index++;
-  }
-  float bw_intra_node = speeds[speed_index];
+  // while ((speed_index < num_speeds - 1) && speeds[speed_index] > max_sys_bw) {
+  //   speed_index++;
+  // }
+  float bw_intra_node = 32; //speeds[speed_index];
   int64_t num_devices = cost_analysis->NumOfDevices(instr);
 
-  int64_t min_nchannels =
-      std::max(num_devices, GetMinNumberOfChannels(CollectiveAlgo::RING));
-  int64_t num_channels =
-      std::max(min_nchannels, GetNcclMaxNumChannels(CollectiveAlgo::RING));
-  int default_threads =
-      (bw_intra_node * num_channels <= kPciBandwidth) ? 256 : kLL128NumThreads;
+  // int64_t min_nchannels =
+  //     std::max(num_devices, GetMinNumberOfChannels(CollectiveAlgo::RING));
+  int64_t num_channels = 16;
+      // std::max(min_nchannels, GetNcclMaxNumChannels(CollectiveAlgo::RING));
+  // int default_threads =
+  //     (bw_intra_node * num_channels <= kPciBandwidth) ? 256 : kLL128NumThreads;
 
   int warp_size = gpu_device_info.threads_per_warp();
-  int num_threads = GetNumThreads(warp_size, kLL128NumThreads / 4,
-                                  kLL128NumThreads, default_threads);
-
+  // int num_threads = GetNumThreads(warp_size, kLL128NumThreads / 4,
+  //                                 kLL128NumThreads, default_threads);
+  int num_threads = 256;
   // Since channels are pipelined together, compute time will only occur as in a
   // single channel.
   absl::Duration compute_time_per_channel =
@@ -247,25 +253,25 @@ GpuPerformanceWithCollectiveModel::ComputeAllreduceTime(
                   cost_analysis->flop_count(instr) / num_channels, num_threads);
   total_time += compute_time_per_channel;
 
-  uint32_t supported_p2p = CheckIfNvlinkSupportsP2P();
+  // uint32_t supported_p2p = CheckIfNvlinkSupportsP2P();
 
-  if (supported_p2p == 0) {
-    VLOG(8) << "Nvlink doesn't support p2p communication. Model will "
-               "continue using default system bandwidth.";
-  } else {
-    VLOG(8) << "Nvlink supports p2p communication, setting intra node "
-               "bandwidth to nvlink bw.";
-    bw_intra_node = GetNvlinkBw(compute_cap);
-  }
+  // if (supported_p2p == 0) {
+  //   VLOG(8) << "Nvlink doesn't support p2p communication. Model will "
+  //              "continue using default system bandwidth.";
+  // } else {
+  //   VLOG(8) << "Nvlink supports p2p communication, setting intra node "
+  //              "bandwidth to nvlink bw.";
+  //   bw_intra_node = GetNvlinkBw(compute_cap);
+  // }
 
   double bus_bandwidth = bw_intra_node * num_channels;
 
   // Get per channel LL128 ring bandwidth
-  double per_channel_ring_ll128_Bw =
-      GetMaxSysBwFromGpu(compute_cap, kPerChannelMaxRingLL128Bandwidths.data());
+  // double per_channel_ring_ll128_Bw =
+  //     GetMaxSysBwFromGpu(compute_cap, kPerChannelMaxRingLL128Bandwidths.data());
 
-  bus_bandwidth = std::min(bus_bandwidth * kRingAlgorithmDiscountFactor,
-                           num_channels * per_channel_ring_ll128_Bw);
+  // bus_bandwidth = std::min(bus_bandwidth * kRingAlgorithmDiscountFactor,
+  //                          num_channels * per_channel_ring_ll128_Bw);
   double actual_bandwidth = bus_bandwidth * cost_analysis->ScalingRatio(instr);
 
   absl::Duration communication_time = absl::Microseconds(
