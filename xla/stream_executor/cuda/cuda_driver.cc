@@ -2386,6 +2386,18 @@ absl::StatusOr<int64_t> GpuDriver::GetMaxSharedMemoryPerBlockOptin(
   return true;
 }
 
+/* static */ absl::StatusOr<bool> GpuDriver::IsUnifiedAddressingEnabled(CUdevice device) {
+  int value = -1;
+  CUresult res =
+      cuDeviceGetAttribute(&value, CU_DEVICE_ATTRIBUTE_UNIFIED_ADDRESSING, device);
+  if (res != CUDA_SUCCESS) {
+        return absl::InternalError(
+        absl::StrFormat("failed to query UNIFIED_ADDRESSING status:  %s", ToString(result)));
+  }
+
+  return value != 0;
+}
+
 /* static */ bool GpuDriver::GetDeviceMemoryInfo(GpuContext* context,
                                                  int64_t* free_out,
                                                  int64_t* total_out) {

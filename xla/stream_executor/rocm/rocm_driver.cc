@@ -1979,6 +1979,18 @@ static absl::StatusOr<T> GetSimpleAttribute(hipDevice_t device,
   return true;
 }
 
+/* static */ absl::StatusOr<bool> GpuDriver::IsUnifiedAddressingEnabled(hipDevice_t device) {
+  int value = -1;
+  hipError_t res = wrap::hipDeviceGetAttribute(&value, hipDeviceAttributeUnifiedAddressing, device);
+
+  if (res != hipSuccess) {
+        return absl::InternalError(
+        absl::StrFormat("failed to query UNIFIED_ADDRESSING status:  %s", ToString(res)));
+  }
+
+  return value != 0;
+}
+
 /* static */ bool GetReservedMemory(uint64_t* reserve) {
   hipDeviceProp_t props;
   hipDevice_t dev;
