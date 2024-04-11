@@ -90,6 +90,7 @@ class GemmAutotuner {
   std::unique_ptr< se::RedzoneAllocator > redzone_allocator_;
   se::Stream *stream_ = nullptr;
   bool deterministic_ops_ = false;
+  size_t solutions_limit_ = 0;
   int64_t rng_state_ = 0;
 
 public:
@@ -109,6 +110,7 @@ public:
     const DebugOptions& debug_options =
                        gemm->GetModule()->config().debug_options();
     deterministic_ops_ = debug_options.xla_gpu_deterministic_ops();
+    solutions_limit_ = debug_options.xla_gpu_autotune_max_solutions();
 
     TF_ASSIGN_OR_RETURN(auto gemm_config, GemmConfig::For(gemm));
 
@@ -282,7 +284,10 @@ private:
     results.reserve(algorithms.size());
     std::optional<int64_t> reference_algorithm;
 
-    for (const AlgoT& algorithm : algorithms) {
+    auto num = algorithms.size();
+    if(solutions_limit_ > 0) num = std::min(num, solutions_limit_);
+    for (size_t i = 0; i < num; i++) {
+      const AlgoT& algorithm = algorithms[i];
       // Make sure the output buffer always has the same value if we use
       // the bias parameter.
       if (autotune_config_.should_reinit_output_buffer() && beta != 0) {

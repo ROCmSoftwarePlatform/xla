@@ -697,7 +697,9 @@ message DebugOptions {
 
   bool xla_gpu_enable_mlir_emitters = 275;
 
-  // Next id: 276
+  int64 xla_gpu_autotune_max_solutions = 276;
+
+  // Next id: 277
 
   // Extra options to pass to the compilation backend (e.g. LLVM); specific
   // interpretation of these values is left to the backend.

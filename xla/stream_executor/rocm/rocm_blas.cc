@@ -662,9 +662,10 @@ bool ROCMBlas::GetBlasGemmAlgorithms(
         ret != rocblas_status_success) {
       return ret;
     }
-    out_algorithms->resize(num_sols);
+    out_algorithms->resize(num_sols + 1);
+    (*out_algorithms)[0] = blas::kDefaultAlgorithm;
     for (rocblas_int i = 0; i < num_sols; i++) {
-      (*out_algorithms)[i] = solutions_[i];
+      (*out_algorithms)[i + 1] = solutions_[i];
     }
     return rocblas_status_success;
   };
