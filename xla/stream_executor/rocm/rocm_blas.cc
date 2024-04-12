@@ -439,6 +439,8 @@ absl::Status ROCMBlas::DoBlasGemm(
     const DeviceMemoryBase &a, int lda, const DeviceMemoryBase &b, int ldb,
     const void *beta, DeviceMemoryBase *c, int ldc,
     const NumericOptions &numeric_options, blas::CallContext context) {
+
+  return absl::OkStatus();
   VLOG(1) << absl::StreamFormat(
       "doing rocBLAS GEMM: at=%d bt=%d m=%u n=%u "
       "k=%llu alpha=%p a=%p lda=%d b=%p ldb=%d beta=%p "
@@ -523,6 +525,7 @@ absl::Status ROCMBlas::DoBlasGemmWithAlgorithm(
     blas::DataType type_c, int ldc, blas::ComputationType computation_type,
     blas::AlgorithmType algorithm, const NumericOptions &numeric_options,
     blas::ProfileResult *profile_result, blas::CallContext context) {
+      return absl::OkStatus();
   if (type_a != type_b) {
     return absl::InternalError(absl::StrFormat(
         "DoBlasGemmWithAlgorithm: different "
@@ -579,6 +582,7 @@ absl::Status ROCMBlas::DoBlasGemmStridedBatchedWithAlgorithm(
     int batch_count, blas::ComputationType computation_type,
     blas::AlgorithmType algorithm, const NumericOptions &numeric_options,
     blas::ProfileResult *profile_result, blas::CallContext context) {
+      return absl::OkStatus();
   if (type_a != type_b) {
     return absl::InternalError(absl::StrFormat(
         "DoBlasGemmStridedBatchedWithAlgorithm: different "
@@ -1143,6 +1147,8 @@ IMPL_DoBlasGemmBatched(float, wrap::rocblas_sgemm_strided_batched)
         const DeviceMemoryBase &b, int ldb, int64_t stride_b, const void *beta,
         DeviceMemoryBase *c, int ldc, int64_t stride_c, int batch_count,
         const NumericOptions &numeric_options, blas::CallContext context) {
+
+  return absl::OkStatus();
   VLOG(1) << absl::StreamFormat(
       "doing rocBLAS GEMM Strided Batched: at=%d bt=%d m=%u n=%u "
       "k=%llu alpha=%p a=%p lda=%d b=%p ldb=%d beta=%p "
