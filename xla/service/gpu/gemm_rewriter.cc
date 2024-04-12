@@ -2000,7 +2000,7 @@ absl::Status GemmWorkspaceRewriteVisitor::HandleCustomCall(
     // Pass a user-managed workspace to legacy cuBLAS operations, as
     // otherwise cuBLAS will use its own internal pool which will be competing
     // with XLA allocator for device memory.
-    int64_t workspace = cuda_cc == nullptr ? GemmConfig::kDefaultWorkspace
+    int64_t workspace = cuda_cc == nullptr ? GemmConfig::kHopperWorkspace
                         : cuda_cc->IsAtLeastHopper()
                             ? GemmConfig::kHopperWorkspace
                             : GemmConfig::kDefaultWorkspace;
