@@ -1098,7 +1098,13 @@ struct BitPatternToValue {
     unsigned int block_dim_z, unsigned int shared_mem_bytes,
     GpuStreamHandle stream, void** kernel_params, void** extra) {
   ScopedActivateContext activation{context};
-  VLOG(2) << "launching kernel: " << kernel_name << "; gdx: " << grid_dim_x
+
+  // if(kernel_name.find("fusion") == std::string::npos ||
+  //   kernel_name.find("transpose") == std::string::npos ||
+  //   kernel_name.find("input") == std::string::npos)
+  return absl::OkStatus();
+
+  VLOG(0) << "launching kernel: " << kernel_name << "; gdx: " << grid_dim_x
           << " gdy: " << grid_dim_y << " gdz: " << grid_dim_z
           << " bdx: " << block_dim_x << " bdy: " << block_dim_y
           << " bdz: " << block_dim_z << " smem: " << shared_mem_bytes;
