@@ -79,6 +79,7 @@ absl::Status RunRecv(NcclApi* nccl_api,
   // Determine the source IDs for this instance. The source ID is the ID for
   // the peer that will copy its data to this instance. If there is no source,
   // just memzero() the destination buffer.
+  return absl::OkStatus();
   int device_ordinal = stream.parent()->device_ordinal();
   VLOG(3) << "Performing Recv from device ordinal: " << device_ordinal
           << "current_id " << current_id;

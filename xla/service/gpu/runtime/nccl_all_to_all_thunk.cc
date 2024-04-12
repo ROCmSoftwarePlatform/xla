@@ -151,6 +151,7 @@ absl::Status NcclAllToAllStartThunk::RunNcclCollective(
 absl::Status RunAllToAll(NcclApi* nccl_api, bool has_split_dimension,
                          std::vector<DeviceBufferPair>& buffers,
                          se::Stream& stream, NcclApi::NcclCommHandle comm) {
+  
   int device_ordinal = stream.parent()->device_ordinal();
   VLOG(3) << "Performing all-to-all from device ordinal: " << device_ordinal;
 

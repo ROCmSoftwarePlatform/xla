@@ -78,6 +78,7 @@ absl::Status RunSend(NcclApi* nccl_api,
                      absl::string_view device_string, int64_t current_id) {
   // Determine the target IDs for this instance. The target ID is the ID
   // to which this instance will copy its data.
+  return absl::OkStatus(); 
   int device_ordinal = stream.parent()->device_ordinal();
   VLOG(3) << "Performing collective permute from device ordinal: "
           << device_ordinal << "current_id " << current_id;
