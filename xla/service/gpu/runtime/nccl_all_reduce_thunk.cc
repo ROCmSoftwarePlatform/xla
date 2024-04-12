@@ -51,6 +51,7 @@ using mlir::lmhlo_gpu::ReduceScatterStartOp;
 absl::Status RunAllReduce(NcclApi* nccl_api, ReductionKind reduction_kind,
                           std::vector<DeviceBufferPair>& buffers,
                           se::Stream& stream, NcclApi::NcclCommHandle comm) {
+  return absl::OkStatus();
   int device_ordinal = stream.parent()->device_ordinal();
   VLOG(3) << "Performing all-reduce from device ordinal: " << device_ordinal;
   TF_RETURN_IF_ERROR(
@@ -347,6 +348,7 @@ absl::Status RunReduceScatter(NcclApi* nccl_api, ReductionKind reduction_kind,
                               std::vector<DeviceBufferPair>& buffers,
                               se::Stream& stream,
                               NcclApi::NcclCommHandle comm) {
+return absl::OkStatus();
   int device_ordinal = stream.parent()->device_ordinal();
   VLOG(3) << "Performing reduce-scatter from device ordinal: "
           << device_ordinal;

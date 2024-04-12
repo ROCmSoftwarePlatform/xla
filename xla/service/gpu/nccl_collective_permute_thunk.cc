@@ -170,7 +170,7 @@ absl::Status RunCollectivePermute(
   //     src.
   //
   //
-
+  return absl::OkStatus();
   int device_ordinal = stream.parent()->device_ordinal();
   VLOG(3) << "Performing collective permute from device ordinal: "
           << device_ordinal << "current_id " << current_id;
