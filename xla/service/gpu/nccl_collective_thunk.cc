@@ -56,6 +56,7 @@ limitations under the License.
 #include "xla/stream_executor/event.h"
 #include "xla/stream_executor/gpu/gpu_activation.h"
 #include "xla/stream_executor/gpu/gpu_stream.h"
+#include "xla/stream_executor/gpu/gpu_driver.h"
 #include "xla/stream_executor/stream.h"
 #include "xla/util.h"
 #include "tsl/platform/errors.h"
@@ -152,18 +153,23 @@ NcclTimerHistogram::~NcclTimerHistogram() {
     }
     ofs << '\n';
   }
+#if 0
+  GpuContext* context = parent_->gpu_context();
+  for(auto& info : infos_) {
+    if(info.start_event != nullptr) {
+      GpuDriver::DestroyEvent(context, &info.start_event);
+    }
+    if(info.stop_event != nullptr) {
+      GpuDriver::DestroyEvent(context, &info.stop_event);
+    }
+  }
+#endif  
 }
 
 absl::Status NcclTimerHistogram::Measure(se::Stream& s, const std::vector<DeviceBufferPair>& buffers, 
         absl::AnyInvocable<absl::Status()> func)
 {
-  TF_ASSIGN_OR_RETURN(auto tm, se::gpu::GpuTimer::Create(&s));
-  auto res = func();
-
-  qcclSyncGPUs(se::gpu::AsGpuStreamValue(&s));
-
-  TF_ASSIGN_OR_RETURN(auto duration, tm.GetElapsedDuration());
-  auto usec = absl::ToInt64Microseconds(duration);
+  using se::gpu::GpuDriver;
 
   uint32_t devID = s.parent()->device_ordinal();
   if(devID >= infos_.size()) {
@@ -171,6 +177,32 @@ absl::Status NcclTimerHistogram::Measure(se::Stream& s, const std::vector<Device
     return absl::InternalError("oops");
   }
   auto& info = infos_[devID];
+  auto gstream = se::gpu::AsGpuStream(&s);
+  auto handle = gstream->gpu_stream();
+  auto context = gstream->parent()->gpu_context();
+  if(info.start_event == nullptr || info.stop_event == nullptr) {
+    TF_RETURN_IF_ERROR(GpuDriver::InitEvent(context, &info.start_event,
+                                          GpuDriver::EventFlags::kDefault));
+    TF_RETURN_IF_ERROR(GpuDriver::InitEvent(context, &info.stop_event,
+                                          GpuDriver::EventFlags::kDefault));
+  }
+  s.BlockHostUntilDone();
+  //TF_ASSIGN_OR_RETURN(auto tm, se::gpu::GpuTimer::Create(&s));
+ TF_RETURN_IF_ERROR(GpuDriver::RecordEvent(context, info.start_event,
+                                            handle));
+
+  qcclSyncGPUs(handle);
+  
+  TF_RETURN_IF_ERROR(GpuDriver::RecordEvent(context, info.stop_event,
+                                            handle));
+  float elapsed_ms = NAN;
+  if (!GpuDriver::GetEventElapsedTime(context, &elapsed_ms, info.start_event,
+                                      info.stop_event)) {
+    return absl::InternalError("Error stopping the timer");
+  }
+  auto usec = (uint64_t)(elapsed_ms * 1000);
+  auto res = func();
+
   info.total_usec += usec;
   size_t sz = 0;
   if(!buffers.empty()) {

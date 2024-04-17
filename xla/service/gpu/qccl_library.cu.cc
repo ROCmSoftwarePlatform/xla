@@ -628,11 +628,13 @@ QCCL_Result qcclRun(uint32_t ID, hipStream_t stream) {
 __global__ void gpuSyncKernel(uint32_t *exchangePtr) { 
 
   constexpr uint32_t NumGpus = 8;
-  uint32_t val = atomicAdd(exchangePtr, 1);
-  // spin until all GPUs sync..
-  while(val % NumGpus != 0) {
-    __builtin_amdgcn_s_sleep(1);
-    val = atomicAdd(exchangePtr, 0);
+  if(threadIdx.x == 0) {
+    uint32_t val = 1 + atomicAdd(exchangePtr, 1);
+    // spin until all GPUs sync..
+    while(val % NumGpus != 0) {
+      //__builtin_amdgcn_s_sleep(1);
+      val = ATOMIC_LOAD(exchangePtr);
+    }
   }
 }
 
@@ -654,6 +656,7 @@ struct GpuSync {
       CHK(hipSetDevice(0));
       CHK(hipExtMallocWithFlags((void **)&sharedPtr_, 16, 
         hipDeviceMallocFinegrained));
+      CHK(hipMemset(sharedPtr_, 0, 16));
     }
     return QCCL_Result::OK;
   }

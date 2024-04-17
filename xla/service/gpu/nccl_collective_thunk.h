@@ -295,7 +295,7 @@ Status MaybeRegisterBuffers(NcclApi* nccl_api, int device_ordinal,
 struct NcclTimerHistogram {
 
   constexpr static const uint32_t HistoSz = 256;
-  constexpr static const int64_t MaxUsec = 200000; // 0.2 seconds maximal
+  constexpr static const uint64_t MaxUsec = 200000; // 0.2 seconds maximal
 
   NcclTimerHistogram(uint32_t nGpus, const std::string& name);
   ~NcclTimerHistogram();
@@ -305,6 +305,8 @@ struct NcclTimerHistogram {
 private:
   std::string name_;
   struct Info {
+    se::gpu::GpuEventHandle start_event = nullptr;
+    se::gpu::GpuEventHandle stop_event = nullptr;
     uint64_t total_usec = 0;
     std::vector< uint32_t > time_histo;
     std::vector< std::tuple<uint32_t, uint32_t> > time_seq;
