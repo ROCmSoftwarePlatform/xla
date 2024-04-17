@@ -23,6 +23,7 @@ limitations under the License.
 #include <tuple>
 #include <utility>
 #include <vector>
+#include <fstream>
 
 #include "absl/algorithm/container.h"
 #include "absl/base/thread_annotations.h"
@@ -65,6 +66,120 @@ limitations under the License.
 
 namespace xla {
 namespace gpu {
+
+static absl::StatusOr< size_t > Type2Size(PrimitiveType type) {
+  switch (type) {
+    case S8:
+    case U8:
+      return 1;
+    case S32:
+    case U32:
+    case F32:
+      return 4;
+    case S64:
+    case U64:
+    case C64:
+    case F64:
+      return 8;
+    case F16:
+    case S16:
+    case U16:
+    case BF16:    
+      return 2;
+    case C128:
+      return 16;
+    default:;
+  }
+  return absl::InternalError("Invalid type");
+}
+
+static void PrintBytes(std::ostream& os, size_t bytes) {
+  if(bytes < 1024) {
+    os << bytes;
+  } else if(bytes < 1024*1024) {
+    os << ((double)bytes / 1024) << 'k';
+  } else {
+    os << ((double)bytes / (1024*1024)) << 'M';
+  }
+}
+
+NcclTimerHistogram::NcclTimerHistogram(uint32_t nGpus, const std::string& name) :
+  name_(name), infos_(nGpus) {
+
+  for(auto& info : infos_) {
+    info.total_usec = 0;
+    info.time_histo.resize(HistoSz, 0);
+    info.time_seq.reserve(0x20000);
+  }
+}
+
+NcclTimerHistogram::~NcclTimerHistogram() {
+  std::ofstream ofs("nccl_timer_" + name_ + ".csv");
+
+  ofs << "Range ";
+  for(uint32_t i = 0; i < infos_.size(); i++) {
+    ofs << " , GPU" << i;
+  }
+  ofs << "\nTotal ms ";
+  for(const auto& info : infos_) {
+    ofs << " , " << (double)info.total_usec / 1000;
+  }
+  ofs << '\n';
+  for(int j = 0; j < HistoSz; j++) {
+    auto l = (double)j * MaxUsec / HistoSz,
+         r = (double)(j+1) * MaxUsec / HistoSz;
+    ofs << "[" << l << "; " << r << "] usec ";
+    for(const auto& info : infos_) {
+      auto h = info.time_histo[j];
+      ofs << " , ";
+      if(h > 0) ofs << h;
+      else ofs << '.';
+    }
+    ofs << '\n';
+  }
+  ofs << "\n, ========================== individual timings per GPU : time (message size in bytes )==========================\n";
+  for(uint32_t i = 0; i < infos_[0].time_seq.size(); i++) {
+    ofs << (i + 1);
+    for(const auto& info : infos_) {
+
+      auto [v, sz] = i < info.time_seq.size() ? info.time_seq[i] 
+                : std::tuple(0xFFFFFFFFu, 0u);
+      ofs << " , " << v << " (";
+      PrintBytes(ofs, sz);
+      ofs << ')';
+    }
+    ofs << '\n';
+  }
+}
+
+absl::Status NcclTimerHistogram::Measure(se::Stream& s, const std::vector<DeviceBufferPair>& buffers, 
+        absl::AnyInvocable<absl::Status()> func)
+{
+  TF_ASSIGN_OR_RETURN(auto tm, se::gpu::GpuTimer::Create(&s));
+  auto res = func();
+
+  TF_ASSIGN_OR_RETURN(auto duration, tm.GetElapsedDuration());
+  auto usec = absl::ToInt64Microseconds(duration);
+
+  uint32_t devID = s.parent()->device_ordinal();
+  if(devID >= infos_.size()) {
+    LOG(ERROR) << "Invalid device ID: " << devID;
+    return absl::InternalError("oops");
+  }
+  auto& info = infos_[devID];
+  info.total_usec += usec;
+  size_t sz = 0;
+  if(!buffers.empty()) {
+    TF_ASSIGN_OR_RETURN(sz, Type2Size(buffers[0].element_type)); 
+    sz *= buffers[0].element_count;
+  }
+  info.time_seq.emplace_back((uint32_t)usec, sz);
+  usec = std::min(usec, MaxUsec-1);
+  auto bin = (usec * HistoSz) / MaxUsec;
+  info.time_histo[bin]++;
+  return res;
+}
+
 namespace {
 
 static constexpr int64_t kCollectiveMemorySpaceColor = 1;

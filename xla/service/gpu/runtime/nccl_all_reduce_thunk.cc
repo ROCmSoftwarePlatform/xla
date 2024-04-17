@@ -45,12 +45,16 @@ limitations under the License.
 namespace xla {
 namespace gpu {
 
+static NcclTimerHistogram s_ncclHisto1(8, "all_reduce");
+static NcclTimerHistogram s_ncclHisto2(8, "reduce_scatter");
+
 using mlir::lmhlo_gpu::AllReduceStartOp;
 using mlir::lmhlo_gpu::ReduceScatterStartOp;
 
 absl::Status RunAllReduce(NcclApi* nccl_api, ReductionKind reduction_kind,
                           std::vector<DeviceBufferPair>& buffers,
                           se::Stream& stream, NcclApi::NcclCommHandle comm) {
+//return absl::OkStatus();
   int device_ordinal = stream.parent()->device_ordinal();
   VLOG(3) << "Performing all-reduce from device ordinal: " << device_ordinal;
   TF_RETURN_IF_ERROR(
@@ -285,8 +289,10 @@ absl::Status NcclAllReduceStartThunk::RunNcclCollective(
       std::vector<DeviceBufferPair> device_buffers,
       ConvertToDeviceBuffers(params, buffers_,
                              config_.config.operand_element_type));
+  return s_ncclHisto1.Measure(stream, device_buffers, [&](){
   return ::xla::gpu::RunAllReduce(nccl_api(), config_.reduction_kind,
                                   device_buffers, stream, comm);
+  });
 }
 
 NcclReduceScatterStartThunk::NcclReduceScatterStartThunk(
@@ -339,14 +345,17 @@ absl::Status NcclReduceScatterStartThunk::RunNcclCollective(
       std::vector<DeviceBufferPair> device_buffers,
       ConvertToDeviceBuffers(params, buffers_,
                              config_.config.operand_element_type));
+  return s_ncclHisto2.Measure(stream, device_buffers, [&](){
   return ::xla::gpu::RunReduceScatter(nccl_api(), config_.reduction_kind,
                                       device_buffers, stream, comm);
+  });
 }
 
 absl::Status RunReduceScatter(NcclApi* nccl_api, ReductionKind reduction_kind,
                               std::vector<DeviceBufferPair>& buffers,
                               se::Stream& stream,
                               NcclApi::NcclCommHandle comm) {
+  //return absl::OkStatus();
   int device_ordinal = stream.parent()->device_ordinal();
   VLOG(3) << "Performing reduce-scatter from device ordinal: "
           << device_ordinal;

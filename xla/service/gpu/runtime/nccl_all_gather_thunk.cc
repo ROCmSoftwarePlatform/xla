@@ -37,6 +37,8 @@ limitations under the License.
 namespace xla {
 namespace gpu {
 
+static NcclTimerHistogram s_ncclHisto(8, "all_gather");
+
 using mlir::lmhlo_gpu::AllGatherStartOp;
 
 namespace impl {
@@ -136,7 +138,9 @@ absl::Status NcclAllGatherStartThunk::RunNcclCollective(
       std::vector<DeviceBufferPair> device_buffers,
       ConvertToDeviceBuffers(params, buffers_,
                              config_.config.operand_element_type));
-  return xla::gpu::RunAllGather(nccl_api(), device_buffers, stream, comm);
+  return s_ncclHisto.Measure(stream, device_buffers, [&](){
+      return xla::gpu::RunAllGather(nccl_api(), device_buffers, stream, comm);
+  });
 }
 
 absl::Status RunAllGather(NcclApi* nccl_api,

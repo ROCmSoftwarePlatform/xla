@@ -48,6 +48,7 @@ limitations under the License.
 #include "xla/stream_executor/device_memory.h"
 #include "xla/stream_executor/event.h"
 #include "xla/stream_executor/stream.h"
+#include "xla/stream_executor/gpu/gpu_timer.h"
 #include "xla/translate/mhlo_to_hlo/attribute_exporter.h"
 #include "xla/xla_data.pb.h"
 
@@ -290,6 +291,26 @@ absl::StatusOr<std::vector<DeviceBufferPair>> ConvertToDeviceBuffers(
 Status MaybeRegisterBuffers(NcclApi* nccl_api, int device_ordinal,
                             const std::vector<DeviceBufferPair>& buffers,
                             NcclApi::NcclCommHandle comm);
+
+struct NcclTimerHistogram {
+
+  constexpr static const uint32_t HistoSz = 256;
+  constexpr static const int64_t MaxUsec = 200000; // 0.2 seconds maximal
+
+  NcclTimerHistogram(uint32_t nGpus, const std::string& name);
+  ~NcclTimerHistogram();
+
+  absl::Status Measure(se::Stream& s, const std::vector<DeviceBufferPair>& buffers, 
+        absl::AnyInvocable<absl::Status()> func);
+private:
+  std::string name_;
+  struct Info {
+    uint64_t total_usec = 0;
+    std::vector< uint32_t > time_histo;
+    std::vector< std::tuple<uint32_t, uint32_t> > time_seq;
+  };
+  std::vector< Info > infos_;
+};
 
 }  // namespace gpu
 }  // namespace xla

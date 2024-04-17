@@ -41,6 +41,8 @@ limitations under the License.
 namespace xla {
 namespace gpu {
 
+static NcclTimerHistogram s_ncclHisto(8, "collective_permute");
+
 NcclCollectivePermuteStartThunk::NcclCollectivePermuteStartThunk(
     ThunkInfo thunk_info, NcclApi* nccl_api,
     const HloCollectivePermuteInstruction* instr, int64_t replica_count,
@@ -138,9 +140,11 @@ absl::Status NcclCollectivePermuteStartThunk::RunNcclCollective(
   const NcclP2PConfig::SourceTargetMapEntry source_target =
       NcclP2PConfig::GetSourceTarget(config_.id_to_source_target, current_id);
 
-  return ::xla::gpu::RunCollectivePermute(nccl_api(), source_target,
+  return s_ncclHisto.Measure(stream, device_buffers, [&](){
+    return ::xla::gpu::RunCollectivePermute(nccl_api(), source_target,
                                           device_buffers[0], stream, comm,
                                           device_string, current_id);
+  });
 }
 
 absl::Status RunCollectivePermute(

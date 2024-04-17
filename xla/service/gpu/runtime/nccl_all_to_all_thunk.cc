@@ -42,6 +42,8 @@ limitations under the License.
 namespace xla {
 namespace gpu {
 
+static NcclTimerHistogram s_ncclHisto(8, "all_to_all");
+
 using mlir::lmhlo_gpu::AllToAllStartOp;
 
 namespace {
@@ -144,14 +146,19 @@ absl::Status NcclAllToAllStartThunk::RunNcclCollective(
       std::vector<DeviceBufferPair> device_buffers,
       ConvertToDeviceBuffers(params, buffers_,
                              config_.config.operand_element_type));
+  
+  return s_ncclHisto.Measure(stream, device_buffers, [&](){
   return xla::gpu::RunAllToAll(nccl_api(), config_.has_split_dimension,
                                device_buffers, stream, comm);
+  });
 }
 
 absl::Status RunAllToAll(NcclApi* nccl_api, bool has_split_dimension,
                          std::vector<DeviceBufferPair>& buffers,
                          se::Stream& stream, NcclApi::NcclCommHandle comm) {
+
   int device_ordinal = stream.parent()->device_ordinal();
+
   VLOG(3) << "Performing all-to-all from device ordinal: " << device_ordinal;
 
   TF_ASSIGN_OR_RETURN(int32_t num_participants, nccl_api->CommCount(comm));
