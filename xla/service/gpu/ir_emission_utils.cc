@@ -38,6 +38,7 @@ limitations under the License.
 #include "llvm/IR/FPEnv.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Intrinsics.h"
+#include "llvm/IR/IntrinsicsAMDGPU.h"
 #include "llvm/IR/IntrinsicsNVPTX.h"
 #include "llvm/IR/Type.h"
 #include "llvm/IR/Value.h"
@@ -188,13 +189,18 @@ llvm::Value* EmitAMDGPUShflDown(llvm::Value* value, llvm::Value* offset,
   llvm::Module* module = b->GetInsertBlock()->getModule();
   CHECK_EQ(value->getType()->getPrimitiveSizeInBits(), 32);
   auto* i32_ty = b->getInt32Ty();
-  llvm::FunctionCallee shfl_fn = module->getOrInsertFunction(
-      llvm_ir::AsStringRef("__ockl_readuplane_i32"),
-      llvm::FunctionType::get(/*Result=*/i32_ty, {i32_ty, i32_ty},
-                              /*isVarArg=*/false));
-  // AMDGPU device function requires first argument as i32.
+  llvm::FunctionCallee lane_id_fn =
+      module->getOrInsertFunction(llvm_ir::AsStringRef("__ockl_lane_u32"),
+                                  llvm::FunctionType::get(/*Result=*/i32_ty, {},
+                                                          /*isVarArg=*/false));
+
+  llvm::Value* lane_id = b->CreateCall(lane_id_fn);
+  llvm::Value* shfl_idx = b->CreateAdd(lane_id, offset);
+  shfl_idx = b->CreateMul(shfl_idx, llvm::ConstantInt::get(i32_ty, 4));
+  llvm::Function* permute_fn = llvm::Intrinsic::getDeclaration(
+      module, llvm::Intrinsic::amdgcn_ds_bpermute, {});
   llvm::Value* result =
-      b->CreateCall(shfl_fn, {b->CreateBitCast(value, i32_ty), offset});
+      b->CreateCall(permute_fn, {shfl_idx, b->CreateBitCast(value, i32_ty)});
   // AMDGPU device function always returns an i32 type.
   return b->CreateBitCast(result, value->getType());
 }

@@ -703,11 +703,11 @@ void ReductionFusion::ReductionGroupEmitter::
   // This only works when the block size is a multiple of 32 threads.
   // We check this here as a mistake in the number of threads per
   // block is very hard to detect.
-  CHECK_EQ(threads_per_block % 32, 0);
+  CHECK_EQ(threads_per_block % WarpSize(), 0);
   CHECK_EQ(WarpSize() % num_results_per_warp, 0);
 
   auto* builder = reduction_emitter_.builder_;
-  for (int distance = 16 / num_results_per_warp; distance >= 1; distance /= 2) {
+  for (int distance = (WarpSize() / 2) / num_results_per_warp; distance >= 1; distance /= 2) {
     absl::InlinedVector<llvm::Value*, 2> reduction_params;
 
     for (auto acc : partial_result_addresses) {
@@ -1330,7 +1330,7 @@ ReductionFusion::ComputeReductionCodegenInfo(
       // num_threads_x is a power of two, but it may be less than 32. If dim_y
       // is also small, we may have to increase the bound so the total number of
       // threads is a multiple of 32.
-      while ((num_threads_x * num_threads_y) % 32) ++num_threads_y;
+      while ((num_threads_x * num_threads_y) % WarpSize()) ++num_threads_y;
     } else {
       num_threads_y = kThreadsPerBlockTarget / num_threads_x;
     }
