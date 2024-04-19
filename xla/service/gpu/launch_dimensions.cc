@@ -55,7 +55,7 @@ static int64_t ThreadsPerBlockLimit(
     threads_per_block = gpu_device_info.threads_per_warp();
     if (threads_per_block == 0) {
       // Fall back to *something* if we can't even get num threads per warp.
-      threads_per_block = 32;
+      threads_per_block = 64;
     }
   }
   return threads_per_block;
@@ -119,7 +119,7 @@ BlockSizes GetBlockSizes(LaunchDimensionsConfig dim_config,
           ? threads_per_block_row_vectorized
           : RoundUpTo(ThreadsPerBlockLimit(gpu_device_info) /
                           dim_config.unroll_factor,
-                      int64_t{32});
+                      int64_t{64});
   result.threads_per_block_x = std::min(num_elements, max_threads_per_block_x);
   // threads_per_block_y > 1 when we row vectorize and have small row size.
   result.threads_per_block_y =
@@ -140,7 +140,7 @@ BlockSizes GetBlockSizes(LaunchDimensionsConfig dim_config,
       // looking at the arithmetic intensity of the kernels can specialize the
       // multiple per kernel.
       int64_t max_block_count =
-          32 * gpu_device_info.core_count() *
+          64 * gpu_device_info.core_count() *
           (gpu_device_info.threads_per_core_limit() /
            (result.threads_per_block_x * result.threads_per_block_y));
       int64_t capped_block_count = result.block_count;

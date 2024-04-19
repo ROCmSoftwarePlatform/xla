@@ -172,7 +172,7 @@ void EmitTile(llvm::IRBuilder<>* builder, const Tiling& tiling,
 // scheme.
 absl::StatusOr<TilingKernelInfo> EmitTilingKernel(
     llvm::IRBuilder<>* builder, const Tiling& tiling, llvm::Type* index_ty,
-    const TileGenerator& tile_element_generator);
+    const TileGenerator& tile_element_generatorm, const int wpsize);
 
 }  // namespace gpu
 }  // namespace xla

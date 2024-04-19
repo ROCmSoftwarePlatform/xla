@@ -56,8 +56,9 @@ namespace gpu {
 namespace {
 
 Tiling ComputeTransposeTiling(const TransposeDescription& tiled_transpose) {
-  constexpr int kNumRows = 4;
-  static_assert(WarpSize() % kNumRows == 0);
+  constexpr int kNumRows = 8;
+  constexpr int WarpSize = 64;
+  static_assert(WarpSize % kNumRows == 0);
 
   // 3D view over the output shape.
   Vector3 transposed_dims = tiled_transpose.dimensions;
@@ -73,8 +74,8 @@ Tiling ComputeTransposeTiling(const TransposeDescription& tiled_transpose) {
 
   // We tile along the minor dimensions pre- and post-transpose.
   absl::InlinedVector<int64_t, 4> tile_sizes{1, 1, 1};
-  tile_sizes[permutation[2]] = WarpSize() / kNumRows;
-  absl::InlinedVector<int64_t, 4> num_threads{1, 1, WarpSize()};
+  tile_sizes[permutation[2]] = WarpSize / kNumRows;
+  absl::InlinedVector<int64_t, 4> num_threads{1, 1, WarpSize};
   num_threads[permutation[2]] = kNumRows;
 
   return Tiling(input_dims, tile_sizes, num_threads);
@@ -274,7 +275,7 @@ absl::Status TransposeFusion::EmitKernel(IrEmitterContext& ir_emitter_context,
 
   llvm::Type* index_type =
       GetIndexTypeForKernel(&fusion, launch_dims.launch_bound(), builder);
-  return EmitTilingKernel(builder, tiling_, index_type, tile_generator)
+  return EmitTilingKernel(builder, tiling_, index_type, tile_generator, 64)
       .status();
 }
 
