@@ -210,13 +210,22 @@ absl::StatusOr<llvm::Value*> EmitReducePrecisionIR(
 
 absl::StatusOr<llvm::Value*> DefaultEmitF32ToBF16Impl(llvm::Value* f32_value,
                                                       llvm::IRBuilder<>* b) {
-  TF_ASSIGN_OR_RETURN(
-      auto reduced_precision,
-      EmitReducePrecisionIR(
-          /*src_ty=*/F32, f32_value,
-          /*dest_exponent_bits=*/primitive_util::ExponentWidth(BF16),
-          /*dest_mantissa_bits=*/primitive_util::SignificandWidth(BF16) - 1,
-          /*quiet_nans=*/true, b));
+  static bool only_trunc = []() -> bool {
+    auto var = std::getenv("TRUNCATE_F32_TO_BF16");
+    return var &&
+           (std::strcmp(var, "false") == 0 || std::strcmp(var, "0") == 0);
+  }();
+
+  auto reduced_precision = f32_value;
+  if (!only_trunc) {
+    TF_ASSIGN_OR_RETURN(
+        auto reduced_precision,
+        EmitReducePrecisionIR(
+            /*src_ty=*/F32, f32_value,
+            /*dest_exponent_bits=*/primitive_util::ExponentWidth(BF16),
+            /*dest_mantissa_bits=*/primitive_util::SignificandWidth(BF16) - 1,
+            /*quiet_nans=*/true, b));
+  }
   auto as_int32 = b->CreateBitCast(reduced_precision, b->getInt32Ty());
   auto shifted = b->CreateLShr(as_int32, 16);
   auto truncated = b->CreateTrunc(shifted, b->getInt16Ty());
