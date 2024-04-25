@@ -88,11 +88,6 @@ absl::StatusOr<BlasLt::Epilogue> AsBlasLtEpilogue(
 
 class GemmAutotuner {
 
-  // maximal number of tuning iterations for each solution
-  constexpr static uint32_t s_max_tuning_iters = 10;
-  // maximal running time in ms for each solution
-  constexpr static uint32_t s_max_running_time_ms = 30;
-
   const AutotuneConfig& autotune_config_;
   se::DeviceMemoryBase lhs_buffer_, rhs_buffer_, output_buffer_;
   std::unique_ptr< se::RedzoneAllocator > redzone_allocator_;
@@ -162,8 +157,7 @@ public:
     auto blaslt_time = tsl::proto_utils::FromDurationProto(
                                              blaslt_result.value().run_time());    
     if(blaslt_time > blas_time) {
-      VLOG(1) << "Rewriting to blas-lt (" << blaslt_time << ") to blas (" <<
-            blas_time << ") call";
+      VLOG(2) << "Rewriting to blas$gemm custom call";
       blas_result.value().mutable_gemm()->set_needs_rewrite(true);
       return blas_result;
     }
@@ -197,6 +191,12 @@ private:
     const auto& output_shape = GetOutputShape(gemm), &bias_shape = bias->shape();
     int rank_dif = output_shape.rank() - bias_shape.rank();
     if (rank_dif > 0) {
+      // for(int i = 0; i < bias_shape.rank(); i++) {
+      //   VLOG(0) << i << " bias_layout: " << bias_shape.layout().minor_to_major(i);
+      // }
+      // for(int i = 0; i < output_shape.rank(); i++) {
+      //   VLOG(0) << i << " dot_layout: " << output_shape.layout().minor_to_major(i);
+      // }
       for(int i = 0; i < bias_shape.rank(); i++) {
         if(output_shape.dimensions(i + rank_dif) != bias_shape.dimensions(i)) {
           VLOG(1) << "Bias shape dimensions disagree: aborting rewrite!";
@@ -354,32 +354,21 @@ private:
         InitializeBuffer(stream_, output_shape.element_type(), &rng_state,
                        output_buffer_);
       }
+      TF_ASSIGN_OR_RETURN(auto profile_result, run_benchmark(algorithm));
 
-      uint32_t i = 0;
-      float total_ms = 0;
-      se::blas::ProfileResult profile_result;
-      for(i = 0; i <= s_max_tuning_iters && 
-                                    total_ms < s_max_running_time_ms; i++) {
-        TF_ASSIGN_OR_RETURN(profile_result, run_benchmark(algorithm));
-        if (!profile_result.is_valid()) {  // Unsupported algorithm.
-          break;
-        }
-        if(i > 0) { // use the first iteration for warm-up
-          total_ms += profile_result.elapsed_time_in_ms();
-        }
-      }
       AutotuneResult& result = results.emplace_back();
       result.mutable_gemm()->set_algorithm(profile_result.algorithm());
-      if (!profile_result.is_valid()) {
+
+      if (!profile_result.is_valid()) {  // Unsupported algorithm.
         result.mutable_failure()->set_kind(AutotuneResult::DISQUALIFIED);
         continue;
       }
-      i--, total_ms /= i; // skip the first warm-up iteration
+
       VLOG(2) << "gemm algorithm " << profile_result.algorithm() << " took "
-            << total_ms << "ms, number of iterations: " << i;
+            << profile_result.elapsed_time_in_ms() << "ms";
 
       *result.mutable_run_time() = tsl::proto_utils::ToDurationProto(
-          absl::Milliseconds(total_ms));
+          absl::Milliseconds(profile_result.elapsed_time_in_ms()));
 
       if (!autotune_config_.should_check_correctness()) {
         continue;
@@ -567,9 +556,9 @@ absl::StatusOr<bool> RunOnInstruction(HloInstruction* gemm,
 
   if (update_algorithm) {
     if (algorithm.has_gemm()) {
-      VLOG(1) << "Selected algorithm: " << algorithm.gemm().algorithm();
       backend_config.set_selected_algorithm(algorithm.gemm().algorithm());
     } else {
+      // TODO: autotuning is NOT available for gpublas-lt (blas gemm only) !
       backend_config.set_selected_algorithm(se::blas::kDefaultAlgorithm);
     }
   }

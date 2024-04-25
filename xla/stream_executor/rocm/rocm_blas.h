@@ -87,10 +87,6 @@ class GpuExecutor;
 //
 // Thread-safe post-initialization.
 class ROCMBlas : public blas::BlasSupport {
-
-  // Maximal number of GEMM solutions to consider
-  constexpr static int32_t s_max_gemm_solutions = 512;
-
  public:
   explicit ROCMBlas(GpuExecutor *parent);
 

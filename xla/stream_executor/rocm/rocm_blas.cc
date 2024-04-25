@@ -650,13 +650,12 @@ bool ROCMBlas::GetBlasGemmAlgorithms(
   auto blas_lambda = [this, out_algorithms](auto handle, auto &&blas_func,
                                             auto &&...rest) {
     rocblas_int num_sols = 0;
+
     if (auto ret = blas_func(handle, std::forward<decltype(rest)>(rest)...,
                              nullptr, &num_sols);
         ret != rocblas_status_success) {
       return ret;
     }
-    // Limit the number of blas solutions to be more deterministic
-    num_sols = std::min(num_sols, s_max_gemm_solutions);     
     solutions_.resize(num_sols);
     if (auto ret = blas_func(handle, std::forward<decltype(rest)>(rest)...,
                              solutions_.data(), &num_sols);
