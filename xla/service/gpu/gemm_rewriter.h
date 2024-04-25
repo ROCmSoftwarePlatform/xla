@@ -19,27 +19,11 @@ limitations under the License.
 
 #include "xla/hlo/ir/hlo_instructions.h"
 #include "xla/hlo/ir/hlo_module.h"
-#include "xla/hlo/ir/dfs_hlo_visitor_with_default.h"
 #include "xla/service/hlo_pass_interface.h"
 #include "xla/stream_executor/device_description.h"
 
 namespace xla {
 namespace gpu {
-
-// Rewriter that adds a workspace to legacy cuBLAS custom calls. We run it
-// separately after gemm rewriter, so that we can do pattern matching without
-// having to match output tuples.
-struct GemmWorkspaceRewriteVisitor : public DfsHloRewriteVisitor {
-
-  explicit GemmWorkspaceRewriteVisitor(
-      const se::GpuComputeCapability &gpu_version)
-      : gpu_version_(gpu_version) {}
-
-  absl::Status HandleCustomCall(HloInstruction *instr) override;
-
- private:
-  se::GpuComputeCapability gpu_version_;
-};
 
 // cuBLAS GEMM in the most general form can run the following operation:
 //
