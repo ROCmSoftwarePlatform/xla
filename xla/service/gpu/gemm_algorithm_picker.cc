@@ -182,9 +182,9 @@ private:
 
   bool IsRewritable(const HloInstruction* gemm, const GemmConfig& gemm_config) {
 
-    // if (epilogue_ == GemmBackendConfig::DEFAULT) {
-    //   return true;
-    // }
+    if (epilogue_ == GemmBackendConfig::DEFAULT) {
+      return true;
+    }
     return false; // NOTE: currently only DEFAULT epilogues can be rewritten 
 
     if (!(epilogue_ == GemmBackendConfig::BIAS && gemm_config.beta == 0.0)) {
