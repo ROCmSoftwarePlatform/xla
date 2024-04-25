@@ -712,7 +712,7 @@ void ReductionFusion::ReductionGroupEmitter::
   // This only works when the block size is a multiple of 32 threads.
   // We check this here as a mistake in the number of threads per
   // block is very hard to detect.
-  CHECK_EQ(threads_per_block % 32, 0);
+  CHECK_EQ(threads_per_block % 64, 0);
   CHECK_EQ(WarpSize() % num_results_per_warp, 0);
 
   auto* builder = reduction_emitter_.builder_;
@@ -1329,11 +1329,11 @@ ReductionFusion::ComputeReductionCodegenInfo(
     return WarpSize();
   }();
 
-   VLOG(2) << "X threads before: " << num_threads_x;
-   VLOG(2) << "Y threads before: " << num_threads_y;
-
    num_threads_y =
       num_threads_x ? 1 : WarpSize()/4;
+
+  VLOG(2) << "X threads before: " << num_threads_x;
+  VLOG(2) << "Y threads before: " << num_threads_y;
 
   // If we're limited by the size of the x dimension, add additional parallelism
   // in the y dimension. The code generator doesn't currently support
@@ -1341,7 +1341,7 @@ ReductionFusion::ComputeReductionCodegenInfo(
   // recommendation is to use between 128 and 512 threads, so we just go for
   // 256. See https://forums.developer.nvidia.com/t/55529
   // num_threads_x * num_threads_y = 1024 seems to work best on mi300.
-  constexpr int64_t kThreadsPerBlockTarget = 1024;
+  constexpr int64_t kThreadsPerBlockTarget = 512;
   if (reduction_dimensions.is_row_reduction) {
     int64_t kept_size = reduction_dimensions.dimensions[kRowKeptDimension];
     VLOG(2) << "kept_size: " << kept_size;
