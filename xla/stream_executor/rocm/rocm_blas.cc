@@ -655,14 +655,16 @@ bool ROCMBlas::GetBlasGemmAlgorithms(
         ret != rocblas_status_success) {
       return ret;
     }
-    // Limit the number of blas solutions to be more deterministic
-    num_sols = std::min(num_sols, s_max_gemm_solutions);     
     solutions_.resize(num_sols);
     if (auto ret = blas_func(handle, std::forward<decltype(rest)>(rest)...,
                              solutions_.data(), &num_sols);
         ret != rocblas_status_success) {
       return ret;
     }
+    // sort the output solutions before cutting the list..
+    num_sols = std::min(num_sols, s_max_gemm_solutions);     
+    std::sort(solutions_.begin(), solutions_.end());
+
     out_algorithms->resize(num_sols + 1);
     // Default solution must be the first one in the list to be selected
     // as a reference solution!
@@ -670,8 +672,6 @@ bool ROCMBlas::GetBlasGemmAlgorithms(
     for (rocblas_int i = 0; i < num_sols; i++) {
       (*out_algorithms)[i + 1] = solutions_[i];
     }
-    // Let the default solution to be always on top
-    std::sort(out_algorithms->begin() + 1, out_algorithms->end());
     return rocblas_status_success;
   };
 

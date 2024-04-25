@@ -99,7 +99,7 @@ message AutotuneResult {
     stream_executor.dnn.AlgorithmProto algorithm = 16;
   }
 
-  // Next ID: 17
+  // Next ID: 20
 }
 
 message AutotuningLog {

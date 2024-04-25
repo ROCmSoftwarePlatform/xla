@@ -171,10 +171,11 @@ static absl::StatusOr<bool> CompareEqualParameterized(
   TF_ASSIGN_OR_RETURN(
       bool result, DeviceCompare<ElementT>(stream, current, expected, shape,
                                            config, kernel_name, kernel_symbol));
-
-  if (result) {
-    return true;
-  }
+  // HACK
+  return result;
+  // if (result) {
+  //   return true;
+  // }
 
   TF_ASSIGN_OR_RETURN(bool host_return, (HostCompare<ElementT, ComparisonT>(
                                           stream, current, expected, config)));

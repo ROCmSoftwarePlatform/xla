@@ -88,8 +88,9 @@ absl::StatusOr<BlasLt::Epilogue> AsBlasLtEpilogue(
 
 class GemmAutotuner {
 
+  constexpr static uint32_t s_num_warmup_iters = 1;
   // maximal number of tuning iterations for each solution
-  constexpr static uint32_t s_max_tuning_iters = 10;
+  constexpr static uint32_t s_max_tuning_iters = 2;
   // maximal running time in ms for each solution
   constexpr static uint32_t s_max_running_time_ms = 60;
 
@@ -286,15 +287,6 @@ private:
     blas->GetBlasGemmAlgorithms(stream_, desc.lhs, desc.rhs, &desc.output,
                         &gemm_config.alpha, &gemm_config.beta, &algorithms);
 
-    AutotuneResult best_algorithm;
-#if TENSORFLOW_USE_ROCM        // Blas gemm algorithms can be empty for ROCM
-    if (algorithms.empty()) {  // nothing to autotune
-      LOG(WARNING) << "No solutions found: skipping autotuning for ROCM..";
-      best_algorithm.mutable_gemm()->set_algorithm(se::blas::kDefaultAlgorithm);
-      return best_algorithm;
-    }
-#endif
-
     auto tuned_func = [&](const se::blas::AlgorithmType& algorithm)
                 -> StatusOr<se::blas::ProfileResult> {
       se::blas::ProfileResult profile_result;
@@ -308,14 +300,8 @@ private:
       return std::move(profile_result);
     };
 
-    TF_ASSIGN_OR_RETURN(best_algorithm,
-       GetBestAlgorithm<se::blas::AlgorithmType>(gemm, algorithms, 
-              gemm_config.beta, tuned_func));
-    if (best_algorithm.has_gemm()) {
-      int alg_idx = best_algorithm.gemm().algorithm();
-      best_algorithm.mutable_gemm()->set_algorithm(algorithms[alg_idx]);
-    }
-    return best_algorithm;
+    return GetBestAlgorithm<se::blas::AlgorithmType>(gemm, algorithms, 
+              gemm_config.beta, tuned_func);
   }
 
   // Returns the index (into `algorithms`) of the fastest algorithm.
@@ -342,9 +328,13 @@ private:
     }
 
     BufferComparator comparator(output_shape, hlo_module_config);
-    std::vector<AutotuneResult> results;
-    results.reserve(algorithms.size());
     std::optional<int64_t> reference_algorithm;
+    std::optional<float> reference_ms; // reference algorithm runtime
+    std::vector< AlgoT > filtered_algos;
+    filtered_algos.reserve(algorithms.size());
+
+    std::vector< se::blas::ProfileResult > profiles;
+    profiles.reserve(algorithms.size());
 
     for (const AlgoT& algorithm : algorithms) {
       // Make sure the output buffer always has the same value if we use
@@ -357,85 +347,209 @@ private:
 
       uint32_t i = 0;
       float total_ms = 0;
-      se::blas::ProfileResult profile_result;
-      for(i = 0; i <= s_max_tuning_iters && 
+      se::blas::ProfileResult profile;
+      for(i = 0; i < s_max_tuning_iters + s_num_warmup_iters && 
                                     total_ms < s_max_running_time_ms; i++) {
-        TF_ASSIGN_OR_RETURN(profile_result, run_benchmark(algorithm));
-        if (!profile_result.is_valid()) {  // Unsupported algorithm.
+        TF_ASSIGN_OR_RETURN(profile, run_benchmark(algorithm));
+        if (!profile.is_valid()) {  // Unsupported algorithm.
           break;
         }
-        if(i > 0) { // use the first iteration for warm-up
-          total_ms += profile_result.elapsed_time_in_ms();
+        auto ms = profile.elapsed_time_in_ms();
+        // for large gemms disqualify too slow solutions on the first run
+        if(reference_ms && *reference_ms >= 1.0f && ms > *reference_ms * 1.05f) {
+          VLOG(0) << "Skipping sol ms=" << ms << " ref_ms=" << *reference_ms;
+          profile.set_is_valid(false);
+          break;
+        }
+        if(i >= s_num_warmup_iters) { // use the first iteration for warm-up
+          total_ms += ms;
         }
       }
-      AutotuneResult& result = results.emplace_back();
-      result.mutable_gemm()->set_algorithm(profile_result.algorithm());
-      if (!profile_result.is_valid()) {
-        result.mutable_failure()->set_kind(AutotuneResult::DISQUALIFIED);
+      if (!profile.is_valid()) {
         continue;
       }
-      i--, total_ms /= i; // skip the first warm-up iteration
-      VLOG(0) << "gemm algorithm " << profile_result.algorithm() << " took "
-            << total_ms << "ms, number of iterations: " << i 
-            << " fallback: " << profile_result.is_fallback();
-
-      *result.mutable_run_time() = tsl::proto_utils::ToDurationProto(
-          absl::Milliseconds(total_ms));
+      i -= s_num_warmup_iters, total_ms /= i; // skip the first warm-up iterations
+      // VLOG(0) << "gemm algorithm " << profile.algorithm() << " took "
+      //        << total_ms << " ms, number of iterations: " << i;
 
       if (!autotune_config_.should_check_correctness()) {
+        filtered_algos.push_back(algorithm);
+        profiles.push_back(profile);
         continue;
       }
-      TF_ASSIGN_OR_RETURN(
-        se::RedzoneAllocator::RedzoneCheckStatus rz_check_status,
+      TF_ASSIGN_OR_RETURN(auto rz_check_status,
         redzone_allocator_->CheckRedzones());
 
       if (!rz_check_status.ok()) {
-        result.mutable_failure()->set_kind(AutotuneResult::REDZONE_MODIFIED);
-        *result.mutable_failure()->mutable_msg() =
-            rz_check_status.RedzoneFailureMsg();
         LOG(ERROR) << "Detected out-of-bounds write in gemm buffer";
         CHECK(!autotune_config_.should_crash_on_check_failure());
         continue;
       }
 
+      bool outputs_match = true;
       if (!reference_algorithm) {
+        reference_ms = total_ms;
         stream_->ThenMemcpy(&reference_buffer, output_buffer_,
                          output_buffer_.size());
-        reference_algorithm = profile_result.algorithm();
-        VLOG(0) << "Setting reference algo: " << profile_result.algorithm();
+        reference_algorithm = profile.algorithm();
       } else {
         // Perform the comparison.
-        TF_ASSIGN_OR_RETURN(bool outputs_match,
+        TF_ASSIGN_OR_RETURN(outputs_match,
           comparator.CompareEqual(stream_, /*current=*/output_buffer_,
                                   /*expected=*/reference_buffer));
         if (!outputs_match) {
-          LOG(ERROR) << "Results mismatch between different GEMM algorithms. "
+          LOG(ERROR) << profile.algorithm() << " Results mismatch between different GEMM algorithms. "
                    << "This is likely a bug/unexpected loss of precision.";
           CHECK(!autotune_config_.should_crash_on_check_failure());
-
-          result.mutable_failure()->set_kind(AutotuneResult::WRONG_RESULT);
-          result.mutable_failure()->mutable_reference_gemm()->set_algorithm(
-            *reference_algorithm);
-        }
+        } 
+      }
+      if(outputs_match) {
+        filtered_algos.push_back(algorithm);
+        profiles.push_back(profile);
       }
     } // for algorithms
 
-    absl::StatusOr<AutotuneResult> best =
-      PickBestResult(results, gemm->ToString(), hlo_module_config);
-    if (best.ok()) {
-      for (size_t i = 0; i < results.size(); ++i) {
-        if (best->gemm().algorithm() == results[i].gemm().algorithm()) {
-          best->mutable_gemm()->set_algorithm(i);
-          return best;
-        }
-      }
-      return Internal("unknown best algorithm");
+    if(profiles.empty()) {
+      return Internal("All algorithms are disqualified!");
     }
+
+    VLOG(0) << "Total solutions: " << algorithms.size() 
+            << " after filter: " << filtered_algos.size();
+
+    std::unordered_map< se::blas::AlgorithmType, uint32_t > histo;
+    // repeat everything N times and take the top matches
+    if(auto res = PickBestFromTopN(&profiles); res.ok()) {
+      histo[res.value().algorithm()]++;
+    }
+
+    for(int i = 0; i < 5; i++) {
+      VLOG(0) << "Running iteration " << i;
+      auto res =  RunAndPickBest(filtered_algos, run_benchmark, &profiles);
+      if(!res.ok()) {
+        LOG(WARNING) << "RunAndPickBest iteration failed! Skipping!";
+        continue;
+      }
+      histo[res.value().algorithm()]++;
+    }
+
+    se::blas::AlgorithmType top_algo = se::blas::kDefaultAlgorithm;
+    uint32_t hit_count = 0;
+    for(const auto& [a,b] : histo) {
+      if(hit_count < b) {
+        hit_count = b;
+        top_algo = a;
+      }
+      VLOG(0) << "Algorithm: " << a << " hit count: " << b;
+    }
+    for(const auto& p : profiles) {
+      if(p.algorithm() == top_algo) {
+        AutotuneResult best;
+        best.mutable_gemm()->set_algorithm(p.algorithm());
+        *best.mutable_run_time() = tsl::proto_utils::ToDurationProto(
+            absl::Milliseconds(p.elapsed_time_in_ms()));
+        return best;
+      }
+    }
+    // absl::StatusOr<AutotuneResult> best =
+    //   PickBestResult(results, gemm->ToString(), hlo_module_config);
+    // if (best.ok()) {
+    //   for (size_t i = 0; i < results.size(); ++i) {
+    //     if (best->gemm().algorithm() == results[i].gemm().algorithm()) {
+    //       best->mutable_gemm()->set_algorithm(i);
+    //       return best;
+    //     }
+    //   }
+    //   return Internal("unknown best algorithm");
+    // }
     LOG(WARNING) << "Failed to find best cuBLAS algorithm, GEMM performance "
                   "might be suboptimal: "
                << best.status();
     return AutotuneResult{};
   } // GetBestAlgorithm
+
+  absl::StatusOr<se::blas::ProfileResult> PickBestFromTopN(
+        std::vector< se::blas::ProfileResult > *pprofiles) {
+
+    auto& profiles = *pprofiles;
+    std::sort(profiles.begin(), profiles.end(), [](const auto& a, const auto& b) {
+      return a.elapsed_time_in_ms() < b.elapsed_time_in_ms(); 
+    });
+    // do not profile fast algorithms: just use the default one
+    if(profiles[0].elapsed_time_in_ms() <= 0.075f) { // below 75 usec
+      for(const auto& res : profiles) {
+        if(res.algorithm() == se::blas::kDefaultAlgorithm || !res.is_fallback()) {
+          return res;
+        }
+      }
+    }
+
+    constexpr size_t MaxSolutions = 15;
+    auto N = std::min(MaxSolutions, profiles.size());
+    float default_time = 0; 
+    int32_t top_id = -1, default_id = -1;
+
+    std::vector< uint32_t > idxs(N), rank(N);
+    std::iota(idxs.begin(), idxs.end(), 0);
+    std::sort(idxs.begin(), idxs.end(), [&profiles](auto a, auto b) {
+      auto aid = profiles[a].algorithm(), bid = profiles[b].algorithm();
+      return aid > bid;
+    });
+    for(uint32_t i = 0; i < N; i++) {
+      rank[idxs[i]] = i;
+    }
+
+    auto minrank = std::numeric_limits< uint32_t >::max();
+    for(uint32_t i = 0; i < N; i++) {
+      const auto& res = profiles[i];
+      auto algo_id = res.algorithm();
+      auto tm = res.elapsed_time_in_ms();
+      auto cumrank = 2*rank[i]; // we give more preference to algorithm_id rank and
+
+    // we do not want to be slower than the default algorithm, so keep it
+      if(algo_id == se::blas::kDefaultAlgorithm) {
+        default_id = i;
+        default_time = tm;
+      } else if(minrank > cumrank) {
+        minrank = cumrank;
+        top_id = i; // choose the one with the smallest ID
+      }
+      //VLOG(0) << "gemm algorithm " << algo_id << " took " << tm;
+    }
+    if(top_id < 0) {
+      return profiles[default_id];
+    }
+    VLOG(0) << "top_ID = " << top_id << " --- " << profiles[top_id].algorithm();
+    // if(N == MaxSolutions && top_id >= N-2) {
+    //   return Internal("Skip this");
+    // }
+    const auto& selected = profiles[top_id];
+    if(default_id >= 0 && selected.elapsed_time_in_ms() > default_time) {
+      //VLOG(0) << "Taking default which is faster..";
+      // return profiles[default_id];
+    }
+    return selected;
+  }
+
+  template <typename AlgoT, typename TunedFunc>
+  absl::StatusOr<se::blas::ProfileResult> RunAndPickBest(
+        const std::vector< AlgoT >& algorithms, TunedFunc&& run_benchmark,
+        std::vector< se::blas::ProfileResult > *pprofiles) 
+  {
+    auto& profiles = *pprofiles;
+    profiles.resize(algorithms.size());
+    for(size_t j = 0, i = 0; j < algorithms.size(); j++) {
+      float total_ms = 0;
+      for(i = 0; i < s_max_tuning_iters && 
+                                    total_ms < s_max_running_time_ms; i++) {
+        TF_ASSIGN_OR_RETURN(profiles[j], run_benchmark(algorithms[j]));
+        auto ms = profiles[j].elapsed_time_in_ms();
+        total_ms += ms;
+      }
+      total_ms /= i; // skip the first warm-up iterations
+      profiles[j].set_elapsed_time_in_ms(total_ms);
+    } // for algorithms
+    return PickBestFromTopN(pprofiles);
+  }
 
 }; // GemmAutotuner
 
@@ -521,7 +635,7 @@ StatusOr< HloInstruction *> RewriteBlasLtCall(HloInstruction* instr,
 // only.
 absl::StatusOr<bool> RunOnInstruction(HloInstruction* gemm,
                                       const AutotuneConfig& config) {
-  VLOG(3) << "Loading the autotune result of GemmThunk " << gemm->ToString();
+  VLOG(1) << "Loading the autotune result of GemmThunk " << gemm->ToString();
 
   GpuBackendConfig gpu_config =
       gemm->backend_config<GpuBackendConfig>().value();

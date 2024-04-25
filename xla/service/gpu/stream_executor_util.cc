@@ -269,16 +269,16 @@ XlaConvShapesToStreamExecutorLayouts(const ConvolutionDimensionNumbers& dnums,
 }
 
 // Given unique integers D = {d0, d1, ds...}, finds the first integer less than
-// `rank` which is not in D.  If there is no such number (because all the values
-// in [0, rank) appear), returns nullopt.
+// `idxs` which is not in D.  If there is no such number (because all the values
+// in [0, idxs) appear), returns nullopt.
 //
 // When D is the set of dimensions in a ConvolutionDimensionNumbers, this finds
 // the dimension number that corresponds to the vectorized-features dimension in
 // the convolution.
-static std::optional<int64_t> FindVectorizedDim(int64_t rank, int64_t d0,
+static std::optional<int64_t> FindVectorizedDim(int64_t idxs, int64_t d0,
                                                 int64_t d1,
                                                 absl::Span<const int64_t> ds) {
-  for (int64_t i = 0; i < rank; i++) {
+  for (int64_t i = 0; i < idxs; i++) {
     if (i == d0 || i == d1 || absl::c_linear_search(ds, i)) {
       continue;
     }
@@ -642,6 +642,12 @@ absl::Span<AutotuneResult const> TopResultsWithinMeasurementError(
       });
   return absl::MakeSpan(&*results_sorted_by_runtime.begin(), &*limit_time_it);
 }
+
+auto CvtDuration(const google::protobuf::Duration& tm) {
+  return //absl::ToDoubleMilliseconds(
+          tsl::proto_utils::FromDurationProto(tm);
+}
+
 }  // namespace
 
 absl::StatusOr<AutotuneResult> PickBestResult(
@@ -671,40 +677,100 @@ absl::StatusOr<AutotuneResult> PickBestResult(
   // within them prefer algorithms that use the least amount of scratch memory.
   SortAutotuningResultsByRunTime(filtered_results);
 
-  constexpr absl::Duration kMeasurementError = absl::Microseconds(100);
-  absl::Duration max_time, default_time; // maximal time to consider and default time  
-  int32_t top_id = 0, default_id = -1;
-  constexpr float factor = 1.2; // consider solutions which are at most 20% worse than the best one
- 
-  for(uint32_t i = 0; i < filtered_results.size(); i++) {    
+  auto top_tm = CvtDuration(filtered_results.front().run_time());
+  if(top_tm <= absl::Microseconds(75)) { // do not tune small gemms
+    for(const auto& res : filtered_results) {
+      if(res.gemm().algorithm() == se::blas::kDefaultAlgorithm) {
+        VLOG(0) << "Choosing default algorithm: " << res.gemm().algorithm() <<
+            " time: " << CvtDuration(res.run_time()) <<
+            " best time: " << top_tm;
+        return res;
+      }
+    }
+    LOG(WARNING) << "The default algorithm was not found: using conventional "
+          "autotuning. The tuning results might be flucky..";
+  }
+  auto V = std::min(10u, (uint32_t)filtered_results.size());
+  std::vector< uint32_t > idxs(V), rank(V);
+  std::iota(idxs.begin(), idxs.end(), 0);
+  std::sort(idxs.begin(), idxs.end(), [&filtered_results](auto a, auto b) {
+    auto aid = filtered_results[a].gemm().algorithm(),
+         bid = filtered_results[b].gemm().algorithm();
+    return aid < bid;
+  });
+  for(uint32_t i = 0; i < V; i++) {
+    rank[idxs[i]] = i;
+  }
+
+  auto min_rank = std::numeric_limits< uint32_t >::max();
+  int32_t top_id = 0;
+  // get all solutions intersecting with the average lower bound
+  for(uint32_t i = 0; i < V; i++) {
     const auto& res = filtered_results[i];
-    uint32_t algo_id = res.gemm().algorithm();
-    auto tm = tsl::proto_utils::FromDurationProto(res.run_time());
-    if(i == 0) {
-      max_time = std::min(tm * factor, tm + kMeasurementError);
-      VLOG(0) << "Considering algorithm within [" << tm << "; " << max_time << "] ms";
-    } 
-    else if(tm > max_time) break;
-    // we do not want to be slower than the default algorithm, so keep it
-    if(algo_id == se::blas::kDefaultAlgorithm) {
-      default_id = i;
-      default_time = tm;
+    auto algo_id = res.gemm().algorithm();
+
+    auto cumrank = 2*rank[i] + i; // we give more preference to algorithm_id rank and
+                                  // less preference to the running time
+    VLOG(0) << algo_id << " " << CvtDuration(res.run_time()) 
+            << " rank " << rank[i] << " cumulative rank " 
+            << " -- " << cumrank;
+    if(min_rank > cumrank) {
+      min_rank = cumrank;
+      top_id = algo_id;
     }
-    if(algo_id < (uint32_t)filtered_results[top_id].gemm().algorithm()) {
-      top_id = i; // choose the one with the smallest ID
-    }
-    VLOG(0) << "gemm algorithm " << res.gemm().algorithm() << " took "
-            << tsl::proto_utils::FromDurationProto(res.run_time());
   }
-  const auto& selected = filtered_results[top_id];
-  if(default_id >= 0 && 
-        tsl::proto_utils::FromDurationProto(selected.run_time()) >
-        default_time) {
-    VLOG(0) << "Choosing default algorithm..";
-    return filtered_results[default_id];
-  }
-  VLOG(0) << "Algorithm selected: " << selected.gemm().algorithm();
-  return selected;
+  VLOG(0) << "----------- choosen algorithm " << top_id;
+  return filtered_results[0];
+
+// #define USE_TOP_N 10
+//   constexpr absl::Duration kMeasurementError = absl::Microseconds(150);
+//   // Maximal time to consider and default time:
+//   absl::Duration default_time; 
+//   int32_t top_id = 0, default_id = -1;
+//   // Consider solutions which are at most 3x worse than the best one or within 
+//   // 100 microseconds (whichever bound is tighter).
+//   constexpr float factor = 1.3; 
+
+// #if USE_TOP_N
+//   const size_t N = USE_TOP_N;
+//   VLOG(0) << "Choosing the one of " << N << " best algorithms";
+// #else
+// const size_t N = std::numeric_limits< size_t >::max();
+//   auto max_time = std::min(top_tm * factor, top_tm + kMeasurementError),
+//        range = max_time - top_tm;
+//   VLOG(0) << "Considering algorithms within [" << top_tm << "; " 
+//               << max_time << "] ms";
+// #endif
+//   const size_t topN = std::min(filtered_results.size(), N);
+
+//   fprintf(stderr, "Total solutions: %d\n", topN);
+//   for(uint32_t i = 0; i < topN; i++) {
+//     const auto& res = filtered_results[i];
+//     auto algo_id = res.gemm().algorithm();
+//     auto tm = tsl::proto_utils::FromDurationProto(res.run_time());
+// #if !USE_TOP_N    
+//     if(i > 0 && tm > max_time) break;
+// #endif
+//     // we do not want to be slower than the default algorithm, so keep it
+//     if(algo_id == se::blas::kDefaultAlgorithm) {
+//       default_id = i;
+//       default_time = tm;
+//     } else if(algo_id < filtered_results[top_id].gemm().algorithm()) {
+//       top_id = i; // choose the one with the smallest ID
+//     }
+//     VLOG(0) << "gemm algorithm " << algo_id << " took " << tm;
+//     //fprintf(stderr, "[ %d, %.7f ],\n", (int)algo_id, absl::ToDoubleMilliseconds(tm));
+//   }
+
+//   const auto& selected = filtered_results[top_id];
+//   if(default_id >= 0 && 
+//         tsl::proto_utils::FromDurationProto(selected.run_time()) >
+//         default_time) {
+//     VLOG(0) << "Choosing default algorithm..";
+//     return filtered_results[default_id];
+//   }
+//   VLOG(0) << "Algorithm selected: " << selected.gemm().algorithm();
+//   return selected;
 }
 
 }  // namespace gpu

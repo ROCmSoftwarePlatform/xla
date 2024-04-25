@@ -166,7 +166,7 @@ class ProfileResult {
 
  private:
   bool is_valid_ = false;
-  bool is_fallback_ = false;
+  bool is_fallback_ = true;
   AlgorithmType algorithm_ = kDefaultAlgorithm;
   float elapsed_time_in_ms_ = std::numeric_limits<float>::max();
 };
