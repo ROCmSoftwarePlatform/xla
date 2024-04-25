@@ -671,7 +671,7 @@ absl::StatusOr<AutotuneResult> PickBestResult(
   // within them prefer algorithms that use the least amount of scratch memory.
   SortAutotuningResultsByRunTime(filtered_results);
 
-  constexpr absl::Duration kMeasurementError = absl::Microseconds(75);
+  constexpr absl::Duration kMeasurementError = absl::Microseconds(50);
 
   const auto& top_algo = filtered_results.front();
   auto min_time = tsl::proto_utils::FromDurationProto(top_algo.run_time());
@@ -688,7 +688,8 @@ absl::StatusOr<AutotuneResult> PickBestResult(
       top_id = i;
     }
     VLOG(1) << "gemm algorithm " << res.gemm().algorithm() << " took "
-            << tsl::proto_utils::FromDurationProto(res.run_time());
+            << tsl::proto_utils::FromDurationProto(res.run_time())
+            << " buf " << res.scratch_bytes();
   }
   const auto& selected = filtered_results[top_id];
   VLOG(1) << "Algorithm selected: " << selected.gemm().algorithm();
