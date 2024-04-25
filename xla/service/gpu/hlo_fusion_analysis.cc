@@ -70,6 +70,7 @@ bool AllSliceInputsAreCompatible(
 std::optional<TransposeDescription> FindConsistentTransposeHero(
     const std::vector<const HloInstruction*>& hlo_roots,
     const std::vector<const HloInstruction*>& heroes) {
+  VLOG(2) << "FindConsistentTransposeHero";
   std::optional<TransposeDescription> tiled_transpose_hero;
   std::vector<const HloInstruction*> non_transpose_roots;
 
@@ -77,9 +78,11 @@ std::optional<TransposeDescription> FindConsistentTransposeHero(
     if (auto tr = GetDescriptionForTiledTransposeEmitter(*root, *hero)) {
       if (!tiled_transpose_hero) {
         // First transpose hero found.
+        VLOG(2) << "tranpose HERO!";
         tiled_transpose_hero = tr;
       } else if (!tiled_transpose_hero->IsEquivalent(*tr)) {
         // Transpose heroes have different shape.
+        VLOG(2) << "tranpose zero!";
         return std::nullopt;
       }
     } else {
@@ -135,6 +138,7 @@ HloFusionAnalysis HloFusionAnalysis::Create(
     FusionBackendConfig backend_config,
     std::unique_ptr<HloFusionAdaptor> fusion,
     const se::DeviceDescription* device_info) {
+  VLOG(2) << "HloFusionAnalysis::Create";
   std::vector<const HloInstruction*> roots;
   std::vector<const HloInstruction*> heroes;
   for (auto root : fusion->GetRoots()) {

@@ -56,8 +56,9 @@ namespace gpu {
 namespace {
 
 Tiling ComputeTransposeTiling(const TransposeDescription& tiled_transpose) {
-  constexpr int kNumRows = 4;
-  static_assert(WarpSize() % kNumRows == 0);
+  constexpr int kNumRows = 8;
+  constexpr int WarpSize = 64;
+  static_assert(WarpSize % kNumRows == 0);
 
   // 3D view over the output shape.
   Vector3 transposed_dims = tiled_transpose.dimensions;
@@ -73,9 +74,11 @@ Tiling ComputeTransposeTiling(const TransposeDescription& tiled_transpose) {
 
   // We tile along the minor dimensions pre- and post-transpose.
   absl::InlinedVector<int64_t, 4> tile_sizes{1, 1, 1};
-  tile_sizes[permutation[2]] = WarpSize() / kNumRows;
-  absl::InlinedVector<int64_t, 4> num_threads{1, 1, WarpSize()};
+  tile_sizes[permutation[2]] = WarpSize / kNumRows;
+  absl::InlinedVector<int64_t, 4> num_threads{1, 1, WarpSize};
   num_threads[permutation[2]] = kNumRows;
+
+  VLOG(2) << "Transpose Threads: " << Product(num_threads);
 
   return Tiling(input_dims, tile_sizes, num_threads);
 }
@@ -83,6 +86,7 @@ Tiling ComputeTransposeTiling(const TransposeDescription& tiled_transpose) {
 void MaybeEmitFenceForAMDGPU(llvm::IRBuilder<>* builder,
                              IrEmitterContext& ir_emitter_context) {
   auto* module = builder->GetInsertBlock()->getModule();
+  VLOG(2) << "MaybeEmitFenceForAMDGPU";
   if (IsAMDGPU(module) &&
       ir_emitter_context.rocm_compute_capability().fence_before_barrier()) {
     builder->CreateFence(
@@ -93,6 +97,7 @@ void MaybeEmitFenceForAMDGPU(llvm::IRBuilder<>* builder,
 
 void EmitSyncThreads(llvm::IRBuilder<>* builder,
                      IrEmitterContext& ir_emitter_context) {
+  VLOG(2) << "EmitSyncThreads";
   MaybeEmitFenceForAMDGPU(builder, ir_emitter_context);
   EmitCallToTargetIntrinsic(TargetIntrinsicID::kBarrierId, {}, {}, builder);
 }
@@ -109,6 +114,7 @@ llvm_ir::IrArray::Index PermuteIndex(const llvm_ir::IrArray::Index& index,
 TransposeFusion::TransposeFusion(const HloFusionAnalysis& analysis)
     : analysis_(analysis),
       tiling_(ComputeTransposeTiling(analysis.tiled_transpose())) {
+  VLOG(2) << "TransposeFusion";
   for (auto [root, hero] :
        llvm::zip(analysis_.fusion_roots(), analysis_.fusion_heroes())) {
     if (auto transpose = GetDescriptionForTiledTransposeEmitter(*root, *hero)) {
@@ -125,6 +131,7 @@ absl::Status TransposeFusion::EmitKernel(IrEmitterContext& ir_emitter_context,
                                          std::vector<llvm_ir::IrArray> outputs,
                                          llvm::IRBuilder<>* builder) const {
   const auto& hlo_roots = analysis_.fusion_roots();
+  VLOG(2) << "EmitKernel";
   GpuElementalIrEmitter elemental_emitter(ir_emitter_context, builder);
   FusedIrEmitter fused_emitter(elemental_emitter);
   for (auto [i, input] : llvm::enumerate(inputs)) {
@@ -279,6 +286,7 @@ absl::Status TransposeFusion::EmitKernel(IrEmitterContext& ir_emitter_context,
 }
 
 LaunchDimensions TransposeFusion::launch_dimensions() const {
+  VLOG(2) << "launch_dimensions";
   return LaunchDimensions(tiling_.GetNumBlocks(),
                           tiling_.GetNumThreadsPerBlock());
 }
@@ -297,6 +305,7 @@ std::optional<IndexingMap> TransposeFusion::ComputeThreadIdToOutputIndexing(
                           .getSubMap(std::vector<unsigned>{permutation_.begin(),
                                                            permutation_.end()});
   auto thread_offset = GetThreadOffsetsForTiling(tiling_, ctx);
+  VLOG(2) << "ComputeThreadIdToOutputIndexing";
   auto permuted_tiled_shape =
       ShapeUtil::MakeShape(U8, Permute(tiling_.GetShape(), permutation_));
 
@@ -309,7 +318,7 @@ std::optional<IndexingMap> TransposeFusion::ComputeThreadIdToInputIndexing(
     int64_t root_index, int64_t hero_operand_index,
     mlir::MLIRContext* ctx) const {
   const auto& hero = *analysis_.fusion_heroes()[root_index];
-
+  VLOG(2) << "ComputeThreadIdToInputIndexing2";
   return ComposeIndexingMaps(
       GetIndexingMapForTiling(tiling_, ctx),
       GetBitcastMap(tiling_.GetXlaShape(), hero.operand(0)->shape(), ctx));
