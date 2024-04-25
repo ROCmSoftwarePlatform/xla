@@ -138,15 +138,16 @@ TEST_F(SelectAndScatterTest, SelectAndScatterPerformance) {
   auto ref_module = module->Clone();  
   TF_ASSERT_OK_AND_ASSIGN(auto exec, CreateExecutable(std::move(module), true));
 
+  VLOG(0) << "Creating fake args..";
   auto fake_arguments = xla::MakeFakeArguments(ref_module.get(), 
         true, /*pseudo-random*/
         false /* use large range*/).value();
   auto arg_ptrs = MakePointerVector<xla::Literal>(fake_arguments);
 
 
-  auto& ref_runner = HloTestBase::reference_runner_;
-  TF_ASSERT_OK_AND_ASSIGN(
-      auto ref_exec, ref_runner.CreateExecutable(std::move(ref_module), true));
+  // auto& ref_runner = HloTestBase::reference_runner_;
+  // TF_ASSERT_OK_AND_ASSIGN(
+  //     auto ref_exec, ref_runner.CreateExecutable(std::move(ref_module), true));
 
 #if 1
   TF_ASSERT_OK_AND_ASSIGN(auto truth, 
@@ -159,8 +160,8 @@ TEST_F(SelectAndScatterTest, SelectAndScatterPerformance) {
   VLOG(0) << "Got expected literal from file.. running test";
 
   for(int i = 0; i < 1; i++) {
-    TF_ASSERT_OK_AND_ASSIGN(auto test_res, 
-        HloTestBase::test_runner_.ExecuteWithExecutable(exec.get(), arg_ptrs, nullptr));
+     TF_ASSERT_OK_AND_ASSIGN(auto test_res, 
+         HloTestBase::test_runner_.ExecuteWithExecutable(exec.get(), arg_ptrs, nullptr));
     if(i == 0) {
       //WriteLiteralToTempFile(test_res, "actual");
       EXPECT_TRUE(LiteralTestUtil::Near(truth, test_res, error_spec));
