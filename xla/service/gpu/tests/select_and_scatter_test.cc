@@ -117,7 +117,7 @@ TEST_F(SelectAndScatterTest, SelectAndScatterPerformance) {
   
   ErrorSpec error_spec{1e-2, 1e-3};
   auto ref_module = module->Clone(); 
-  TF_ASSERT_OK_AND_ASSIGN(auto exec, CreateExecutable(std::move(module), false));
+  TF_ASSERT_OK_AND_ASSIGN(auto exec, CreateExecutable(std::move(module), true));
   
   auto fake_arguments = xla::MakeFakeArguments(ref_module.get(),
         true, /*pseudo-random*/

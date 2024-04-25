@@ -119,7 +119,7 @@ BlockSizes GetBlockSizes(LaunchDimensionsConfig dim_config,
           ? threads_per_block_row_vectorized
           : RoundUpTo(ThreadsPerBlockLimit(gpu_device_info) /
                           dim_config.unroll_factor,
-                      int64_t{32});
+                      int64_t{gpu_device_info.threads_per_warp()});
   result.threads_per_block_x = std::min(num_elements, max_threads_per_block_x);
   // threads_per_block_y > 1 when we row vectorize and have small row size.
   result.threads_per_block_y =
