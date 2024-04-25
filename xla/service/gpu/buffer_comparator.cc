@@ -75,6 +75,8 @@ static absl::StatusOr<bool> DeviceCompare(se::Stream* stream,
   uint64_t buffer_size = current_typed.ElementCount();
   float tolerance = config.debug_options().xla_gpu_autotune_gemm_rtol();
 
+  VLOG(0) << "Using relative tolerance: " << tolerance;
+
   TF_ASSIGN_OR_RETURN(
       ComparisonKernelT<ElementT> comparison_kernel,
       (se::TypedKernel<se::DeviceMemory<ElementT>, se::DeviceMemory<ElementT>,

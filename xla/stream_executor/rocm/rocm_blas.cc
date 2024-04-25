@@ -662,15 +662,10 @@ bool ROCMBlas::GetBlasGemmAlgorithms(
         ret != rocblas_status_success) {
       return ret;
     }
-    out_algorithms->resize(num_sols + 1);
-    // Default solution must be the first one in the list to be selected
-    // as a reference solution!
-    (*out_algorithms)[0] = blas::kDefaultAlgorithm;
+    out_algorithms->resize(num_sols);
     for (rocblas_int i = 0; i < num_sols; i++) {
-      (*out_algorithms)[i + 1] = solutions_[i];
+      (*out_algorithms)[i] = solutions_[i];
     }
-    // Let the default solution to be always on top
-    std::sort(out_algorithms->begin() + 1, out_algorithms->end());
     return rocblas_status_success;
   };
 
