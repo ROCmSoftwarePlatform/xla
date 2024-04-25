@@ -229,8 +229,6 @@ DebugOptions DefaultDebugOptionsIgnoringFlags() {
   opts.set_xla_gpu_nccl_collective_max_nchannels(0);
   opts.set_xla_gpu_nccl_p2p_max_nchannels(0);
 
-  opts.set_xla_gpu_autotune_gemm_rtol(0.1f);
-
   return opts;
 }
 
@@ -730,11 +728,6 @@ void MakeDebugOptionsFlags(std::vector<tsl::Flag>* flag_list,
       debug_options->xla_gpu_autotune_level(),
       "Set GEMM and Convolution auto-tuning level. 0 = off; 1 = on; 2 = "
       "on+init; 3 = on+init+reinit; 4 = on+init+reinit+check."));
-    flag_list->push_back(tsl::Flag(
-      "xla_gpu_autotune_gemm_rtol",
-      float_setter_for(&DebugOptions::set_xla_gpu_autotune_gemm_rtol),
-      debug_options->xla_gpu_autotune_gemm_rtol(),
-      "Relative precision for comparing GEMM solutions vs the reference one"));
   flag_list->push_back(tsl::Flag(
       "xla_force_host_platform_device_count",
       int32_setter_for(&DebugOptions::set_xla_force_host_platform_device_count),
