@@ -316,7 +316,7 @@ absl::StatusOr<CompileModuleResults> CompileModuleToLlvmIr(
     // out we have no way of telling how far through the process we got).
     RecordHloToLlvmDuration(end_usecs - start_usecs);
   }
-
+  // move IrEmitterUnnested's thunk_sequence_ to results.executable
   auto thunk_sequence = ir_emitter->ConsumeThunkSequence();
   ForAllThunks([](Thunk* thunk) { thunk->ClearCompileTimeInfo(); },
                thunk_sequence.get());

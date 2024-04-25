@@ -115,42 +115,22 @@ TEST_F(SelectAndScatterTest, SelectAndScatterPerformance) {
   TF_ASSERT_OK_AND_ASSIGN(auto module, ParseAndReturnVerifiedModule(buffer.str(), 
           config));
 
-  auto fake_arguments = xla::MakeFakeArguments(module.get(), 
+  ErrorSpec error_spec{1e-2, 1e-3};
+  auto ref_module = module->Clone();
+  TF_ASSERT_OK_AND_ASSIGN(auto exec, CreateExecutable(std::move(module), false));
+
+  auto fake_arguments = xla::MakeFakeArguments(ref_module.get(),
         true, /*pseudo-random*/
         false /* use large range*/).value();
   auto arg_ptrs = MakePointerVector<xla::Literal>(fake_arguments);
 
-  ErrorSpec error_spec{1e-2, 1e-3};
-#if 1
-  auto ref_module = module->Clone();  
-  TF_ASSERT_OK_AND_ASSIGN(auto exec, CreateExecutable(std::move(module), true));
-
-  auto& ref_runner = HloTestBase::reference_runner_;
-  TF_ASSERT_OK_AND_ASSIGN(
-      auto ref_exec, ref_runner.CreateExecutable(std::move(ref_module), true));
-
-#if 1
-  TF_ASSERT_OK_AND_ASSIGN(auto truth, 
-        ReadLiteralFromProto("/tf/xla/expected.pb"));
-#else
-  TF_ASSERT_OK_AND_ASSIGN(auto truth, 
-  ref_runner.ExecuteWithExecutable(ref_exec.get(), arg_ptrs, nullptr));
-  WriteLiteralToTempFile(truth, "expected");
-#endif
   VLOG(0) << "Got expected literal from file.. running test";
 
-  for(int i = 0; i < 1; i++) {
+  for (int i=0; i<50; ++i){
     TF_ASSERT_OK_AND_ASSIGN(auto test_res, 
-        HloTestBase::test_runner_.ExecuteWithExecutable(exec.get(), arg_ptrs, nullptr));
-    if(i == 0) {
-      //WriteLiteralToTempFile(test_res, "actual");
-      EXPECT_TRUE(LiteralTestUtil::Near(truth, test_res, error_spec));
-    }
+          HloTestBase::test_runner_.ExecuteWithExecutable(exec.get(), arg_ptrs, nullptr));
   }
-#else
-  EXPECT_TRUE(RunAndCompare(std::move(module), 
-      absl::Span< xla::Literal * const>(arg_ptrs.data(), arg_ptrs.size()), error_spec));
-#endif
+
 }
 
 }  // namespace

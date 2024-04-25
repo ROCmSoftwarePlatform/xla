@@ -100,9 +100,10 @@ DebugOptions DefaultDebugOptionsIgnoringFlags() {
   // flag.
   opts.set_xla_gpu_enable_cublaslt(false);
 
-  opts.add_xla_gpu_enable_command_buffer(DebugOptions::FUSION);
-  opts.add_xla_gpu_enable_command_buffer(DebugOptions::CUBLAS);
-  opts.add_xla_gpu_enable_command_buffer(DebugOptions::CUSTOM_CALL);
+//   opts.add_xla_gpu_enable_command_buffer(DebugOptions::FUSION);
+//   opts.add_xla_gpu_enable_command_buffer(DebugOptions::CUBLAS);
+//   opts.add_xla_gpu_enable_command_buffer(DebugOptions::CUSTOM_CALL);
+  opts.add_xla_gpu_enable_command_buffer(DebugOptions::COLLECTIVES);
   opts.set_xla_gpu_graph_num_runs_to_instantiate(-1);
   opts.set_xla_gpu_graph_min_graph_size(5);
   opts.set_xla_gpu_graph_enable_concurrent_region(false);
@@ -152,18 +153,18 @@ DebugOptions DefaultDebugOptionsIgnoringFlags() {
   opts.set_xla_gpu_normalize_layouts(true);
   opts.set_xla_gpu_simplify_all_fp_conversions(true);
   opts.set_xla_dump_latency_hiding_schedule(false);
-  opts.set_xla_gpu_enable_latency_hiding_scheduler(false);
+  opts.set_xla_gpu_enable_latency_hiding_scheduler(true);
   opts.set_xla_gpu_lhs_enable_gpu_async_tracker(true);
   opts.set_xla_gpu_enable_analytical_latency_estimator(false);
   opts.set_xla_gpu_pgle_profile_file_or_directory_path("");
   opts.set_xla_gpu_memory_limit_slop_factor(95);
   opts.set_xla_gpu_enable_highest_priority_async_stream(true);
 
-  opts.set_xla_gpu_enable_pipelined_collectives(false);
-  opts.set_xla_gpu_enable_pipelined_all_reduce(false);
-  opts.set_xla_gpu_enable_pipelined_all_gather(false);
-  opts.set_xla_gpu_enable_pipelined_reduce_scatter(false);
-  opts.set_xla_gpu_enable_pipelined_p2p(false);
+  opts.set_xla_gpu_enable_pipelined_collectives(true);
+  opts.set_xla_gpu_enable_pipelined_all_reduce(true);
+  opts.set_xla_gpu_enable_pipelined_all_gather(true);
+  opts.set_xla_gpu_enable_pipelined_reduce_scatter(true);
+  opts.set_xla_gpu_enable_pipelined_p2p(true);
 
   opts.set_xla_gpu_collective_permute_decomposer_threshold(
       std::numeric_limits<int64_t>::max());
