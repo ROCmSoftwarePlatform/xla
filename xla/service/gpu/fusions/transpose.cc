@@ -281,7 +281,7 @@ absl::Status TransposeFusion::EmitKernel(IrEmitterContext& ir_emitter_context,
 
   llvm::Type* index_type =
       GetIndexTypeForKernel(&fusion, launch_dims.launch_bound(), builder);
-  return EmitTilingKernel(builder, tiling_, index_type, tile_generator)
+  return EmitTilingKernel(builder, tiling_, index_type, tile_generator, WarpSize())
       .status();
 }
 

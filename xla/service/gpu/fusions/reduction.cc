@@ -107,6 +107,9 @@ constexpr int kColMajorKeptDimension = 0;
 constexpr int kColReducedDimension = 1;
 constexpr int kColMinorKeptDimension = 2;
 
+// rv: To maintain 32 warpsize for col reduction.
+int64_t warpSize = WarpSize();
+
 using TypedPointer = std::pair<llvm::Value* const, llvm::Type* const>;
 
 // Fusion root -> array of indexes, one per reduction output.
@@ -264,7 +267,7 @@ int GetVectorSize(const HloFusionAnalysis& analysis,
                   const ReductionDimensions& reduction_dimensions,
                   int num_threads, Vector3 reduction_tiling) {
   if (!reduction_dimensions.is_row_reduction) {
-    VLOG(2) << "! row reduction";
+    VLOG(2) << "col reduction";
     return 1;
   }
 
@@ -512,10 +515,10 @@ ReductionFusion::ReductionGroupEmitter::ReductionGroupEmitter(
         // return std::nullopt;
         const auto& num_threads = tiling.GetThreadsPerBlock();
         int n = num_threads[kColReducedDimension];
-        // CHECK_EQ(n, num_threads[kColMinorKeptDimension]);
+        CHECK_EQ(n, num_threads[kColMinorKeptDimension]);
         // The "+1" is used to avoid bank conflicts.
         return llvm_ir::AllocateSharedMemoryTile(module, element_type,
-                                                 {64, 64+1}, "shared_cache");
+                                                 {n, n+1}, "shared_cache");
       }();
 
       llvm_ir::ElementGenerator input_gen =
@@ -1133,7 +1136,7 @@ absl::Status ReductionFusion::ReductionEmitter::EmitIRForReduction(
                 };
             EmitTile(builder_, reduction_codegen_info_.GetTiling(),
                      thread_id_info, tile_dimensions, emit_element);
-          }));
+          }, /*rv: warpsize*/warpSize));
 
   KernelSupportLibrary ksl(builder_);
   for (auto reduce : heroes) {
@@ -1299,11 +1302,17 @@ ReductionFusion::ComputeReductionCodegenInfo(
       GetReductionKindAndContiguousComponents(*hero_reduction);
   auto shape = reduction_dimensions.dimensions;
   VLOG(2) << "is_row_reduction " << reduction_dimensions.is_row_reduction
-           << " " << shape[0] << " " << shape[1] << " " << shape[2];
+           << " [" << shape[0] << " " << shape[1] << " " << shape[2] << "]";
   Vector3 reduction_tiling = GetReductionTiling(reduction_dimensions);
 
+  VLOG(2) << "Reduction tiling: [" << reduction_tiling[0] << " " 
+          << reduction_tiling[1] << " " << reduction_tiling[2] << "]";
+
+  // rv: change warpsize.
+  warpSize = reduction_dimensions.is_row_reduction ? WarpSize() : 32;
+
   int64_t num_threads_y =
-      reduction_dimensions.is_row_reduction ? 1 : WarpSize()/4;
+      reduction_dimensions.is_row_reduction ? 1 : WarpSize()/2;
   int64_t rows_per_warp =
       reduction_dimensions.is_row_reduction
           ? RowReductionGetRowsPerWarp(shape[kRowMinorReducedDimension])
@@ -1326,14 +1335,17 @@ ReductionFusion::ComputeReductionCodegenInfo(
                                 reduction_tiling[kRowMinorReducedDimension]),
                     WarpSize()));
     }
-    return WarpSize();
+    return WarpSize()/2;
   }();
 
-   num_threads_y =
-      num_threads_x ? 1 : WarpSize()/4;
+  //  num_threads_y =
+  //     num_threads_x ? 1 : WarpSize()/4;
+  // if (!reduction_dimensions.is_row_reduction) {
+  //   num_threads_x = 32;
+  //   num_threads_y = 32;
+  // }
 
-  VLOG(2) << "X threads before: " << num_threads_x;
-  VLOG(2) << "Y threads before: " << num_threads_y;
+  VLOG(2) << "xthreadsb: " << num_threads_x << " ythreadsb: " << num_threads_y;
 
   // If we're limited by the size of the x dimension, add additional parallelism
   // in the y dimension. The code generator doesn't currently support
@@ -1341,49 +1353,25 @@ ReductionFusion::ComputeReductionCodegenInfo(
   // recommendation is to use between 128 and 512 threads, so we just go for
   // 256. See https://forums.developer.nvidia.com/t/55529
   // num_threads_x * num_threads_y = 1024 seems to work best on mi300.
-  constexpr int64_t kThreadsPerBlockTarget = 512;
-  if (reduction_dimensions.is_row_reduction) {
+  constexpr int64_t kThreadsPerBlockTarget = 256;
+  if (reduction_dimensions.is_row_reduction &&
+      num_threads_x * 2 <= kThreadsPerBlockTarget) {
     int64_t kept_size = reduction_dimensions.dimensions[kRowKeptDimension];
-    VLOG(2) << "kept_size: " << kept_size;
     // Increase the size of the y dimension as long as there's remaining
     // parallelism.
-    // Calculate initial num_threads_y based on kept_size and kThreadsPerBlockTarget.
-    num_threads_y = kThreadsPerBlockTarget / num_threads_x;
-
-    // Ensure num_threads_y is large enough to handle kept_size efficiently but within block limits.
-    num_threads_y = std::min(num_threads_y, kept_size / num_threads_x);
-
-    // Correct num_threads_y to be at least 1 if kept_size is very large but num_threads_x is small.
-    if (num_threads_y < 1) {
-        num_threads_y = 1;
-    }
-
-    // Adjust num_threads_y to make the total number of threads a multiple of 64 (wavefront size).
-    while ((num_threads_x * num_threads_y) % WarpSize() != 0) {
-        num_threads_y++;
-        // Check to ensure not exceeding max threads per block.
-        if (num_threads_x * num_threads_y > kThreadsPerBlockTarget) {
-            num_threads_y--;
-            break;
-        }
-    }
-
-    // Final safeguard to ensure that we don't exceed the maximum number of threads per block.
-    if (num_threads_x * num_threads_y > kThreadsPerBlockTarget) {
-        num_threads_y = kThreadsPerBlockTarget / num_threads_x;
-        while ((num_threads_x * num_threads_y) % WarpSize() != 0 && num_threads_y > 1) {
-            // Decrement if exceeding the max threads or not fitting the wavefront.
-            num_threads_y--;
-        }
+    if (kept_size * num_threads_x <= kThreadsPerBlockTarget) {
+      num_threads_y = kept_size;
+      // num_threads_x is a power of two, but it may be less than 32. If dim_y
+      // is also small, we may have to increase the bound so the total number of
+      // threads is a multiple of 32.
+      while ((num_threads_x * num_threads_y) % 64) ++num_threads_y;
+    } else {
+      num_threads_y = kThreadsPerBlockTarget / num_threads_x;
     }
   }
 
-  VLOG(2) << "X threads: " << num_threads_x << " Y threads: " << num_threads_y;
-  VLOG(2) << "shape[0]: " << shape[0];
-  VLOG(2) << "shape[1]: " << shape[1];
-  VLOG(2) << "shape[2]: " << shape[2];
+  VLOG(2) << "xthreads: " << num_threads_x << " ythreads: " << num_threads_y;
   
-
   int vector_size = GetVectorSize(analysis, reduction_dimensions, num_threads_x,
                                   reduction_tiling);
 
