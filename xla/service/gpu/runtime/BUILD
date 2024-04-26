@@ -1,5 +1,6 @@
 load("//xla/tests:build_defs.bzl", "xla_test")
-load("//xla/service/gpu:build_defs.bzl", "get_cub_sort_kernel_types")
+load("//xla/service/gpu:build_defs.bzl", "get_cub_sort_kernel_types", 
+                                         "gpu_kernel_library")
 load("//xla/stream_executor:build_defs.bzl", "if_gpu_is_configured")
 load("@local_config_rocm//rocm:build_defs.bzl", "if_rocm_is_configured")
 load("@tsl//tsl/platform/default:cuda_build_defs.bzl", "if_cuda_is_configured")
@@ -61,12 +62,26 @@ cc_library(
     ],
 )
 
+gpu_kernel_library(
+    name = "memset32_kernel",
+    srcs = if_gpu_is_configured(["command_buffer_memset.cu.cc"]),
+    hdrs = if_gpu_is_configured(["command_buffer_memset.h"]),
+    local_defines = if_cuda_is_configured(["GOOGLE_CUDA=1"]) + if_rocm_is_configured([
+        "TENSORFLOW_USE_ROCM=1",
+    ]),
+    deps = if_cuda_is_configured([
+        "@local_config_cuda//cuda:cuda_headers",
+    ]) + if_rocm_is_configured([
+        "@local_config_rocm//rocm:rocm_headers",
+    ]),
+)
+
 cc_library(
     name = "command_buffer_cmd",
     srcs = ["command_buffer_cmd.cc"],
     hdrs = ["command_buffer_cmd.h"],
-    local_defines = if_cuda_is_configured([
-        "GOOGLE_CUDA=1",
+    local_defines = if_cuda_is_configured(["GOOGLE_CUDA=1"]) + if_rocm_is_configured([
+        "TENSORFLOW_USE_ROCM=1",
     ]),
     deps = [
         ":annotation",
@@ -74,6 +89,8 @@ cc_library(
         ":custom_call_thunk",
         ":nccl_all_gather_thunk",
         ":nccl_all_reduce_thunk",
+        ":nccl_all_to_all_thunk",
+        ":memset32_kernel",
         "//xla:shape_util",
         "//xla:status",
         "//xla:types",
@@ -132,6 +149,7 @@ cc_library(
         ":memset_thunk",
         ":nccl_all_gather_thunk",
         ":nccl_all_reduce_thunk",
+        ":nccl_all_to_all_thunk",
         ":replica_id_thunk",
         ":sequential_thunk",
         ":wait_for_streams_thunk",

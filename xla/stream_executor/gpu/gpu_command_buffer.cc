@@ -160,35 +160,39 @@ static GpuDevicePtr AsDevicePtr(const DeviceMemoryBase& mem) {
 absl::Status GpuCommandBuffer::Trace(
     Stream* stream, absl::AnyInvocable<absl::Status()> function) {
   TF_RETURN_IF_ERROR(CheckNotFinalized());
-#if defined(TENSORFLOW_USE_ROCM)
-  TF_ASSIGN_OR_RETURN(size_t count, GpuDriver::GraphGetNodeCount(graph_));
+
+#define USE_CAPTURE_TO_GRAPH 1
+
+#if !USE_CAPTURE_TO_GRAPH
+  TF_ASSIGN_OR_RETURN(size_t count, GpuDriver::GraphGetNodes(graph_, nullptr));
   if (count != 0 || !is_owned_graph_)
     return absl::InternalError("Stream can't be traced on non empty command buffer");
-#endif // TENSORFLOW_USE_ROCM
+#endif
 
   VLOG(5) << "Trace into GPU command buffer graph " << graph_
           << " on a stream: " << stream->DebugStreamPointers();
 
   auto gpu_stream = AsGpuStreamValue(stream);
+  // (void)function();
 
   // Switch stream into the capture mode.
   uint64_t start_nanos = tsl::Env::Default()->NowNanos();
-#if !defined(TENSORFLOW_USE_ROCM)
+#if USE_CAPTURE_TO_GRAPH
   TF_RETURN_IF_ERROR(GpuDriver::StreamBeginCaptureToGraph(
-      gpu_stream, graph_, GpuDriver::StreamCaptureMode::kThreadLocal));
+        gpu_stream, graph_, {}, GpuDriver::StreamCaptureMode::kThreadLocal));
 #else
   TF_RETURN_IF_ERROR(GpuDriver::StreamBeginCapture(
       gpu_stream, GpuDriver::StreamCaptureMode::kThreadLocal));
-#endif // TENSORFLOW_USE_ROCM
+#endif
   auto traced = function();
 
   // Always stop capturing the stream before checking `traced` result.
   GpuGraphHandle captured_graph;
   TF_RETURN_IF_ERROR(GpuDriver::StreamEndCapture(gpu_stream, &captured_graph));
-#if !defined(TENSORFLOW_USE_ROCM)
+#if USE_CAPTURE_TO_GRAPH
   DCHECK(captured_graph == graph_) << "Stream capture should update graph_";
 #else
-  TF_RETURN_IF_ERROR(GpuDriver::DestroyGraph(std::exchange(graph_, captured_graph)));
+   TF_RETURN_IF_ERROR(GpuDriver::DestroyGraph(std::exchange(graph_, captured_graph)));
 #endif // TENSORFLOW_USE_ROCM
   uint64_t end_nanos = tsl::Env::Default()->NowNanos();
 
@@ -321,17 +325,26 @@ absl::Status GpuCommandBuffer::CheckNumCommandBuffers(
 
 absl::StatusOr<GpuGraphNodeHandle> GpuCommandBuffer::CreateBarrierNode(
     StreamExecutor* executor, const Dependencies& dependencies) {
+
+  GpuGraphNodeHandle barrier_handle = nullptr;
+// #if GOOGLE_CUDA
   // TODO(b/316343054): Instead of empty nodes we create no-op kernel nodes as
   // barriers because CUDA 12.3 does not support empty nodes inside
   // conditional command buffers. This should be fixed in CUDA 12.4.
   TF_ASSIGN_OR_RETURN(NoOpKernel * noop, GetNoOpKernel(executor));
 
-  GpuGraphNodeHandle barrier_handle = nullptr;
+
   TF_RETURN_IF_ERROR(GpuDriver::GraphAddKernelNode(
       &barrier_handle, graph_, dependencies, "noop",
+      GpuDriver::CreateNodeParams(
       AsGpuKernel(&**noop)->AsGpuFunctionHandle(), 1, 1, 1, 1, 1, 1, 0,
-      /*kernel_params=*/nullptr, /*extra=*/nullptr));
-
+      /*kernel_params=*/nullptr, /*extra=*/nullptr)));
+// #elif TENSORFLOW_USE_ROCM
+// this causes DisableBarriersExecution to fail ??
+//   TF_RETURN_IF_ERROR(GpuDriver::GraphAddEmptyNode(
+//     &barrier_handle, graph_, dependencies 
+//   ));
+// #endif
   return barrier_handle;
 }
 
@@ -520,24 +533,35 @@ absl::Status GpuCommandBuffer::LaunchWithPackedArgs(
   void** kernel_params =
       const_cast<void**>(packed_args.argument_addresses().data());
 
-  // Adds a new kernel node to the graph under construction.
-  if (state_ == State::kCreate) {
-    Dependencies barrier = GetBarrier(execution_scope_id);
-    GpuGraphNodeInfo& node_info = execution_scope.nodes.emplace_back();
-    return GpuDriver::GraphAddKernelNode(
-        &node_info.handle, graph_, barrier, kernel.name(), gpu_func, blocks.x,
+  auto params = GpuDriver::CreateNodeParams(gpu_func, blocks.x,
         blocks.y, blocks.z, threads.x, threads.y, threads.z,
         packed_args.number_of_shared_bytes(), kernel_params, /*extra=*/nullptr);
-  }
 
   // Updates kernel node in the executable graph.
   if (state_ == State::kUpdate) {
     GpuGraphNodeHandle node =
         execution_scope.nodes[execution_scope.update_state.node_idx++].handle;
+
+    auto& cached_params = launch_cache_[node];
+    if(memcmp(&cached_params, &params, sizeof(params)) == 0) {
+      //VLOG(0) << "No update is needed";
+      return absl::OkStatus();
+    }
+    cached_params = params;
+
     return GpuDriver::GraphExecKernelNodeSetParams(
-        exec_, node, kernel.name(), gpu_func, blocks.x, blocks.y, blocks.z,
-        threads.x, threads.y, threads.z, packed_args.number_of_shared_bytes(),
-        kernel_params, /*extra=*/nullptr);
+        exec_, node, kernel.name(), params);
+  }
+
+  // Adds a new kernel node to the graph under construction.
+  if (state_ == State::kCreate) {
+    Dependencies barrier = GetBarrier(execution_scope_id);
+    GpuGraphNodeInfo& node_info = execution_scope.nodes.emplace_back();
+    auto res =  GpuDriver::GraphAddKernelNode(
+        &node_info.handle, graph_, barrier, kernel.name(), params);
+
+    launch_cache_[node_info.handle] = params;
+    return res;
   }
 
   return UnsupportedStateError(state_);
@@ -579,21 +603,58 @@ absl::Status GpuCommandBuffer::AddNestedCommandBuffer(
 
   TF_RETURN_IF_ERROR(CheckNotFinalized());
 
+  GpuGraphNodeHandle node;
   GpuGraphHandle child_graph = GpuCommandBuffer::Cast(&nested)->graph();
 
-  // Adds a child graph node to the graph under construction.
-  if (state_ == State::kCreate) {
-    Dependencies barrier = GetBarrier(execution_scope_id);
-    GpuGraphNodeInfo& node_info = execution_scope.nodes.emplace_back();
-    return GpuDriver::GraphAddChildNode(&node_info.handle, graph_, barrier,
-                                        child_graph);
+  if (state_ == State::kUpdate) {
+    node = execution_scope.nodes[execution_scope.update_state.node_idx++].handle;
+    auto& xnested = traced_cache_[node];
+    if(xnested == &nested) {
+      //VLOG(0) << &nested << " child graph unchanged!";
+      return absl::OkStatus();
+    } else {
+      //VLOG(0) << &nested << " child graph needs to be updated cached " << xnested;
+    }
+    xnested = &nested;
   }
+
+  std::optional< GpuGraphKernelNodeParams > np;
+#if TENSORFLOW_USE_ROCM  
+  std::vector< GpuGraphNodeHandle > nodes;
+  TF_ASSIGN_OR_RETURN(size_t count, GpuDriver::GraphGetNodes(child_graph, &nodes));
+  if(count == 1) {
+    GpuGraphKernelNodeParams params;
+    if(auto res = GpuDriver::GraphGetKernelNodeParams(nodes[0], &params); res.ok()) {
+      np = params;
+    }
+  }
+#endif
 
   // Updates child graph node in the executable graph.
   if (state_ == State::kUpdate) {
-    GpuGraphNodeHandle node =
-        execution_scope.nodes[execution_scope.update_state.node_idx++].handle;
+    if(np) {
+      return GpuDriver::GraphExecKernelNodeSetParams(exec_, node, 
+          "traced kernel", *np);
+    }
     return GpuDriver::GraphExecChildNodeSetParams(exec_, node, child_graph);
+  }
+
+  // Adds a child graph node to the graph under construction.
+  if (state_ == State::kCreate) {
+
+    Dependencies barrier = GetBarrier(execution_scope_id);
+    GpuGraphNodeInfo& node_info = execution_scope.nodes.emplace_back();
+
+    auto res = absl::OkStatus();
+    if(np) {
+      res = GpuDriver::GraphAddKernelNode(&node_info.handle, graph_, barrier, 
+            "traced kernel", *np);
+    } else {
+      res = GpuDriver::GraphAddChildNode(&node_info.handle, graph_, barrier,
+                                         child_graph);
+    }
+    traced_cache_[node_info.handle] = &nested;
+    return res;
   }
 
   return UnsupportedStateError(state_);
@@ -1032,13 +1093,12 @@ absl::Status GpuCommandBuffer::Finalize() {
   TF_RETURN_IF_ERROR(CheckNotFinalized());
 
   // Maybe dump created CUDA graph to a dot file for debugging.
-  if (state_ == State::kCreate && VLOG_IS_ON(10)) {
+  if (state_ == State::kCreate && VLOG_IS_ON(3)) {
     std::string path = tsl::io::GetTempFilename(/*extension=*/"dot");
     auto printed = GpuDriver::GraphDebugDotPrint(
-        graph_, path.c_str(), /*return_printed_graph=*/VLOG_IS_ON(100));
-    if (VLOG_IS_ON(100) && printed.ok()) {
-      VLOG(100) << "Printed Gpu graph " << graph_ << " to: " << path << "\n"
-                << *printed;
+        graph_, path.c_str(), /*return_printed_graph=*/VLOG_IS_ON(0));
+    if (VLOG_IS_ON(0) && printed.ok()) {
+      VLOG(0) << "Printed Gpu graph " << graph_ << " to: " << path;
     }
   }
 

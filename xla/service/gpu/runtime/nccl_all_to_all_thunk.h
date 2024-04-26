@@ -55,9 +55,12 @@ class NcclAllToAllStartThunk : public NcclCollectiveThunk {
       mlir::lmhlo_gpu::AllToAllStartOp op);
   static CollectiveOpGroupMode GetGroupMode(
       const HloAllToAllInstruction* instr);
+  
+  const NcclAllToAllConfig& a2aconfig() const { return config_; }
+  const NcclCollectiveConfig& config() const override { return config_.config; }
+  absl::Span<const Buffer> buffers() const { return buffers_; }
 
  protected:
-  const NcclCollectiveConfig& config() const override { return config_.config; }
   absl::Status RunNcclCollective(const ExecuteParams& params,
                                  se::Stream& stream,
                                  NcclApi::NcclCommHandle comm) override;

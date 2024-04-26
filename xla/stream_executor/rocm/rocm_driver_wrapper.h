@@ -103,10 +103,13 @@ namespace wrap {
   __macro(hipGetDeviceCount)                        \
   __macro(hipGetDeviceProperties)                   \
   __macro(hipGetErrorString)                        \
+  __macro(hipGetFuncBySymbol)                       \
+  __macro(hipGraphAddEmptyNode)                     \
   __macro(hipGraphAddKernelNode)                    \
   __macro(hipGraphAddChildGraphNode)                \
   __macro(hipGraphAddMemAllocNode)                  \
   __macro(hipGraphAddMemcpyNode1D)                  \
+  __macro(hipGraphAddMemcpyNode)                    \
   __macro(hipGraphAddMemsetNode)                    \
   __macro(hipGraphAddMemFreeNode)                   \
   __macro(hipGraphCreate)                           \
@@ -116,14 +119,16 @@ namespace wrap {
   __macro(hipGraphExecChildGraphNodeSetParams)      \
   __macro(hipGraphExecDestroy)                      \
   __macro(hipGraphExecKernelNodeSetParams)          \
+  __macro(hipGraphExecMemcpyNodeSetParams)          \
   __macro(hipGraphExecMemcpyNodeSetParams1D)        \
   __macro(hipGraphExecMemsetNodeSetParams)          \
   __macro(hipGraphExecUpdate)                       \
   __macro(hipGraphInstantiate)                      \
-  __macro(hipGraphMemAllocNodeGetParams)            \
+  __macro(hipGraphKernelNodeGetParams)              \
   __macro(hipGraphLaunch)                           \
   __macro(hipGraphNodeGetType)                      \
   __macro(hipGraphNodeSetEnabled)                   \
+  __macro(hipGraphMemAllocNodeGetParams)            \
   __macro(hipHostFree)                              \
   __macro(hipHostMalloc)                            \
   __macro(hipHostRegister)                          \
@@ -162,6 +167,7 @@ namespace wrap {
   __macro(hipSetDevice)                             \
   __macro(hipStreamAddCallback)                     \
   __macro(hipStreamBeginCapture)                    \
+  __macro(hipStreamBeginCaptureToGraph)             \
   __macro(hipStreamCreateWithFlags)                 \
   __macro(hipStreamCreateWithPriority)              \
   __macro(hipStreamDestroy)                         \

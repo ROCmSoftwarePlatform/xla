@@ -520,7 +520,8 @@ static std::string_view StreamCaptureModeToString(
 }
 
 /* static */ absl::Status GpuDriver::StreamBeginCaptureToGraph(
-    CUstream stream, CUgraph graph, StreamCaptureMode mode) {
+    CUstream stream, CUgraph graph, 
+    absl::Span<const CUgraphNode > deps, StreamCaptureMode mode) {
   CUstreamCaptureMode cu_mode;
   switch (mode) {
     case StreamCaptureMode::kGlobal:
@@ -539,9 +540,9 @@ static std::string_view StreamCaptureModeToString(
           << StreamCaptureModeToString(mode) << " mode to graph " << graph;
   RETURN_IF_CUDA_RES_ERROR(
       cuStreamBeginCaptureToGraph(stream, graph,
-                                  /*dependencies=*/nullptr,
+                                  /*dependencies=*/deps.data(),
                                   /*dependencyData=*/nullptr,
-                                  /*numDependencies=*/0, cu_mode),
+                                  /*numDependencies=*/deps.size(), cu_mode),
       "Failed to begin stream capture to graph");
   return absl::OkStatus();
 #else
@@ -742,7 +743,7 @@ GpuDriver::GraphNodeGetDependencies(GpuGraphNodeHandle node) {
 #if CUDA_VERSION >= 12000
   VLOG(2) << "Print CUDA graph " << graph << " debug dot file to " << path;
 
-  int flags = CU_GRAPH_DEBUG_DOT_FLAGS_VERBOSE;
+  int flags = CU_GRAPH_DEBUG_DOT_FLAGS_HANDLES | CU_GRAPH_DEBUG_DOT_FLAGS_RUNTIME_TYPES ;
   RETURN_IF_CUDA_RES_ERROR(cuGraphDebugDotPrint(graph, path, flags),
                            "Failed to print gpu graph debug file");
 
@@ -861,41 +862,40 @@ GpuDriver::GraphAddNode(CUgraphNode* node, CUgraph graph,
   return absl::OkStatus();
 }
 
+/* static */ GpuGraphKernelNodeParams GpuDriver::CreateNodeParams(
+      GpuFunctionHandle function, unsigned int grid_dim_x,
+      unsigned int grid_dim_y, unsigned int grid_dim_z,
+      unsigned int block_dim_x, unsigned int block_dim_y,
+      unsigned int block_dim_z, unsigned int shared_mem_bytes,
+      void** kernel_params, void** extra) {
+
+  return CUDA_KERNEL_NODE_PARAMS{
+    .func = function,
+    .gridDimX = grid_dim_x, 
+    .gridDimY = grid_dim_y, 
+    .gridDimZ = grid_dim_z,
+    .blockDimX = block_dim_x,
+    .blockDimY = block_dim_y,
+    .blockDimZ = block_dim_z,
+    .sharedMemBytes = shared_mem_bytes,
+    .kernelParams = kernel_params,
+    .extra = extra,
+  };
+}
+
 /* static */ absl::Status GpuDriver::GraphAddKernelNode(
     CUgraphNode* node, CUgraph graph, absl::Span<const CUgraphNode> deps,
-    absl::string_view kernel_name, CUfunction function, unsigned int grid_dim_x,
-    unsigned int grid_dim_y, unsigned int grid_dim_z, unsigned int block_dim_x,
-    unsigned int block_dim_y, unsigned int block_dim_z,
-    unsigned int shared_mem_bytes, void** kernel_params, void** extra) {
-  VLOG(2) << "Add kernel node to a graph " << graph
-          << "; kernel: " << kernel_name << "; gdx: " << grid_dim_x
-          << " gdy: " << grid_dim_y << " gdz: " << grid_dim_z
-          << " bdx: " << block_dim_x << " bdy: " << block_dim_y
-          << " bdz: " << block_dim_z << "; shmem: " << shared_mem_bytes
-          << "; deps: " << deps.size();
-
-  CUDA_KERNEL_NODE_PARAMS params;
-  memset(&params, 0, sizeof(params));
-
-  params.func = function;
-  params.gridDimX = grid_dim_x;
-  params.gridDimY = grid_dim_y;
-  params.gridDimZ = grid_dim_z;
-  params.blockDimX = block_dim_x;
-  params.blockDimY = block_dim_y;
-  params.blockDimZ = block_dim_z;
-  params.sharedMemBytes = shared_mem_bytes;
-  params.kernelParams = kernel_params;
-  params.extra = extra;
+    absl::string_view kernel_name, 
+    const GpuGraphKernelNodeParams& params) {
 
   // TODO(ezhulenev): Why do we do it on every call to launch kernel? This
   // should be moved one level up to se::Kernel level, and done just once (or
   // updated once we get a new larger shared memory request).
-  if (shared_mem_bytes != 0) {
+  if (params.sharedMemBytes != 0) {
     RETURN_IF_CUDA_RES_ERROR(
-        cuFuncSetAttribute(function,
+        cuFuncSetAttribute(params.func,
                            CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES,
-                           shared_mem_bytes),
+                           params.sharedMemBytes),
         "Failed to set shared memory size");
   }
 
@@ -908,38 +908,16 @@ GpuDriver::GraphAddNode(CUgraphNode* node, CUgraph graph,
 
 /*static*/ absl::Status GpuDriver::GraphExecKernelNodeSetParams(
     CUgraphExec exec, CUgraphNode node, absl::string_view kernel_name,
-    CUfunction function, unsigned int grid_dim_x, unsigned int grid_dim_y,
-    unsigned int grid_dim_z, unsigned int block_dim_x, unsigned int block_dim_y,
-    unsigned int block_dim_z, unsigned int shared_mem_bytes,
-    void** kernel_params, void** extra) {
-  VLOG(2) << "Set kernel node params " << node << " in graph executable "
-          << exec << "; kernel: " << kernel_name << "; gdx: " << grid_dim_x
-          << " gdy: " << grid_dim_y << " gdz: " << grid_dim_z
-          << " bdx: " << block_dim_x << " bdy: " << block_dim_y
-          << " bdz: " << block_dim_z << "; shmem: " << shared_mem_bytes;
-
-  CUDA_KERNEL_NODE_PARAMS params;
-  memset(&params, 0, sizeof(params));
-
-  params.func = function;
-  params.gridDimX = grid_dim_x;
-  params.gridDimY = grid_dim_y;
-  params.gridDimZ = grid_dim_z;
-  params.blockDimX = block_dim_x;
-  params.blockDimY = block_dim_y;
-  params.blockDimZ = block_dim_z;
-  params.sharedMemBytes = shared_mem_bytes;
-  params.kernelParams = kernel_params;
-  params.extra = extra;
+    const GpuGraphKernelNodeParams& params) {
 
   // TODO(ezhulenev): Why do we do it on every call to launch kernel? This
   // should be moved one level up to se::Kernel level, and done just once (or
   // updated once we get a new larger shared memory request).
-  if (shared_mem_bytes != 0) {
+  if (params.sharedMemBytes != 0) {
     RETURN_IF_CUDA_RES_ERROR(
-        cuFuncSetAttribute(function,
+        cuFuncSetAttribute(params.func,
                            CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES,
-                           shared_mem_bytes),
+                           params.sharedMemBytes),
         "Failed to set shared memory size");
   }
 
@@ -992,6 +970,31 @@ static CUmemAllocationType ToCudaAllocationType(
     case GpuDriver::MemAllocationType::kPinned:
       return CU_MEM_ALLOCATION_TYPE_PINNED;
   }
+}
+
+/* static */ absl::StatusOr<size_t> GpuDriver::GraphGetNodes(
+        CUgraph graph, std::vector< CUgraphNode > *pnodes) {
+  VLOG(2) << "Get node count in graph " << graph;
+  size_t numNodes;
+  RETURN_IF_CUDA_RES_ERROR(
+      cuGraphGetNodes(graph, nullptr, &numNodes),
+      "Failed to get CUDA graph node count");
+  
+  if(pnodes == nullptr) return numNodes;
+
+  pnodes->resize(numNodes);
+  RETURN_IF_CUDA_RES_ERROR(
+      cuGraphGetNodes(graph, pnodes->data(), &numNodes),
+      "Failed to get CUDA graph nodes");
+  return numNodes;
+}
+
+/* static */ absl::Status GpuDriver::GraphGetKernelNodeParams(
+        CUgraphNode node, GpuGraphKernelNodeParams* pNodeParams) 
+{
+  RETURN_IF_CUDA_RES_ERROR(cuGraphKernelNodeGetParams(node, pNodeParams),
+                       "Failed to get kernel node params");
+  return absl::OkStatus();
 }
 
 /*static*/ absl::Status GpuDriver::GraphAddMemAllocNode(

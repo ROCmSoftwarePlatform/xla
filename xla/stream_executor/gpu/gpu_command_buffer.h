@@ -319,6 +319,12 @@ class GpuCommandBuffer : public CommandBuffer {
   GpuGraphExecHandle exec_ = nullptr;  // owned if `is_owned_graph_exec_`
   bool is_owned_graph_exec_ = true;    // ownership of `is_owned_graph_exec_`
 
+  absl::flat_hash_map< GpuGraphNodeHandle, 
+            const CommandBuffer *> traced_cache_;
+
+  absl::flat_hash_map< GpuGraphNodeHandle, 
+            GpuGraphKernelNodeParams > launch_cache_;
+
   // ExecutionScope holds the state of an underlying CUDA graph (nodes an
   // barriers added to a graph) for a single execution scope.
   struct ExecutionScope {

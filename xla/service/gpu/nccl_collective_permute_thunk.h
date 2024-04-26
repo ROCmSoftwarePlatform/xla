@@ -46,15 +46,18 @@ class NcclCollectivePermuteStartThunk : public NcclCollectiveThunk {
 
   static const char* GetHloOpName() { return "collective-permute-start"; }
 
- protected:
+  const NcclP2PConfig& p2pconfig() const { return config_; }
   const NcclCollectiveConfig& config() const override { return config_.config; }
+  absl::Span<const Buffer> buffers() const { return buffers_; }
+
+ protected:
   absl::Status RunNcclCollective(const ExecuteParams& params,
                                  se::Stream& stream,
                                  NcclApi::NcclCommHandle comm) override;
 
  private:
   const NcclP2PConfig config_;
-  const Buffer buffer_;
+  const std::vector < Buffer > buffers_;
 };
 
 absl::Status RunCollectivePermute(

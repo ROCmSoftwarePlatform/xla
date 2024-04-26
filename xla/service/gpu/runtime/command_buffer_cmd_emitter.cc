@@ -32,6 +32,8 @@ limitations under the License.
 #include "xla/service/gpu/runtime/memset_thunk.h"
 #include "xla/service/gpu/runtime/nccl_all_gather_thunk.h"
 #include "xla/service/gpu/runtime/nccl_all_reduce_thunk.h"
+#include "xla/service/gpu/runtime/nccl_all_to_all_thunk.h"
+#include "xla/service/gpu/nccl_collective_permute_thunk.h"
 #include "xla/service/gpu/runtime/replica_id_thunk.h"
 #include "xla/service/gpu/runtime/sequential_thunk.h"
 #include "xla/service/gpu/runtime/while_thunk.h"
@@ -158,6 +160,18 @@ static absl::StatusOr<Command> Convert(const NcclAllGatherStartThunk& thunk) {
                                         thunk.buffers());
 }
 
+static absl::StatusOr<Command> Convert(const NcclAllToAllStartThunk& thunk) {
+  return std::make_unique<AllToAllCmd>(thunk.execution_stream_id(),
+                                         thunk.nccl_api(), thunk.a2aconfig(),
+                                         thunk.buffers());
+}
+
+static absl::StatusOr<Command> Convert(const NcclCollectivePermuteStartThunk& thunk) {
+  return std::make_unique<CollectivePermuteCmd>(thunk.execution_stream_id(),
+                                          thunk.nccl_api(), thunk.p2pconfig(),
+                                          thunk.buffers());
+}
+
 static absl::StatusOr<Command> Convert(const PartitionIdThunk& thunk) {
   return std::make_unique<ComputationIdCmd>(thunk.execution_stream_id(),
                                             thunk.dest(),
@@ -232,6 +246,10 @@ static absl::Status AppendCommands(
       return append(Convert<NcclAllReduceStartThunk>(thunk));
     case Thunk::Kind::kNcclReduceScatterStart:
       return append(Convert<NcclReduceScatterStartThunk>(thunk));
+    case Thunk::Kind::kNcclAllToAllStart:
+      return append(Convert<NcclAllToAllStartThunk>(thunk));
+    case Thunk::Kind::kNcclCollectivePermuteStart:
+      return append(Convert<NcclCollectivePermuteStartThunk>(thunk));
     case Thunk::Kind::kPartitionId:
       return append(Convert<PartitionIdThunk>(thunk));
     case Thunk::Kind::kReplicaId:
@@ -251,6 +269,8 @@ static absl::Status AppendCommands(
     case Thunk::Kind::kNcclAllGatherDone:
     case Thunk::Kind::kNcclAllReduceDone:
     case Thunk::Kind::kNcclReduceScatterDone:
+    case Thunk::Kind::kNcclAllToAllDone:
+    case Thunk::Kind::kNcclCollectivePermuteDone:
     case Thunk::Kind::kWaitForStreams:
       return absl::OkStatus();
 
