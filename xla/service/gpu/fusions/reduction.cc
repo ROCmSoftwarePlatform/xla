@@ -1353,20 +1353,40 @@ ReductionFusion::ComputeReductionCodegenInfo(
   // recommendation is to use between 128 and 512 threads, so we just go for
   // 256. See https://forums.developer.nvidia.com/t/55529
   // num_threads_x * num_threads_y = 1024 seems to work best on mi300.
-  constexpr int64_t kThreadsPerBlockTarget = 256;
-  if (reduction_dimensions.is_row_reduction &&
-      num_threads_x * 2 <= kThreadsPerBlockTarget) {
+  constexpr int64_t kThreadsPerBlockTarget = 1024;
+  if (reduction_dimensions.is_row_reduction) {
     int64_t kept_size = reduction_dimensions.dimensions[kRowKeptDimension];
+    VLOG(2) << "kept_size: " << kept_size;
     // Increase the size of the y dimension as long as there's remaining
     // parallelism.
-    if (kept_size * num_threads_x <= kThreadsPerBlockTarget) {
-      num_threads_y = kept_size;
-      // num_threads_x is a power of two, but it may be less than 32. If dim_y
-      // is also small, we may have to increase the bound so the total number of
-      // threads is a multiple of 32.
-      while ((num_threads_x * num_threads_y) % 64) ++num_threads_y;
-    } else {
-      num_threads_y = kThreadsPerBlockTarget / num_threads_x;
+    // Calculate initial num_threads_y based on kept_size and kThreadsPerBlockTarget.
+    num_threads_y = kThreadsPerBlockTarget / num_threads_x;
+
+    // Ensure num_threads_y is large enough to handle kept_size efficiently but within block limits.
+    num_threads_y = std::min(num_threads_y, kept_size / num_threads_x);
+
+    // Correct num_threads_y to be at least 1 if kept_size is very large but num_threads_x is small.
+    if (num_threads_y < 1) {
+        num_threads_y = 1;
+    }
+
+    // Adjust num_threads_y to make the total number of threads a multiple of 64 (wavefront size).
+    while ((num_threads_x * num_threads_y) % WarpSize() != 0) {
+        num_threads_y++;
+        // Check to ensure not exceeding max threads per block.
+        if (num_threads_x * num_threads_y > kThreadsPerBlockTarget) {
+            num_threads_y--;
+            break;
+        }
+    }
+
+    // Final safeguard to ensure that we don't exceed the maximum number of threads per block.
+    if (num_threads_x * num_threads_y > kThreadsPerBlockTarget) {
+        num_threads_y = kThreadsPerBlockTarget / num_threads_x;
+        while ((num_threads_x * num_threads_y) % WarpSize() != 0 && num_threads_y > 1) {
+            // Decrement if exceeding the max threads or not fitting the wavefront.
+            num_threads_y--;
+        }
     }
   }
 

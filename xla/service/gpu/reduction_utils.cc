@@ -84,7 +84,7 @@ int64_t MinThreadsXRowReduction(const HloModuleConfig& hlo_module_config) {
     return 512;
   }
 #endif  // GOOGLE_CUDA
-  return 1024;
+  return 512;
 }
 
 Vector3 GetReductionTiling(const ReductionDimensions& reduction_dimensions) {
