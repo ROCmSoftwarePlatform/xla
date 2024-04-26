@@ -210,6 +210,7 @@ class ROCMBlas : public blas::BlasSupport {
   ROCMBlas(const ROCMBlas &) = delete;
   void operator=(const ROCMBlas &) = delete;
 
+  Stream *stream_ = nullptr;
   bool has_mfma_ = false;
   bool use_hgemm_alt_impl_ = false;
 };

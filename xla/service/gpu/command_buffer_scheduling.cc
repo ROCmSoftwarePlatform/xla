@@ -192,14 +192,16 @@ static bool IsCommand(const HloInstruction* hlo,
 static bool IsAsyncStartCommand(const HloInstruction* hlo,
                                 const CommandBufferConfig& config) {
   if (hlo->opcode() == HloOpcode::kAllReduceStart ||
-      hlo->opcode() == HloOpcode::kAllGatherStart) {
+      hlo->opcode() == HloOpcode::kAllGatherStart 
+      || hlo->opcode() == HloOpcode::kCollectivePermuteStart
+      ) {
     return config.enabled_commands.contains(DebugOptions::COLLECTIVES);
   }
 
   if (hlo->opcode() == HloOpcode::kAsyncStart) {
-    if (hlo->async_wrapped_opcode() == HloOpcode::kReduceScatter) {
+    //if (hlo->async_wrapped_opcode() == HloOpcode::kReduceScatter) {
       return config.enabled_commands.contains(DebugOptions::COLLECTIVES);
-    }
+   // }
   }
 
   return false;
@@ -208,14 +210,16 @@ static bool IsAsyncStartCommand(const HloInstruction* hlo,
 static bool IsAsyncDoneCommand(const HloInstruction* hlo,
                                const CommandBufferConfig& config) {
   if (hlo->opcode() == HloOpcode::kAllReduceDone ||
-      hlo->opcode() == HloOpcode::kAllGatherDone) {
+      hlo->opcode() == HloOpcode::kAllGatherDone 
+      || hlo->opcode() == HloOpcode::kCollectivePermuteDone
+      ) {
     return config.enabled_commands.contains(DebugOptions::COLLECTIVES);
   }
 
   if (hlo->opcode() == HloOpcode::kAsyncDone) {
-    if (hlo->async_wrapped_opcode() == HloOpcode::kReduceScatter) {
+    //if (hlo->async_wrapped_opcode() == HloOpcode::kReduceScatter) {
       return config.enabled_commands.contains(DebugOptions::COLLECTIVES);
-    }
+    //}
   }
 
   return false;
@@ -224,7 +228,9 @@ static bool IsAsyncDoneCommand(const HloInstruction* hlo,
 // Finds an async-done HLO operation corresponding on an async-start one.
 static HloInstruction* FindAsyncDoneCommand(const HloInstruction* start) {
   if (start->opcode() == HloOpcode::kAllReduceStart ||
-      start->opcode() == HloOpcode::kAllGatherStart) {
+      start->opcode() == HloOpcode::kAllGatherStart
+       || start->opcode() == HloOpcode::kCollectivePermuteStart
+      ) {
     CHECK(start->users().size() == 1);  // NOLINT, checked by HLO verifier
     return start->users().front();
   } else if (start->opcode() == HloOpcode::kAsyncStart) {
@@ -278,7 +284,11 @@ CommandBufferScheduling::CollectCommandBufferSequences(
   int64_t num_commands_in_current_seq = 0;
 
   // Adds `current_seq` to `sequences` if it has enough commands in it.
-  auto collect_current_seq = [&]() {
+  auto collect_current_seq = [&](const HloInstruction* ins) {
+    if(num_commands_in_current_seq > 0) {
+      std::string ss = ins ? ins->ToString() : "";
+      VLOG(0) << "break at: " << ss << ": seq_length: "  << num_commands_in_current_seq;
+    }
     if (num_commands_in_current_seq >= std::max(1, min_num_commands)) {
       RemoveTrailingNoOps(current_seq);
       sequences.push_back(std::move(current_seq));
@@ -381,11 +391,11 @@ CommandBufferScheduling::CollectCommandBufferSequences(
 
     // If we didn't find the next command, collect the current sequence and
     // start a new one.
-    collect_current_seq();
+    collect_current_seq(inst);
   }
 
   // Don't forget to collect the final command sequence.
-  collect_current_seq();
+  collect_current_seq(nullptr);
   return sequences;
 }
 
@@ -670,6 +680,7 @@ absl::StatusOr<bool> CommandBufferScheduling::Run(
 
   absl::flat_hash_set<DebugOptions::CommandBufferCmdType> commands;
   for (auto cmd_type : debug_options.xla_gpu_enable_command_buffer()) {
+    VLOG(0) << "cmd_type enabled " << cmd_type;
     commands.insert(static_cast<DebugOptions::CommandBufferCmdType>(cmd_type));
   }
   CommandBufferConfig config{std::move(commands), device_description_};

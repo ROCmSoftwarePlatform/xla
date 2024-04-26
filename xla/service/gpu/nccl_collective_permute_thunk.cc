@@ -48,7 +48,7 @@ NcclCollectivePermuteStartThunk::NcclCollectivePermuteStartThunk(
     : NcclCollectiveThunk(Thunk::kNcclCollectivePermuteStart, thunk_info,
                           nccl_api, IsSyncCollective(instr)),
       config_(GetNcclP2PConfig(instr, replica_count, partition_count)),
-      buffer_(buffer) {}
+      buffers_(1, buffer) {}
 
 /*static*/ NcclP2PConfig NcclCollectivePermuteStartThunk::GetNcclP2PConfig(
     const HloCollectivePermuteInstruction* instr, int64_t replica_count,
@@ -120,7 +120,7 @@ absl::Status NcclCollectivePermuteStartThunk::RunNcclCollective(
     NcclApi::NcclCommHandle comm) {
   TF_ASSIGN_OR_RETURN(
       std::vector<DeviceBufferPair> device_buffers,
-      ConvertToDeviceBuffers(params, {buffer_},
+      ConvertToDeviceBuffers(params, buffers_,
                              config_.config.operand_element_type));
   TF_RET_CHECK(device_buffers.size() == 1) << "Expected one buffer pair.";
 
