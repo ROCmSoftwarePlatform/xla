@@ -94,6 +94,8 @@ limitations under the License.
 #include "tsl/platform/status.h"
 #include "tsl/platform/statusor.h"
 
+#include "llvm/IR/IntrinsicsAMDGPU.h"
+
 namespace xla {
 namespace gpu {
 namespace {
@@ -140,11 +142,11 @@ llvm::Type* GetIndexType(const HloFusionInstruction& fusion,
 // For a row reduction, returns the number of rows we can process in parallel
 // per warp.
 int RowReductionGetRowsPerWarp(int reduced_dimension_size) {
-  if (WarpSize() % reduced_dimension_size != 0 ||
-      reduced_dimension_size >= WarpSize()) {
+  if (warpSize % reduced_dimension_size != 0 ||
+      reduced_dimension_size >= warpSize) {
     return 1;
   }
-  return WarpSize() / reduced_dimension_size;
+  return warpSize / reduced_dimension_size;
 }
 
 }  // namespace
@@ -278,7 +280,7 @@ int GetVectorSize(const HloFusionAnalysis& analysis,
 
   // Enabling vectorization if number of threads is <= warpsize leads to half or
   // more of the threads not doing any work.
-  if (num_threads <= WarpSize()) {
+  if (num_threads <= warpSize) {
     VLOG(2) << "Theads are less than warpsize";
     return 1;
   }
@@ -505,11 +507,11 @@ ReductionFusion::ReductionGroupEmitter::ReductionGroupEmitter(
           }
           // Allocate one shared memory element per warp.
           auto block_size = tiling.GetThreadsPerBlock();
-          CHECK_EQ(block_size[kRowMinorReducedDimension] % WarpSize(), 0);
+          CHECK_EQ(block_size[kRowMinorReducedDimension] % warpSize, 0);
           return llvm_ir::AllocateSharedMemoryTile(
               module, element_type,
               {block_size[kRowKeptDimension],
-               block_size[kRowMinorReducedDimension] / WarpSize()},
+               block_size[kRowMinorReducedDimension] / warpSize},
               "shared_cache");
         }
         // return std::nullopt;
@@ -715,11 +717,12 @@ void ReductionFusion::ReductionGroupEmitter::
   // This only works when the block size is a multiple of 32 threads.
   // We check this here as a mistake in the number of threads per
   // block is very hard to detect.
-  CHECK_EQ(threads_per_block % 64, 0);
-  CHECK_EQ(WarpSize() % num_results_per_warp, 0);
+  CHECK_EQ(threads_per_block % warpSize, 0);
+  CHECK_EQ(warpSize % num_results_per_warp, 0);
 
   auto* builder = reduction_emitter_.builder_;
-  for (int distance = 16 / num_results_per_warp; distance >= 1; distance /= 2) {
+
+  auto partial_reduce = [&](auto step) {
     absl::InlinedVector<llvm::Value*, 2> reduction_params;
 
     for (auto acc : partial_result_addresses) {
@@ -743,10 +746,7 @@ void ReductionFusion::ReductionGroupEmitter::
       llvm::Value* partial_result =
           builder->CreateLoad(shuffled_value_type, partial_result_address,
                               "partial_reduction_result");
-      builder->CreateStore(
-          EmitFullWarpShuffleDown(partial_result, builder->getInt32(distance),
-                                  builder),
-          result_from_other_lane);
+      builder->CreateStore(step(partial_result), result_from_other_lane);
     }
 
     absl::StatusOr<std::vector<llvm::Value*>> returned_scalars =
@@ -759,8 +759,111 @@ void ReductionFusion::ReductionGroupEmitter::
       builder->CreateStore(/*Val=*/returned_scalars->at(i),
                            /*Ptr=*/partial_result_addresses[i].first);
     }
+  };
+
+  static bool use_rocm_dpp = []() -> bool {
+    auto var = std::getenv("ROCM_USE_DPP");
+    return var &&
+           (std::strcmp(var, "false") == 0 || std::strcmp(var, "0") == 0);
+  }();
+
+  if ((IsAMDGPU(reduction_emitter_.ir_emitter_context_.llvm_module()) &&
+       reduction_emitter_.ir_emitter_context_.rocm_compute_capability()
+           .gfx9_mi100_or_later() &&
+       use_rocm_dpp)) {
+
+    auto emit_mov_dpp = [&](llvm::Value* value, int64_t ctrl) -> llvm::Value* {
+      llvm::Module* module = builder->GetInsertBlock()->getModule();
+      int bit_width = value->getType()->getPrimitiveSizeInBits();
+      auto* i32_ty = builder->getInt32Ty();
+
+      llvm::Function* intrinsic = llvm::Intrinsic::getDeclaration(
+          module, llvm::Intrinsic::amdgcn_mov_dpp, i32_ty);
+      llvm::Value* all_mask = builder->getInt32(0xf);
+      llvm::Value* ctrl_value = builder->getInt32(ctrl);
+
+      int num_segments = CeilOfRatio(bit_width, 32);
+      llvm::Value* x = builder->CreateBitCast(
+          builder->CreateZExt(
+              builder->CreateBitCast(value, builder->getIntNTy(bit_width)),
+              builder->getIntNTy(32 * num_segments)),
+          llvm::VectorType::get(i32_ty, num_segments, false));
+      for (int i = 0; i < num_segments; ++i) {
+        llvm::Value* insert_val = builder->CreateCall(
+            intrinsic, {builder->CreateExtractElement(x, i), ctrl_value,
+                        all_mask, all_mask, builder->getTrue()});
+        x = builder->CreateInsertElement(x, insert_val, i);
+      }
+      return builder->CreateBitCast(
+          builder->CreateTrunc(
+              builder->CreateBitCast(x, builder->getIntNTy(32 * num_segments)),
+              builder->getIntNTy(bit_width)),
+          value->getType());
+    };
+
+    if ((warpSize / num_results_per_warp) < 32) {
+      for (int distance = (warpSize / 2) / num_results_per_warp;
+           distance >= 1; distance /= 2) {
+        partial_reduce([&](llvm::Value* partial_result) -> llvm::Value* {
+          return emit_mov_dpp(partial_result,
+                              /* ROW_SHL0 */ 0x100 + distance);
+        });
+      }
+      return;
+    }
+
+    CHECK((warpSize == 64 && num_results_per_warp <= 2) ||
+          (warpSize == 32 && num_results_per_warp == 1));
+
+    for (int distance = 3; distance >= 0; distance--) {
+      partial_reduce([&](llvm::Value* partial_result) -> llvm::Value* {
+        return emit_mov_dpp(partial_result,
+                            /* ROW_SHR0 */ 0x110 + (1u << distance));
+      });
+    }
+
+    partial_reduce([&](llvm::Value* partial_result) -> llvm::Value* {
+      return emit_mov_dpp(partial_result, /* BCAST15 */ 0x142);
+    });
+
+    if (warpSize == 64 && num_results_per_warp == 1) {
+      partial_reduce([&](llvm::Value* partial_result) -> llvm::Value* {
+        return emit_mov_dpp(partial_result, /* BCAST32 */ 0x143);
+      });
+    }
+
+    // TODO(rocm) We move the result from lane 63 into 0 to avoid updating
+    // callers that expect result in lane 0. Can we change this? Is readlane
+    // better?
+    for (auto [partial_result_address, element_type] :
+         partial_result_addresses) {
+      // Bitcast cannot be applied to aggregate types (even packed ones), so
+      // we bitcast addresses of load/store to intN* of the same bit-width.
+      llvm::Type* shuffled_value_type =
+          element_type->isStructTy()
+              ? builder->getIntNTy(llvm_ir::GetSizeInBits(element_type))
+              : element_type;
+
+      llvm::Value* partial_result =
+          builder->CreateLoad(shuffled_value_type, partial_result_address,
+                              "partial_reduction_result");
+      builder->CreateStore(emit_mov_dpp(partial_result, /* ROR1 */ 0x13C),
+                           partial_result_address);
+    }
+
+    return;
+  }
+
+  // rv: choose optimal value instead of 64.
+  for (int distance = (64 / 2) / num_results_per_warp; distance >= 1;
+       distance /= 2) {
+    partial_reduce([&](llvm::Value* partial_result) -> llvm::Value* {
+      return EmitFullWarpShuffleDown(partial_result,
+                                     builder->getInt32(distance), builder, warpSize);
+    });
   }
 }
+
 
 llvm_ir::IrArray::Index
 ReductionFusion::ReductionGroupEmitter::GetOutputIndexForReduction(
@@ -874,7 +977,7 @@ void ReductionFusion::ReductionGroupEmitter::EmitReductionOutputForRowReduction(
                                        num_rows_per_warp);
 
   KernelSupportLibrary ksl(builder);
-  llvm::Value* warp_id = builder->CreateUDiv(thread_id_x, constant(WarpSize()));
+  llvm::Value* warp_id = builder->CreateUDiv(thread_id_x, constant(warpSize));
 
   auto emit_write_output = [&](llvm::Value* write_condition,
                                const absl::Span<TypedPointer const> values) {
@@ -934,7 +1037,7 @@ void ReductionFusion::ReductionGroupEmitter::EmitReductionOutputForRowReduction(
         llvm::Value* warp_exists = builder->CreateICmpULT(
             thread_id_x,
             constant(tiling.GetThreadsPerBlock()[kRowMinorReducedDimension] /
-                     WarpSize()));
+                     warpSize));
 
         llvm::Value* selected_value = builder->CreateSelect(
             warp_exists, block_accum_addr, initial_value_addr);
@@ -948,7 +1051,7 @@ void ReductionFusion::ReductionGroupEmitter::EmitReductionOutputForRowReduction(
       // TODO(b/241414088) If only warp is present, then inter-warp
       // communication using shared memory and synchronization using barrier is
       // also unnecessary and should be removed.
-      if (tiling.GetThreadsPerBlock()[kRowMinorReducedDimension] > WarpSize()) {
+      if (tiling.GetThreadsPerBlock()[kRowMinorReducedDimension] > warpSize) {
         EmitFullWarpShuffleDownLoopForReduce(
             reducer, absl::MakeSpan(selected_values),
             tiling.GetNumThreadsPerBlock(), /*num_results_per_warp=*/1);
@@ -971,18 +1074,29 @@ void ReductionFusion::ReductionGroupEmitter::
   const auto& thread_id_info = tiling_kernel_info.thread_id_info;
   const auto& thread_ids = thread_id_info.thread_ids;
 
-  auto constant = [&](uint64_t c) -> llvm::Constant* {
-    return llvm::ConstantInt::get(reduction_emitter_.index_ty_, c);
-  };
-  auto is_zero = [&](llvm::Value* value) {
-    return builder->CreateICmpEQ(value, constant(0));
-  };
+  // auto constant = [&](uint64_t c) -> llvm::Constant* {
+  //   return llvm::ConstantInt::get(reduction_emitter_.index_ty_, c);
+  // };
+  // auto is_zero = [&](llvm::Value* value) {
+  //   return builder->CreateICmpEQ(value, constant(0));
+  // };
   const auto& reduction_info = reduction_emitter_.reduction_codegen_info_;
   const Tiling& tiling = reduction_info.GetTiling();
   int num_outputs = reducer->num_parameters() / 2;
 
   auto* kept_index = thread_ids[kColMinorKeptDimension];
   auto* reduced_index = thread_ids[kColReducedDimension];
+
+  auto constant = [&](uint64_t c) -> llvm::Constant* {
+    return llvm::ConstantInt::get(reduction_emitter_.index_ty_, c);
+  };
+  auto is_zero = [&](llvm::Value* value) {
+    return builder->CreateICmpEQ(
+        builder->CreateAnd(
+            value,
+            constant(tiling.GetThreadsPerBlock()[kColMinorKeptDimension] - 1)),
+        constant(0));
+  };
 
   // Store the transpose in shared memory.
   for (int output_idx = 0; output_idx < num_outputs; output_idx++) {
@@ -1006,10 +1120,11 @@ void ReductionFusion::ReductionGroupEmitter::
         {shmem_transposed_addr, state.shared_cache->GetElementType()});
   }
 
-  EmitFullWarpShuffleDownLoopForReduce(reducer,
-                                       absl::MakeSpan(shmem_transposed_addrs),
-                                       tiling.GetNumThreadsPerBlock(),
-                                       /*num_results_per_warp=*/1);
+  EmitFullWarpShuffleDownLoopForReduce(
+      reducer, absl::MakeSpan(shmem_transposed_addrs),
+      tiling.GetNumThreadsPerBlock(),
+      /*num_results_per_warp=*/WarpSize() /
+          tiling.GetThreadsPerBlock()[kColMinorKeptDimension]);
 
   // Some warps in the block are completely outside of the bound of the
   // tensor, so they should not write any output at all.
@@ -1106,7 +1221,7 @@ absl::Status ReductionFusion::ReductionEmitter::EmitIRForReduction(
   CHECK(!heroes.empty()) << " expect at least one reduce instructions.";
   const Tiling& tiling = reduction_codegen_info_.GetTiling();
   VLOG(2) << "TILING!!!!!!!!!!!!" << tiling.GetNumThreadsPerBlock(); 
-  CHECK_EQ(tiling.GetNumThreadsPerBlock() % WarpSize(), 0);
+  CHECK_EQ(tiling.GetNumThreadsPerBlock() % warpSize, 0);
   ReductionGroupEmitter group_emitter(*this, heroes, result_ir_arrays,
                                       fused_emitter);
 
@@ -1309,15 +1424,16 @@ ReductionFusion::ComputeReductionCodegenInfo(
           << reduction_tiling[1] << " " << reduction_tiling[2] << "]";
 
   // rv: change warpsize.
-  warpSize = reduction_dimensions.is_row_reduction ? WarpSize() : 32;
+  constexpr int64_t kMaxBlockSize = 1024;
+  constexpr int64_t kNumThreadsForColumn = 32;
+  warpSize = reduction_dimensions.is_row_reduction ? 64 : 32;
 
-  int64_t num_threads_y =
-      reduction_dimensions.is_row_reduction ? 1 : WarpSize()/2;
+  int64_t num_threads_y = reduction_dimensions.is_row_reduction ? 1 :
+                          (kMaxBlockSize / kNumThreadsForColumn);
   int64_t rows_per_warp =
       reduction_dimensions.is_row_reduction
           ? RowReductionGetRowsPerWarp(shape[kRowMinorReducedDimension])
           : 1;
-
   VLOG(2) << "ROWs per warp: " << rows_per_warp;
   int64_t num_threads_x = [&] {
     if (reduction_dimensions.is_row_reduction) {
@@ -1333,13 +1449,13 @@ ReductionFusion::ComputeReductionCodegenInfo(
           max_block_size,
           RoundUpTo(CeilOfRatio(shape[kRowMinorReducedDimension],
                                 reduction_tiling[kRowMinorReducedDimension]),
-                    WarpSize()));
+                    warpSize));
     }
-    return WarpSize()/2;
+    return kNumThreadsForColumn;
   }();
 
   //  num_threads_y =
-  //     num_threads_x ? 1 : WarpSize()/4;
+  //     num_threads_x ? 1 : warpSize/4;
   // if (!reduction_dimensions.is_row_reduction) {
   //   num_threads_x = 32;
   //   num_threads_y = 32;
@@ -1353,40 +1469,19 @@ ReductionFusion::ComputeReductionCodegenInfo(
   // recommendation is to use between 128 and 512 threads, so we just go for
   // 256. See https://forums.developer.nvidia.com/t/55529
   // num_threads_x * num_threads_y = 1024 seems to work best on mi300.
-  constexpr int64_t kThreadsPerBlockTarget = 1024;
-  if (reduction_dimensions.is_row_reduction) {
+  int64_t kThreadsPerBlockTarget = 16 * warpSize;
+  if (reduction_dimensions.is_row_reduction &&
+      num_threads_x * 2 <= kThreadsPerBlockTarget) {
     int64_t kept_size = reduction_dimensions.dimensions[kRowKeptDimension];
     VLOG(2) << "kept_size: " << kept_size;
-    // Increase the size of the y dimension as long as there's remaining
-    // parallelism.
-    // Calculate initial num_threads_y based on kept_size and kThreadsPerBlockTarget.
-    num_threads_y = kThreadsPerBlockTarget / num_threads_x;
-
-    // Ensure num_threads_y is large enough to handle kept_size efficiently but within block limits.
-    num_threads_y = std::min(num_threads_y, kept_size / num_threads_x);
-
-    // Correct num_threads_y to be at least 1 if kept_size is very large but num_threads_x is small.
-    if (num_threads_y < 1) {
-        num_threads_y = 1;
-    }
-
-    // Adjust num_threads_y to make the total number of threads a multiple of 64 (wavefront size).
-    while ((num_threads_x * num_threads_y) % WarpSize() != 0) {
-        num_threads_y++;
-        // Check to ensure not exceeding max threads per block.
-        if (num_threads_x * num_threads_y > kThreadsPerBlockTarget) {
-            num_threads_y--;
-            break;
-        }
-    }
-
-    // Final safeguard to ensure that we don't exceed the maximum number of threads per block.
-    if (num_threads_x * num_threads_y > kThreadsPerBlockTarget) {
-        num_threads_y = kThreadsPerBlockTarget / num_threads_x;
-        while ((num_threads_x * num_threads_y) % WarpSize() != 0 && num_threads_y > 1) {
-            // Decrement if exceeding the max threads or not fitting the wavefront.
-            num_threads_y--;
-        }
+     if (kept_size * num_threads_x <= kThreadsPerBlockTarget) {
+      num_threads_y = kept_size;
+      // num_threads_x is a power of two, but it may be less than 32. If dim_y
+      // is also small, we may have to increase the bound so the total number of
+      // threads is a multiple of 32.
+      while ((num_threads_x * num_threads_y) %  warpSize) ++num_threads_y;
+    } else {
+      num_threads_y = kThreadsPerBlockTarget / num_threads_x;
     }
   }
 
@@ -1417,6 +1512,18 @@ ReductionFusion::ComputeReductionCodegenInfo(
     tiled_shape.push_back(vector_size);
     tile_per_thread.push_back(vector_size);
   }
+
+  VLOG(2) << "tiled_shape "
+           << " [" << tiled_shape[0] << " " << tiled_shape[1] << " "
+          << tiled_shape[2] << "]";
+
+  VLOG(2) << "num_threads "
+           << " [" << num_threads[0] << " " << num_threads[1] << " "
+          << num_threads[2] << "]";
+
+  VLOG(2) << "tile_per_thread "
+           << " [" << tile_per_thread[0] << " " << tile_per_thread[1] << " "
+          << tile_per_thread[2] << "]";
 
   Tiling tiling(tiled_shape, tile_per_thread, num_threads,
                 /*loops_to_unroll=*/{false, false, true, false});
@@ -1462,7 +1569,7 @@ std::optional<IndexingMap> ReductionFusion::ComputeThreadIdToOutputIndexing(
           tiling.GetShape()[kRowMinorReducedDimension]);
       if (rows_per_warp > 1) {
         linear_index.AddConstraint(thread_ids[kRowMinorReducedDimension] %
-                                       (WarpSize() / rows_per_warp),
+                                       (warpSize / rows_per_warp),
                                    {0, 0});
       } else {
         linear_index.AddConstraint(thread_ids[kRowMinorReducedDimension],
@@ -1486,7 +1593,7 @@ std::optional<IndexingMap> ReductionFusion::ComputeThreadIdToOutputIndexing(
     // TODO(b/319081342): Add constraints for the writing threads
     // (`has_output`).
     projected_index.AddConstraint(
-        mlir::getAffineDimExpr(kIndexingMapThreadIdxDims[0], ctx) % WarpSize(),
+        mlir::getAffineDimExpr(kIndexingMapThreadIdxDims[0], ctx) % warpSize,
         {0, 0});
 
     return ComposeIndexingMaps(

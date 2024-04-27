@@ -56,8 +56,8 @@ namespace gpu {
 namespace {
 
 Tiling ComputeTransposeTiling(const TransposeDescription& tiled_transpose) {
-  constexpr int kNumRows = 8;
-  constexpr int WarpSize = 64;
+  constexpr int kNumRows = 4;
+  constexpr int WarpSize = 32;
   static_assert(WarpSize % kNumRows == 0);
 
   // 3D view over the output shape.

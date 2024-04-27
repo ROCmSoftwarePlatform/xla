@@ -201,7 +201,7 @@ llvm::Value* EmitAMDGPUShflDown(llvm::Value* value, llvm::Value* offset,
 
 // Helper function to emit call to NVPTX shfl_down intrinsic.
 llvm::Value* EmitNVPTXShflDown(llvm::Value* value, llvm::Value* offset,
-                               llvm::IRBuilder<>* b) {
+                               llvm::IRBuilder<>* b, const int64_t warpSize) {
   llvm::Module* module = b->GetInsertBlock()->getModule();
   llvm::Intrinsic::ID llvm_intrinsic_id;
   CHECK_EQ(value->getType()->getPrimitiveSizeInBits(), 32);
@@ -213,7 +213,7 @@ llvm::Value* EmitNVPTXShflDown(llvm::Value* value, llvm::Value* offset,
   llvm::Function* intrinsic =
       llvm::Intrinsic::getDeclaration(module, llvm_intrinsic_id, {});
   return b->CreateCall(
-      intrinsic, {b->getInt32(-1), value, offset, b->getInt32(WarpSize() - 1)});
+      intrinsic, {b->getInt32(-1), value, offset, b->getInt32(warpSize - 1)});
 }
 
 // Helper function to emit call to SPIR shfl_down intrinsic.
@@ -240,7 +240,7 @@ llvm::Value* EmitSPIRShflDown(llvm::Value* value, llvm::Value* offset,
 }
 
 llvm::Value* EmitFullWarpShuffleDown(llvm::Value* value, llvm::Value* offset,
-                                     llvm::IRBuilder<>* builder) {
+                                     llvm::IRBuilder<>* builder, const int64_t warpSize) {
   int bit_width = value->getType()->getPrimitiveSizeInBits();
   llvm::Module* module = builder->GetInsertBlock()->getModule();
   llvm::Triple target_triple = llvm::Triple(module->getTargetTriple());
@@ -248,7 +248,7 @@ llvm::Value* EmitFullWarpShuffleDown(llvm::Value* value, llvm::Value* offset,
   // Special case for efficiency
   if (value->getType()->isFloatTy() && bit_width == 32) {
     if (target_triple.isNVPTX()) {
-      return EmitNVPTXShflDown(value, offset, builder);
+      return EmitNVPTXShflDown(value, offset, builder, warpSize);
     } else if (target_triple.getArch() == llvm::Triple::amdgcn) {
       return EmitAMDGPUShflDown(value, offset, builder);
     } else if (target_triple.isSPIR()) {
@@ -270,7 +270,7 @@ llvm::Value* EmitFullWarpShuffleDown(llvm::Value* value, llvm::Value* offset,
     llvm::Value* insert_val;
     if (target_triple.isNVPTX()) {
       insert_val = EmitNVPTXShflDown(builder->CreateExtractElement(x, i),
-                                     offset, builder);
+                                     offset, builder, warpSize);
     } else if (target_triple.getArch() == llvm::Triple::amdgcn) {
       insert_val = EmitAMDGPUShflDown(builder->CreateExtractElement(x, i),
                                       offset, builder);
