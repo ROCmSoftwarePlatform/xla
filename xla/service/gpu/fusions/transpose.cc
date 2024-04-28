@@ -64,6 +64,12 @@ Tiling ComputeTransposeTiling(const TransposeDescription& tiled_transpose) {
   Vector3 transposed_dims = tiled_transpose.dimensions;
   Vector3 permutation = tiled_transpose.permutation;
 
+  VLOG(2) << "transposed_dims: [" << transposed_dims[0] << " " 
+          << transposed_dims[1] << " " << transposed_dims[2] << "]";
+
+  VLOG(2) << "permutation: [" << permutation[0] << " " 
+          << permutation[1] << " " << permutation[2] << "]";
+
   // Note: the supported permutations are their own inverses. Therefore we
   // always use the permutation, even when we want the inverse.
   CHECK((permutation == Vector3{0, 2, 1}) || (permutation == Vector3{2, 1, 0}));
@@ -79,6 +85,12 @@ Tiling ComputeTransposeTiling(const TransposeDescription& tiled_transpose) {
   num_threads[permutation[2]] = kNumRows;
 
   VLOG(2) << "Transpose Threads: " << Product(num_threads);
+
+  VLOG(2) << "num_threads: [" << num_threads[0] << " " 
+          << num_threads[1] << " " << num_threads[2] << "]";
+
+  VLOG(2) << "tile_sizes: [" << tile_sizes[0] << " " 
+          << tile_sizes[1] << " " << tile_sizes[2] << "]";
 
   return Tiling(input_dims, tile_sizes, num_threads);
 }
@@ -281,7 +293,7 @@ absl::Status TransposeFusion::EmitKernel(IrEmitterContext& ir_emitter_context,
 
   llvm::Type* index_type =
       GetIndexTypeForKernel(&fusion, launch_dims.launch_bound(), builder);
-  return EmitTilingKernel(builder, tiling_, index_type, tile_generator, WarpSize())
+  return EmitTilingKernel(builder, tiling_, index_type, tile_generator, 32)
       .status();
 }
 

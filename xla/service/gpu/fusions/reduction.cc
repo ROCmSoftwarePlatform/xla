@@ -850,7 +850,6 @@ void ReductionFusion::ReductionGroupEmitter::
       builder->CreateStore(emit_mov_dpp(partial_result, /* ROR1 */ 0x13C),
                            partial_result_address);
     }
-
     return;
   }
 
@@ -1469,7 +1468,7 @@ ReductionFusion::ComputeReductionCodegenInfo(
   // recommendation is to use between 128 and 512 threads, so we just go for
   // 256. See https://forums.developer.nvidia.com/t/55529
   // num_threads_x * num_threads_y = 1024 seems to work best on mi300.
-  int64_t kThreadsPerBlockTarget = 16 * warpSize;
+  int64_t kThreadsPerBlockTarget = 8 * warpSize;
   if (reduction_dimensions.is_row_reduction &&
       num_threads_x * 2 <= kThreadsPerBlockTarget) {
     int64_t kept_size = reduction_dimensions.dimensions[kRowKeptDimension];

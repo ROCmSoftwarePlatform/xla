@@ -103,7 +103,7 @@ tsl::StatusOr<xla::Literal> ReadLiteralFromProto(const std::string& name) {
   
 TEST_F(SelectAndScatterTest, SelectAndScatterPerformance) {
   
-  std::ifstream ifs("/tf/xla/input_reduce.hlo");
+  std::ifstream ifs("/tf/xla/input.hlo");
   if(!ifs)
     throw "Unable to open file";
   
@@ -126,7 +126,7 @@ TEST_F(SelectAndScatterTest, SelectAndScatterPerformance) {
   
   VLOG(0) << "Got expected literal from file.. running test";
   
-  for (int i=0; i < 5; ++i) {
+  for (int i=0; i < 10; ++i) {
     TF_ASSERT_OK_AND_ASSIGN(auto test_res,
         HloTestBase::test_runner_.ExecuteWithExecutable(exec.get(), arg_ptrs, nullptr));
     }
