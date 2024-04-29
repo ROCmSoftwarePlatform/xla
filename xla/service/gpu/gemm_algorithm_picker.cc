@@ -376,6 +376,7 @@ private:
       // VLOG(0) << "gemm algorithm " << profile.algorithm() << " took "
       //        << total_ms << " ms, number of iterations: " << i;
 
+      if(k == 0) reference_ms = total_ms;
       if (!autotune_config_.should_check_correctness()) {
         filtered.emplace_back(AlgoInfo{k, algorithms[k], profile});
         continue;
@@ -391,7 +392,6 @@ private:
 
       bool outputs_match = true;
       if (!reference_algorithm) {
-        reference_ms = total_ms;
         stream_->ThenMemcpy(&reference_buffer, output_buffer_,
                          output_buffer_.size());
         reference_algorithm = profile.algorithm();
@@ -451,7 +451,7 @@ private:
         best.mutable_gemm()->set_algorithm(use_algo_index ? k : p.algorithm());
         *best.mutable_run_time() = tsl::proto_utils::ToDurationProto(
             absl::Milliseconds(p.elapsed_time_in_ms()));
-        VLOG(1) << "SELECTED " << p.algorithm() << 
+        VLOG(0) << "SELECTED " << p.algorithm() << 
           " ms " << p.elapsed_time_in_ms() << ", ref: " << *reference_ms << " ms";
         return best;
       }
@@ -505,13 +505,10 @@ private:
       return algos[default_id].profile;
     }
     VLOG(1) << "top_ID = " << top_id << " --- " << algos[top_id].profile.algorithm();
-    // if(N == MaxSolutions && top_id >= N-1) {
-    //    return Internal("Skip this");
-    // }
     const auto& selected = algos[top_id].profile;
     if(default_id >= 0 && selected.elapsed_time_in_ms() > default_time) {
-      //VLOG(0) << "Taking default which is faster..";
-      // return profiles[default_id];
+      VLOG(0) << "Taking default which is faster..";
+      return algos[default_id].profile;
     }
     return selected;
   }
