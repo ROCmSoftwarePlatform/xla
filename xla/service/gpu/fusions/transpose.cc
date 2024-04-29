@@ -330,7 +330,7 @@ std::optional<IndexingMap> TransposeFusion::ComputeThreadIdToInputIndexing(
     int64_t root_index, int64_t hero_operand_index,
     mlir::MLIRContext* ctx) const {
   const auto& hero = *analysis_.fusion_heroes()[root_index];
-  VLOG(2) << "ComputeThreadIdToInputIndexing2";
+  VLOG(2) << "ComputeThreadIdToInputIndexing";
   return ComposeIndexingMaps(
       GetIndexingMapForTiling(tiling_, ctx),
       GetBitcastMap(tiling_.GetXlaShape(), hero.operand(0)->shape(), ctx));

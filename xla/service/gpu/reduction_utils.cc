@@ -70,7 +70,7 @@ Vector3 PartitionShapeByMiddleDimensions(
 }
 }  // namespace
 
-int64_t MinThreadsXRowReduction(const HloModuleConfig& hlo_module_config) {
+int64_t MinThreadsXRowReduction(const HloModuleConfig& hlo_module_config, const int64_t warpSize) {
 #ifdef GOOGLE_CUDA
   auto ptxas_config =
       PtxOptsFromDebugOptions(hlo_module_config.debug_options());
@@ -84,6 +84,9 @@ int64_t MinThreadsXRowReduction(const HloModuleConfig& hlo_module_config) {
     return 512;
   }
 #endif  // GOOGLE_CUDA
+  // if (warpSize == 64) {
+  //   return 512;
+  // } 
   return 1024;
 }
 
@@ -91,7 +94,7 @@ Vector3 GetReductionTiling(const ReductionDimensions& reduction_dimensions) {
   if (reduction_dimensions.is_row_reduction) {
     int64_t tile_z = std::min(reduction_dimensions.dimensions[0],
                               BatchedReductionRaceFreeBound());
-    return {tile_z, 1, 64};
+    return {tile_z, 1, 32};
   }
 
   // Column reduction.
@@ -103,7 +106,8 @@ int64_t ReductionDimensionRaceFreeBound(
     const ReductionDimensions& reduction_dimensions) {
   Vector3 reduction_tiling = GetReductionTiling(reduction_dimensions);
   if (reduction_dimensions.is_row_reduction) {
-    return MinThreadsXRowReduction(hlo_module_config) * reduction_tiling[2];
+    /*rv: 64 for row reduction*/
+    return MinThreadsXRowReduction(hlo_module_config, 64) * reduction_tiling[2];
   }
   return 32 * reduction_tiling[1];
 }

@@ -26,7 +26,7 @@ namespace gpu {
 
 // Need at least 1024 threads/block for reasonable tree reduction
 // performance (assuming all data fits).
-int64_t MinThreadsXRowReduction(const HloModuleConfig& hlo_module_config);
+int64_t MinThreadsXRowReduction(const HloModuleConfig& hlo_module_config, const int64_t warpSize);
 
 // When doing batched row reduction, how big the batch dimension could be.
 inline constexpr int64_t BatchedReductionRaceFreeBound() { return 8; }

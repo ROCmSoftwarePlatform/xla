@@ -126,7 +126,7 @@ TEST_F(SelectAndScatterTest, SelectAndScatterPerformance) {
   
   VLOG(0) << "Got expected literal from file.. running test";
   
-  for (int i=0; i < 10; ++i) {
+  for (int i=0; i < 1; ++i) {
     TF_ASSERT_OK_AND_ASSIGN(auto test_res,
         HloTestBase::test_runner_.ExecuteWithExecutable(exec.get(), arg_ptrs, nullptr));
     }

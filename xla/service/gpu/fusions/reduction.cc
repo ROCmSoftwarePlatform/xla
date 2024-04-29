@@ -1440,7 +1440,7 @@ ReductionFusion::ComputeReductionCodegenInfo(
         return shape[kRowMinorReducedDimension];
       }
       int64_t max_block_size =
-          MinThreadsXRowReduction(hero_reduction->GetModule()->config());
+          MinThreadsXRowReduction(hero_reduction->GetModule()->config(), warpSize);
       VLOG(2) << "max block size: " << max_block_size;
       VLOG(2) << "shape[kRowMinorReducedDimension]: " << shape[kRowMinorReducedDimension];
       VLOG(2) << "reduction_tiling[kRowMinorReducedDimension]: " << reduction_tiling[kRowMinorReducedDimension];
