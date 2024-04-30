@@ -706,7 +706,7 @@ ReductionFusion::ReductionEmitter::BuildFusedInitializerThunk(
 // Emits shuffle-down reduction for the `partial_result_address` using the
 // reduction computation `reducer`, writes output into
 // `partial_result_address`.
-
+//
 // Multiple partial_result_address inputs happen when doing variadic
 // reduction: each one should get the output value.
 void ReductionFusion::ReductionGroupEmitter::
@@ -721,7 +721,8 @@ void ReductionFusion::ReductionGroupEmitter::
   CHECK_EQ(warpSize % num_results_per_warp, 0);
 
   auto* builder = reduction_emitter_.builder_;
-  for (int distance = 16 / num_results_per_warp; distance >= 1; distance /= 2) {
+
+  auto partial_reduce = [&](auto step) {
     absl::InlinedVector<llvm::Value*, 2> reduction_params;
 
     for (auto acc : partial_result_addresses) {
@@ -745,10 +746,7 @@ void ReductionFusion::ReductionGroupEmitter::
       llvm::Value* partial_result =
           builder->CreateLoad(shuffled_value_type, partial_result_address,
                               "partial_reduction_result");
-      builder->CreateStore(
-          EmitFullWarpShuffleDown(partial_result, builder->getInt32(distance),
-                                  builder, warpSize),
-          result_from_other_lane);
+      builder->CreateStore(step(partial_result), result_from_other_lane);
     }
 
     absl::StatusOr<std::vector<llvm::Value*>> returned_scalars =
@@ -761,149 +759,108 @@ void ReductionFusion::ReductionGroupEmitter::
       builder->CreateStore(/*Val=*/returned_scalars->at(i),
                            /*Ptr=*/partial_result_addresses[i].first);
     }
+  };
+
+  static bool use_rocm_dpp = []() -> bool {
+    auto var = std::getenv("ROCM_USE_DPP");
+    return var &&
+           (std::strcmp(var, "false") == 0 || std::strcmp(var, "0") == 0);
+  }();
+
+  if ((IsAMDGPU(reduction_emitter_.ir_emitter_context_.llvm_module()) &&
+       reduction_emitter_.ir_emitter_context_.rocm_compute_capability()
+           .gfx9_mi100_or_later() &&
+       use_rocm_dpp)) {
+
+    auto emit_mov_dpp = [&](llvm::Value* value, int64_t ctrl) -> llvm::Value* {
+      llvm::Module* module = builder->GetInsertBlock()->getModule();
+      int bit_width = value->getType()->getPrimitiveSizeInBits();
+      auto* i32_ty = builder->getInt32Ty();
+
+      llvm::Function* intrinsic = llvm::Intrinsic::getDeclaration(
+          module, llvm::Intrinsic::amdgcn_mov_dpp, i32_ty);
+      llvm::Value* all_mask = builder->getInt32(0xf);
+      llvm::Value* ctrl_value = builder->getInt32(ctrl);
+
+      int num_segments = CeilOfRatio(bit_width, 32);
+      llvm::Value* x = builder->CreateBitCast(
+          builder->CreateZExt(
+              builder->CreateBitCast(value, builder->getIntNTy(bit_width)),
+              builder->getIntNTy(32 * num_segments)),
+          llvm::VectorType::get(i32_ty, num_segments, false));
+      for (int i = 0; i < num_segments; ++i) {
+        llvm::Value* insert_val = builder->CreateCall(
+            intrinsic, {builder->CreateExtractElement(x, i), ctrl_value,
+                        all_mask, all_mask, builder->getTrue()});
+        x = builder->CreateInsertElement(x, insert_val, i);
+      }
+      return builder->CreateBitCast(
+          builder->CreateTrunc(
+              builder->CreateBitCast(x, builder->getIntNTy(32 * num_segments)),
+              builder->getIntNTy(bit_width)),
+          value->getType());
+    };
+
+    if ((warpSize / num_results_per_warp) < 32) {
+      for (int distance = (warpSize / 2) / num_results_per_warp;
+           distance >= 1; distance /= 2) {
+        partial_reduce([&](llvm::Value* partial_result) -> llvm::Value* {
+          return emit_mov_dpp(partial_result,
+                              /* ROW_SHL0 */ 0x100 + distance);
+        });
+      }
+      return;
+    }
+
+    CHECK((warpSize == 64 && num_results_per_warp <= 2) ||
+          (warpSize == 32 && num_results_per_warp == 1));
+
+    for (int distance = 3; distance >= 0; distance--) {
+      partial_reduce([&](llvm::Value* partial_result) -> llvm::Value* {
+        return emit_mov_dpp(partial_result,
+                            /* ROW_SHR0 */ 0x110 + (1u << distance));
+      });
+    }
+
+    partial_reduce([&](llvm::Value* partial_result) -> llvm::Value* {
+      return emit_mov_dpp(partial_result, /* BCAST15 */ 0x142);
+    });
+
+    if (warpSize == 64 && num_results_per_warp == 1) {
+      partial_reduce([&](llvm::Value* partial_result) -> llvm::Value* {
+        return emit_mov_dpp(partial_result, /* BCAST32 */ 0x143);
+      });
+    }
+
+    // TODO(rocm) We move the result from lane 63 into 0 to avoid updating
+    // callers that expect result in lane 0. Can we change this? Is readlane
+    // better?
+    for (auto [partial_result_address, element_type] :
+         partial_result_addresses) {
+      // Bitcast cannot be applied to aggregate types (even packed ones), so
+      // we bitcast addresses of load/store to intN* of the same bit-width.
+      llvm::Type* shuffled_value_type =
+          element_type->isStructTy()
+              ? builder->getIntNTy(llvm_ir::GetSizeInBits(element_type))
+              : element_type;
+
+      llvm::Value* partial_result =
+          builder->CreateLoad(shuffled_value_type, partial_result_address,
+                              "partial_reduction_result");
+      builder->CreateStore(emit_mov_dpp(partial_result, /* ROR1 */ 0x13C),
+                           partial_result_address);
+    }
+    return;
   }
 
-//   auto* builder = reduction_emitter_.builder_;
-
-//   auto partial_reduce = [&](auto step) {
-//     absl::InlinedVector<llvm::Value*, 2> reduction_params;
-
-//     for (auto acc : partial_result_addresses) {
-//       reduction_params.push_back(acc.first);
-//     }
-
-//     for (auto [partial_result_address, element_type] :
-//          partial_result_addresses) {
-//       int bit_width = llvm_ir::GetSizeInBits(element_type);
-//       llvm::Value* result_from_other_lane = llvm_ir::EmitAllocaAtFunctionEntry(
-//           element_type, "result_from_other_lane", builder);
-
-//       reduction_params.push_back(result_from_other_lane);
-
-//       // Bitcast cannot be applied to aggregate types (even packed ones), so
-//       // we bitcast addresses of load/store to intN* of the same bit-width.
-//       llvm::Type* shuffled_value_type = element_type->isStructTy()
-//                                             ? builder->getIntNTy(bit_width)
-//                                             : element_type;
-
-//       llvm::Value* partial_result =
-//           builder->CreateLoad(shuffled_value_type, partial_result_address,
-//                               "partial_reduction_result");
-//       builder->CreateStore(step(partial_result), result_from_other_lane);
-//     }
-
-//     absl::StatusOr<std::vector<llvm::Value*>> returned_scalars =
-//         CallNestedComputationWithScalarAddrs(
-//             builder, reduction_emitter_.ir_emitter_context_, *reducer,
-//             reduction_params);
-//     TF_CHECK_OK(returned_scalars.status());
-
-//     for (int i = 0; i < returned_scalars->size(); i++) {
-//       builder->CreateStore(/*Val=*/returned_scalars->at(i),
-//                            /*Ptr=*/partial_result_addresses[i].first);
-//     }
-//   };
-
-//   static bool use_rocm_dpp = []() -> bool {
-//     auto var = std::getenv("ROCM_USE_DPP");
-//     return var &&
-//            (std::strcmp(var, "false") == 0 || std::strcmp(var, "0") == 0);
-//   }();
-
-//   if ((IsAMDGPU(reduction_emitter_.ir_emitter_context_.llvm_module()) &&
-//        reduction_emitter_.ir_emitter_context_.rocm_compute_capability()
-//            .gfx9_mi100_or_later() &&
-//        use_rocm_dpp)) {
-
-//     auto emit_mov_dpp = [&](llvm::Value* value, int64_t ctrl) -> llvm::Value* {
-//       llvm::Module* module = builder->GetInsertBlock()->getModule();
-//       int bit_width = value->getType()->getPrimitiveSizeInBits();
-//       auto* i32_ty = builder->getInt32Ty();
-
-//       llvm::Function* intrinsic = llvm::Intrinsic::getDeclaration(
-//           module, llvm::Intrinsic::amdgcn_mov_dpp, i32_ty);
-//       llvm::Value* all_mask = builder->getInt32(0xf);
-//       llvm::Value* ctrl_value = builder->getInt32(ctrl);
-
-//       int num_segments = CeilOfRatio(bit_width, 32);
-//       llvm::Value* x = builder->CreateBitCast(
-//           builder->CreateZExt(
-//               builder->CreateBitCast(value, builder->getIntNTy(bit_width)),
-//               builder->getIntNTy(32 * num_segments)),
-//           llvm::VectorType::get(i32_ty, num_segments, false));
-//       for (int i = 0; i < num_segments; ++i) {
-//         llvm::Value* insert_val = builder->CreateCall(
-//             intrinsic, {builder->CreateExtractElement(x, i), ctrl_value,
-//                         all_mask, all_mask, builder->getTrue()});
-//         x = builder->CreateInsertElement(x, insert_val, i);
-//       }
-//       return builder->CreateBitCast(
-//           builder->CreateTrunc(
-//               builder->CreateBitCast(x, builder->getIntNTy(32 * num_segments)),
-//               builder->getIntNTy(bit_width)),
-//           value->getType());
-//     };
-
-//     if ((warpSize / num_results_per_warp) < 32) {
-//       for (int distance = (warpSize / 2) / num_results_per_warp;
-//            distance >= 1; distance /= 2) {
-//         partial_reduce([&](llvm::Value* partial_result) -> llvm::Value* {
-//           return emit_mov_dpp(partial_result,
-//                               /* ROW_SHL0 */ 0x100 + distance);
-//         });
-//       }
-//       return;
-//     }
-
-//     CHECK((warpSize == 64 && num_results_per_warp <= 2) ||
-//           (warpSize == 32 && num_results_per_warp == 1));
-
-//     for (int distance = 3; distance >= 0; distance--) {
-//       partial_reduce([&](llvm::Value* partial_result) -> llvm::Value* {
-//         return emit_mov_dpp(partial_result,
-//                             /* ROW_SHR0 */ 0x110 + (1u << distance));
-//       });
-//     }
-
-//     partial_reduce([&](llvm::Value* partial_result) -> llvm::Value* {
-//       return emit_mov_dpp(partial_result, /* BCAST15 */ 0x142);
-//     });
-
-//     if (warpSize == 64 && num_results_per_warp == 1) {
-//       partial_reduce([&](llvm::Value* partial_result) -> llvm::Value* {
-//         return emit_mov_dpp(partial_result, /* BCAST32 */ 0x143);
-//       });
-//     }
-
-//     // TODO(rocm) We move the result from lane 63 into 0 to avoid updating
-//     // callers that expect result in lane 0. Can we change this? Is readlane
-//     // better?
-//     for (auto [partial_result_address, element_type] :
-//          partial_result_addresses) {
-//       // Bitcast cannot be applied to aggregate types (even packed ones), so
-//       // we bitcast addresses of load/store to intN* of the same bit-width.
-//       llvm::Type* shuffled_value_type =
-//           element_type->isStructTy()
-//               ? builder->getIntNTy(llvm_ir::GetSizeInBits(element_type))
-//               : element_type;
-
-//       llvm::Value* partial_result =
-//           builder->CreateLoad(shuffled_value_type, partial_result_address,
-//                               "partial_reduction_result");
-//       builder->CreateStore(emit_mov_dpp(partial_result, /* ROR1 */ 0x13C),
-//                            partial_result_address);
-//     }
-//     return;
-//   }
-
-//   // rv: choose optimal value instead of 64.
-//   for (int distance = (64 / 2) / num_results_per_warp; distance >= 1;
-//        distance /= 2) {
-//     partial_reduce([&](llvm::Value* partial_result) -> llvm::Value* {
-//       return EmitFullWarpShuffleDown(partial_result,
-//                                      builder->getInt32(distance), builder, warpSize);
-//     });
-//   }
+  // rv: choose optimal value instead of 64.
+  for (int distance = (64 / 2) / num_results_per_warp; distance >= 1;
+       distance /= 2) {
+    partial_reduce([&](llvm::Value* partial_result) -> llvm::Value* {
+      return EmitFullWarpShuffleDown(partial_result,
+                                     builder->getInt32(distance), builder, warpSize);
+    });
+  }
 }
 
 
@@ -1483,7 +1440,7 @@ ReductionFusion::ComputeReductionCodegenInfo(
         return shape[kRowMinorReducedDimension];
       }
       int64_t max_block_size =
-          MinThreadsXRowReduction(hero_reduction->GetModule()->config(), warpSize);
+          MinThreadsXRowReduction(hero_reduction->GetModule()->config());
       VLOG(2) << "max block size: " << max_block_size;
       VLOG(2) << "shape[kRowMinorReducedDimension]: " << shape[kRowMinorReducedDimension];
       VLOG(2) << "reduction_tiling[kRowMinorReducedDimension]: " << reduction_tiling[kRowMinorReducedDimension];

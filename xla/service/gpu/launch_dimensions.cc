@@ -44,7 +44,6 @@ std::ostream& operator<<(std::ostream& out,
 static int64_t ThreadsPerBlockLimit(
     const se::DeviceDescription& gpu_device_info) {
   int64_t threads_per_block = gpu_device_info.threads_per_block_limit();
-  VLOG(2) << "threads_per_block: " << threads_per_block;
   if (threads_per_block <= 0) {
     static std::atomic<int64_t> log_count{0};
     if (log_count.fetch_add(1) < 8) {
@@ -75,7 +74,7 @@ int64_t ThreadsPerBlockRowVectorized(
       // If the row size is a multiple of 256, then use the old code
       // path that use a block size of 256. This give small speed up on V100.
       // Vectorization of the row load was already happening.
-      (shape.dimensions().back() % 512) != 0 &&
+      (shape.dimensions().back() % 256) != 0 &&
       // We do not support row that do not fit in one block.
       threads_per_block_row_vectorized <=
           gpu_device_info.threads_per_block_limit()) {
@@ -98,10 +97,8 @@ BlockSizes GetBlockSizes(LaunchDimensionsConfig dim_config,
   if (!dim_config.row_vectorized && !dim_config.few_waves) {
     BlockSizes result;
     const int kWarpSchedulers = 4;
-    // result.threads_per_block_x = std::min<int64_t>(
-    //     gpu_device_info.threads_per_warp() * kWarpSchedulers, num_elements);
     result.threads_per_block_x = std::min<int64_t>(
-    64 * kWarpSchedulers, num_elements); // AMD wavefront size is 64
+        gpu_device_info.threads_per_warp() * kWarpSchedulers, num_elements);
     result.threads_per_block_y = 1;
     result.block_count = CeilOfRatio(
         num_elements, result.threads_per_block_x * result.threads_per_block_y);
