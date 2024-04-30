@@ -161,9 +161,9 @@ absl::Status GpuCommandBuffer::Trace(
     Stream* stream, absl::AnyInvocable<absl::Status()> function) {
   TF_RETURN_IF_ERROR(CheckNotFinalized());
 // #if defined(TENSORFLOW_USE_ROCM)
-//   TF_ASSIGN_OR_RETURN(size_t count, GpuDriver::GraphGetNodeCount(graph_));
-//   if (count != 0 || !is_owned_graph_)
-//     return absl::InternalError("Stream can't be traced on non empty command buffer");
+  TF_ASSIGN_OR_RETURN(size_t count, GpuDriver::GraphGetNodeCount(graph_));
+  if (count != 0 || !is_owned_graph_)
+    return absl::InternalError("Stream can't be traced on non empty command buffer");
 // #endif // TENSORFLOW_USE_ROCM
 
   VLOG(5) << "Trace into GPU command buffer graph " << graph_
@@ -171,11 +171,15 @@ absl::Status GpuCommandBuffer::Trace(
 
   auto gpu_stream = AsGpuStreamValue(stream);
 
+  VLOG(0) << "Calling tracing..";
+  (void)function();
+  VLOG(0) << "Calling tracing once again..";
+
   // Switch stream into the capture mode.
   uint64_t start_nanos = tsl::Env::Default()->NowNanos();
 // #if !defined(TENSORFLOW_USE_ROCM)
-//   TF_RETURN_IF_ERROR(GpuDriver::StreamBeginCaptureToGraph(
-//       gpu_stream, graph_, GpuDriver::StreamCaptureMode::kThreadLocal));
+  // TF_RETURN_IF_ERROR(GpuDriver::StreamBeginCaptureToGraph(
+  //      gpu_stream, graph_, GpuDriver::StreamCaptureMode::kThreadLocal));
 // #else
   TF_RETURN_IF_ERROR(GpuDriver::StreamBeginCapture(
       gpu_stream, GpuDriver::StreamCaptureMode::kThreadLocal));
@@ -186,9 +190,9 @@ absl::Status GpuCommandBuffer::Trace(
   GpuGraphHandle captured_graph;
   TF_RETURN_IF_ERROR(GpuDriver::StreamEndCapture(gpu_stream, &captured_graph));
 // #if !defined(TENSORFLOW_USE_ROCM)
-  DCHECK(captured_graph == graph_) << "Stream capture should update graph_";
+  //DCHECK(captured_graph == graph_) << "Stream capture should update graph_";
 // #else
-//   TF_RETURN_IF_ERROR(GpuDriver::DestroyGraph(std::exchange(graph_, captured_graph)));
+   TF_RETURN_IF_ERROR(GpuDriver::DestroyGraph(std::exchange(graph_, captured_graph)));
 // #endif // TENSORFLOW_USE_ROCM
   uint64_t end_nanos = tsl::Env::Default()->NowNanos();
 
@@ -1031,6 +1035,7 @@ absl::Status GpuCommandBuffer::While(ExecutionScopeId execution_scope_id,
 absl::Status GpuCommandBuffer::Finalize() {
   TF_RETURN_IF_ERROR(CheckNotFinalized());
 
+  VLOG(0) << "Graph finalize! " << (state_ == State::kCreate && VLOG_IS_ON(0));
   // Maybe dump created CUDA graph to a dot file for debugging.
   if (state_ == State::kCreate && VLOG_IS_ON(0)) {
     std::string path = tsl::io::GetTempFilename(/*extension=*/"dot");

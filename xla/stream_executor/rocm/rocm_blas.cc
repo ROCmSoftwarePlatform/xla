@@ -150,6 +150,11 @@ ROCMBlas::~ROCMBlas() {
 }
 
 bool ROCMBlas::SetStream(Stream *stream) {
+
+  if(stream_ == stream) return true;
+  VLOG(0) << this << ": setting new stream " << stream;
+  stream_ = stream;
+  
   CHECK(stream != nullptr);
   CHECK(AsGpuStreamValue(stream) != nullptr);
   CHECK(blas_ != nullptr);
