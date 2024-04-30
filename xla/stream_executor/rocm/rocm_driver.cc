@@ -996,7 +996,7 @@ static hipMemAllocationType ToHipAllocationType(
 
 /*static*/ absl::StatusOr<std::pair<GpuDevicePtr, uint64_t>>
 GpuDriver::GraphGetMemAllocNodeParams(GpuGraphNodeHandle node) {
-  wrap::hipMemAllocNodeParams params;
+  hipMemAllocNodeParams params;
   RETURN_IF_ROCM_ERROR(wrap::hipGraphMemAllocNodeGetParams(node, &params),
                        "Failed to get memory allocation node parameter");
   return std::pair<GpuDevicePtr, uint64_t>{params.dptr, params.bytesize};
@@ -1011,19 +1011,9 @@ GpuDriver::GraphGetMemAllocNodeParams(GpuGraphNodeHandle node) {
           << "; src: " << reinterpret_cast<void*>(gpu_src) << "; size: " << size
           << "; context: " << context->context() << "; deps: " << deps.size();
 
-  HIP_MEMCPY3D params;
-  memset(&params, 0, sizeof(params))
-  params.srcMemoryType = hipMemoryTypeDevice;
-  params.srcDevice = gpu_src;
-  params.dstMemoryType = hipMemoryTypeDevice;
-  params.dstDevice = gpu_dst;
-  params.WidthInBytes = size;
-  params.Height = 1;
-  params.Depth = 1;
-
-  RETURN_IF_ROCM_ERROR(
-    wrap::hipDrvGraphAddMemcpyNode(node, graph, deps.data(), deps.size(), &params,
-                                  context->context()),
+  RETURN_IF_ROCM_ERROR(wrap::hipGraphAddMemcpyNode1D(
+                           node, graph, deps.data(), deps.size(), gpu_dst,
+                           gpu_src, size, hipMemcpyDeviceToDevice),
                        "Failed to add memcpy d2d node to a HIP graph");
 
   return absl::OkStatus();
@@ -1037,18 +1027,9 @@ GpuDriver::GraphGetMemAllocNodeParams(GpuGraphNodeHandle node) {
           << "; src: " << reinterpret_cast<void*>(gpu_src) << "; size: " << size
           << "; context: " << context->context();
 
-  HIP_MEMCPY3D params;
-  memset(&params, 0, sizeof(params))
-  params.srcMemoryType = hipMemoryTypeDevice;
-  params.srcDevice = gpu_src;
-  params.dstMemoryType = hipMemoryTypeDevice;
-  params.dstDevice = gpu_dst;
-  params.WidthInBytes = size;
-  params.Height = 1;
-  params.Depth = 1;
-   
   RETURN_IF_ROCM_ERROR(
-      wrap::hipDrvGraphExecMemcpyNodeSetParams(exec, node, &params, context->context()),
+      wrap::hipGraphExecMemcpyNodeSetParams1D(exec, node, gpu_dst, gpu_src,
+                                              size, hipMemcpyDeviceToDevice),
       "Failed to set memcpy d2d node params");
 
   return absl::OkStatus();
