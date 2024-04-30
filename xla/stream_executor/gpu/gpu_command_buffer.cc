@@ -1035,14 +1035,13 @@ absl::Status GpuCommandBuffer::While(ExecutionScopeId execution_scope_id,
 absl::Status GpuCommandBuffer::Finalize() {
   TF_RETURN_IF_ERROR(CheckNotFinalized());
 
-  VLOG(0) << "Graph finalize! " << (state_ == State::kCreate && VLOG_IS_ON(0));
   // Maybe dump created CUDA graph to a dot file for debugging.
-  if (state_ == State::kCreate && VLOG_IS_ON(0)) {
+  if (state_ == State::kCreate && VLOG_IS_ON(10)) {
     std::string path = tsl::io::GetTempFilename(/*extension=*/"dot");
     auto printed = GpuDriver::GraphDebugDotPrint(
-        graph_, path.c_str(), /*return_printed_graph=*/VLOG_IS_ON(0));
-    if (VLOG_IS_ON(0) && printed.ok()) {
-      VLOG(0) << "Printed Gpu graph " << graph_ << " to: " << path;
+        graph_, path.c_str(), /*return_printed_graph=*/VLOG_IS_ON(10));
+    if (VLOG_IS_ON(10) && printed.ok()) {
+      VLOG(10) << "Printed Gpu graph " << graph_ << " to: " << path;
     }
   }
 
