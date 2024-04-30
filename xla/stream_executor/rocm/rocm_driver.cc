@@ -996,7 +996,7 @@ static hipMemAllocationType ToHipAllocationType(
 
 /*static*/ absl::StatusOr<std::pair<GpuDevicePtr, uint64_t>>
 GpuDriver::GraphGetMemAllocNodeParams(GpuGraphNodeHandle node) {
-  wrap::hipMemAllocNodeParams params;
+  hipMemAllocNodeParams params;
   RETURN_IF_ROCM_ERROR(wrap::hipGraphMemAllocNodeGetParams(node, &params),
                        "Failed to get memory allocation node parameter");
   return std::pair<GpuDevicePtr, uint64_t>{params.dptr, params.bytesize};
@@ -1011,8 +1011,7 @@ GpuDriver::GraphGetMemAllocNodeParams(GpuGraphNodeHandle node) {
           << "; src: " << reinterpret_cast<void*>(gpu_src) << "; size: " << size
           << "; context: " << context->context() << "; deps: " << deps.size();
 
-  HIP_MEMCPY3D params;
-  memset(&params, 0, sizeof(params))
+  HIP_MEMCPY3D params{};
   params.srcMemoryType = hipMemoryTypeDevice;
   params.srcDevice = gpu_src;
   params.dstMemoryType = hipMemoryTypeDevice;
@@ -1020,6 +1019,20 @@ GpuDriver::GraphGetMemAllocNodeParams(GpuGraphNodeHandle node) {
   params.WidthInBytes = size;
   params.Height = 1;
   params.Depth = 1;
+
+  /*
+    hipMemcpy3DParms params{
+      .srcArray = {},
+      .srcPos = {},
+      .srcPtr = {.ptr = gpu_src, .pitch = size, .xsize = size, .ysize = 1},
+      .dstArray = {},
+      .dstPos = {},
+      .dstPtr = {.ptr = gpu_dst, .pitch = size, .xsize = size, .ysize = 1},
+      .extent = hipExtent{.width = size, .height = 1, .depth = 1},
+      .kind = hipMemcpyDeviceToDevice};
+
+  RETURN_IF_ROCM_ERROR(wrap::hipGraphAddMemcpyNode(node, graph, deps.data(),
+                                                   deps.size(), &params),*/
 
   RETURN_IF_ROCM_ERROR(
     wrap::hipDrvGraphAddMemcpyNode(node, graph, deps.data(), deps.size(), &params,
@@ -1037,8 +1050,7 @@ GpuDriver::GraphGetMemAllocNodeParams(GpuGraphNodeHandle node) {
           << "; src: " << reinterpret_cast<void*>(gpu_src) << "; size: " << size
           << "; context: " << context->context();
 
-  HIP_MEMCPY3D params;
-  memset(&params, 0, sizeof(params))
+  HIP_MEMCPY3D params{};
   params.srcMemoryType = hipMemoryTypeDevice;
   params.srcDevice = gpu_src;
   params.dstMemoryType = hipMemoryTypeDevice;
@@ -1046,6 +1058,20 @@ GpuDriver::GraphGetMemAllocNodeParams(GpuGraphNodeHandle node) {
   params.WidthInBytes = size;
   params.Height = 1;
   params.Depth = 1;
+
+  /*
+    hipMemcpy3DParms params{
+      .srcArray = {},
+      .srcPos = {},
+      .srcPtr = {.ptr = gpu_src, .pitch = size, .xsize = size, .ysize = 1},
+      .dstArray = {},
+      .dstPos = {},
+      .dstPtr = {.ptr = gpu_dst, .pitch = size, .xsize = size, .ysize = 1},
+      .extent = hipExtent{.width = size, .height = 1, .depth = 1},
+      .kind = hipMemcpyDeviceToDevice};
+
+  RETURN_IF_ROCM_ERROR(
+      wrap::hipGraphExecMemcpyNodeSetParams(exec, node, &params),*/
    
   RETURN_IF_ROCM_ERROR(
       wrap::hipDrvGraphExecMemcpyNodeSetParams(exec, node, &params, context->context()),

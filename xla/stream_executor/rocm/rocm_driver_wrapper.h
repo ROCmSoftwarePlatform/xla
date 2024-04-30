@@ -89,6 +89,8 @@ namespace wrap {
   __macro(hipDeviceSynchronize)                     \
   __macro(hipDeviceTotalMem)                        \
   __macro(hipDriverGetVersion)                      \
+  __macro(hipDrvGraphAddMemcpyNode)                 \
+  __macro(hipDrvGraphExecMemcpyNodeSetParams)       \
   __macro(hipEventCreateWithFlags)                  \
   __macro(hipEventDestroy)                          \
   __macro(hipEventElapsedTime)                      \
