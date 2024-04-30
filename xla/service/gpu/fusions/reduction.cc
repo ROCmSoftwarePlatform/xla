@@ -767,7 +767,7 @@ void ReductionFusion::ReductionGroupEmitter::
            (std::strcmp(var, "false") == 0 || std::strcmp(var, "0") == 0);
   }();
 
-  if ((IsAMDGPU(reduction_emitter_.ir_emitter_context_.llvm_module()) &&
+  if (1 || (IsAMDGPU(reduction_emitter_.ir_emitter_context_.llvm_module()) &&
        reduction_emitter_.ir_emitter_context_.rocm_compute_capability()
            .gfx9_mi100_or_later() &&
        use_rocm_dpp)) {
@@ -801,7 +801,7 @@ void ReductionFusion::ReductionGroupEmitter::
           value->getType());
     };
 
-    if ((warpSize / num_results_per_warp) < 32) {
+    if ((64 / num_results_per_warp) < 32) {
       for (int distance = (warpSize / 2) / num_results_per_warp;
            distance >= 1; distance /= 2) {
         partial_reduce([&](llvm::Value* partial_result) -> llvm::Value* {
@@ -812,45 +812,45 @@ void ReductionFusion::ReductionGroupEmitter::
       return;
     }
 
-    CHECK((warpSize == 64 && num_results_per_warp <= 2) ||
-          (warpSize == 32 && num_results_per_warp == 1));
+    // CHECK((warpSize == 64 && num_results_per_warp <= 2) ||
+    //       (warpSize == 32 && num_results_per_warp == 1));
 
-    for (int distance = 3; distance >= 0; distance--) {
-      partial_reduce([&](llvm::Value* partial_result) -> llvm::Value* {
-        return emit_mov_dpp(partial_result,
-                            /* ROW_SHR0 */ 0x110 + (1u << distance));
-      });
-    }
+    // for (int distance = 3; distance >= 0; distance--) {
+    //   partial_reduce([&](llvm::Value* partial_result) -> llvm::Value* {
+    //     return emit_mov_dpp(partial_result,
+    //                         /* ROW_SHR0 */ 0x110 + (1u << distance));
+    //   });
+    // }
 
-    partial_reduce([&](llvm::Value* partial_result) -> llvm::Value* {
-      return emit_mov_dpp(partial_result, /* BCAST15 */ 0x142);
-    });
+    // partial_reduce([&](llvm::Value* partial_result) -> llvm::Value* {
+    //   return emit_mov_dpp(partial_result, /* BCAST15 */ 0x142);
+    // });
 
-    if (warpSize == 64 && num_results_per_warp == 1) {
-      partial_reduce([&](llvm::Value* partial_result) -> llvm::Value* {
-        return emit_mov_dpp(partial_result, /* BCAST32 */ 0x143);
-      });
-    }
+    // if (warpSize == 64 && num_results_per_warp == 1) {
+    //   partial_reduce([&](llvm::Value* partial_result) -> llvm::Value* {
+    //     return emit_mov_dpp(partial_result, /* BCAST32 */ 0x143);
+    //   });
+    // }
 
-    // TODO(rocm) We move the result from lane 63 into 0 to avoid updating
-    // callers that expect result in lane 0. Can we change this? Is readlane
-    // better?
-    for (auto [partial_result_address, element_type] :
-         partial_result_addresses) {
-      // Bitcast cannot be applied to aggregate types (even packed ones), so
-      // we bitcast addresses of load/store to intN* of the same bit-width.
-      llvm::Type* shuffled_value_type =
-          element_type->isStructTy()
-              ? builder->getIntNTy(llvm_ir::GetSizeInBits(element_type))
-              : element_type;
+    // // TODO(rocm) We move the result from lane 63 into 0 to avoid updating
+    // // callers that expect result in lane 0. Can we change this? Is readlane
+    // // better?
+    // for (auto [partial_result_address, element_type] :
+    //      partial_result_addresses) {
+    //   // Bitcast cannot be applied to aggregate types (even packed ones), so
+    //   // we bitcast addresses of load/store to intN* of the same bit-width.
+    //   llvm::Type* shuffled_value_type =
+    //       element_type->isStructTy()
+    //           ? builder->getIntNTy(llvm_ir::GetSizeInBits(element_type))
+    //           : element_type;
 
-      llvm::Value* partial_result =
-          builder->CreateLoad(shuffled_value_type, partial_result_address,
-                              "partial_reduction_result");
-      builder->CreateStore(emit_mov_dpp(partial_result, /* ROR1 */ 0x13C),
-                           partial_result_address);
-    }
-    return;
+    //   llvm::Value* partial_result =
+    //       builder->CreateLoad(shuffled_value_type, partial_result_address,
+    //                           "partial_reduction_result");
+    //   builder->CreateStore(emit_mov_dpp(partial_result, /* ROR1 */ 0x13C),
+    //                        partial_result_address);
+    // }
+    // return;
   }
 
   // rv: choose optimal value instead of 64.
@@ -1468,7 +1468,7 @@ ReductionFusion::ComputeReductionCodegenInfo(
   // recommendation is to use between 128 and 512 threads, so we just go for
   // 256. See https://forums.developer.nvidia.com/t/55529
   // num_threads_x * num_threads_y = 1024 seems to work best on mi300.
-  int64_t kThreadsPerBlockTarget = 8 * warpSize;
+  int64_t kThreadsPerBlockTarget = 16 * warpSize;
   if (reduction_dimensions.is_row_reduction &&
       num_threads_x * 2 <= kThreadsPerBlockTarget) {
     int64_t kept_size = reduction_dimensions.dimensions[kRowKeptDimension];
