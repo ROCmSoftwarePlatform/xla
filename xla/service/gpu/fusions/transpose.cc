@@ -56,8 +56,8 @@ namespace gpu {
 namespace {
 
 Tiling ComputeTransposeTiling(const TransposeDescription& tiled_transpose) {
-  const int64_t warpSize = 64;
-  constexpr int kNumRows = 8;
+  const int64_t warpSize = 32;
+  constexpr int kNumRows = 4;
   static_assert(warpSize % kNumRows == 0);
 
   // 3D view over the output shape.
@@ -275,7 +275,7 @@ absl::Status TransposeFusion::EmitKernel(IrEmitterContext& ir_emitter_context,
 
   llvm::Type* index_type =
       GetIndexTypeForKernel(&fusion, launch_dims.launch_bound(), builder);
-  return EmitTilingKernel(builder, tiling_, index_type, tile_generator, 64)
+  return EmitTilingKernel(builder, tiling_, index_type, tile_generator, 32)
       .status();
 }
 

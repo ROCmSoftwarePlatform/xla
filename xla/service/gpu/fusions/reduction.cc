@@ -107,6 +107,9 @@ constexpr int kColMajorKeptDimension = 0;
 constexpr int kColReducedDimension = 1;
 constexpr int kColMinorKeptDimension = 2;
 
+// rv: To maintain 32 warpsize for col reduction.
+int64_t warpSize = WarpSize();
+
 using TypedPointer = std::pair<llvm::Value* const, llvm::Type* const>;
 
 // Fusion root -> array of indexes, one per reduction output.
@@ -137,11 +140,11 @@ llvm::Type* GetIndexType(const HloFusionInstruction& fusion,
 // For a row reduction, returns the number of rows we can process in parallel
 // per warp.
 int RowReductionGetRowsPerWarp(int reduced_dimension_size) {
-  if (WarpSize() % reduced_dimension_size != 0 ||
-      reduced_dimension_size >= WarpSize()) {
+  if (warpSize % reduced_dimension_size != 0 ||
+      reduced_dimension_size >= warpSize) {
     return 1;
   }
-  return WarpSize() / reduced_dimension_size;
+  return warpSize / reduced_dimension_size;
 }
 
 }  // namespace
@@ -274,8 +277,15 @@ int GetVectorSize(const HloFusionAnalysis& analysis,
 
   // Enabling vectorization if number of threads is <= warpsize leads to half or
   // more of the threads not doing any work.
-  if (num_threads <= WarpSize()) {
+  if (num_threads <= warpSize) {
     return 1;
+  }
+
+  const auto* hip_cc = std::get_if<se::RocmComputeCapability>(
+      &analysis.device_info().gpu_compute_capability());
+  // On our architecture.
+  if (hip_cc) {
+    return 2;
   }
 
   const auto* cuda_cc = std::get_if<se::CudaComputeCapability>(
@@ -494,11 +504,11 @@ ReductionFusion::ReductionGroupEmitter::ReductionGroupEmitter(
           }
           // Allocate one shared memory element per warp.
           auto block_size = tiling.GetThreadsPerBlock();
-          CHECK_EQ(block_size[kRowMinorReducedDimension] % WarpSize(), 0);
+          CHECK_EQ(block_size[kRowMinorReducedDimension] % warpSize, 0);
           return llvm_ir::AllocateSharedMemoryTile(
               module, element_type,
               {block_size[kRowKeptDimension],
-               block_size[kRowMinorReducedDimension] / WarpSize()},
+               block_size[kRowMinorReducedDimension] / warpSize},
               "shared_cache");
         }
         const auto& num_threads = tiling.GetThreadsPerBlock();
@@ -703,11 +713,12 @@ void ReductionFusion::ReductionGroupEmitter::
   // This only works when the block size is a multiple of 32 threads.
   // We check this here as a mistake in the number of threads per
   // block is very hard to detect.
-  CHECK_EQ(threads_per_block % 32, 0);
-  CHECK_EQ(WarpSize() % num_results_per_warp, 0);
+  CHECK_EQ(threads_per_block % warpSize, 0);
+  CHECK_EQ(warpSize % num_results_per_warp, 0);
 
   auto* builder = reduction_emitter_.builder_;
-  for (int distance = 16 / num_results_per_warp; distance >= 1; distance /= 2) {
+  for (int distance = (warpSize / 2) / num_results_per_warp;
+   distance >= 1; distance /= 2) {
     absl::InlinedVector<llvm::Value*, 2> reduction_params;
 
     for (auto acc : partial_result_addresses) {
@@ -862,7 +873,7 @@ void ReductionFusion::ReductionGroupEmitter::EmitReductionOutputForRowReduction(
                                        num_rows_per_warp);
 
   KernelSupportLibrary ksl(builder);
-  llvm::Value* warp_id = builder->CreateUDiv(thread_id_x, constant(WarpSize()));
+  llvm::Value* warp_id = builder->CreateUDiv(thread_id_x, constant(warpSize));
 
   auto emit_write_output = [&](llvm::Value* write_condition,
                                const absl::Span<TypedPointer const> values) {
@@ -922,7 +933,7 @@ void ReductionFusion::ReductionGroupEmitter::EmitReductionOutputForRowReduction(
         llvm::Value* warp_exists = builder->CreateICmpULT(
             thread_id_x,
             constant(tiling.GetThreadsPerBlock()[kRowMinorReducedDimension] /
-                     WarpSize()));
+                     warpSize));
 
         llvm::Value* selected_value = builder->CreateSelect(
             warp_exists, block_accum_addr, initial_value_addr);
@@ -936,7 +947,7 @@ void ReductionFusion::ReductionGroupEmitter::EmitReductionOutputForRowReduction(
       // TODO(b/241414088) If only warp is present, then inter-warp
       // communication using shared memory and synchronization using barrier is
       // also unnecessary and should be removed.
-      if (tiling.GetThreadsPerBlock()[kRowMinorReducedDimension] > WarpSize()) {
+      if (tiling.GetThreadsPerBlock()[kRowMinorReducedDimension] > warpSize) {
         EmitFullWarpShuffleDownLoopForReduce(
             reducer, absl::MakeSpan(selected_values),
             tiling.GetNumThreadsPerBlock(), /*num_results_per_warp=*/1);
@@ -1093,7 +1104,7 @@ absl::Status ReductionFusion::ReductionEmitter::EmitIRForReduction(
 
   CHECK(!heroes.empty()) << " expect at least one reduce instructions.";
   const Tiling& tiling = reduction_codegen_info_.GetTiling();
-  CHECK_EQ(tiling.GetNumThreadsPerBlock() % WarpSize(), 0);
+  CHECK_EQ(tiling.GetNumThreadsPerBlock() % warpSize, 0);
   ReductionGroupEmitter group_emitter(*this, heroes, result_ir_arrays,
                                       fused_emitter);
 
@@ -1123,7 +1134,7 @@ absl::Status ReductionFusion::ReductionEmitter::EmitIRForReduction(
                 };
             EmitTile(builder_, reduction_codegen_info_.GetTiling(),
                      thread_id_info, tile_dimensions, emit_element);
-          }, WarpSize()));
+          }, warpSize));
 
   KernelSupportLibrary ksl(builder_);
   for (auto reduce : heroes) {
@@ -1292,8 +1303,16 @@ ReductionFusion::ComputeReductionCodegenInfo(
            << " " << shape[0] << " " << shape[1] << " " << shape[2];
   Vector3 reduction_tiling = GetReductionTiling(reduction_dimensions);
 
+  VLOG(2) << "Reduction tiling: [" << reduction_tiling[0] << " " 
+          << reduction_tiling[1] << " " << reduction_tiling[2] << "]";
+
+  constexpr int64_t kMaxBlockSize = 1024;
+  constexpr int64_t kNumThreadsForColumn = 32;
+  warpSize = reduction_dimensions.is_row_reduction ? 64 : 32;
+
   int64_t num_threads_y =
-      reduction_dimensions.is_row_reduction ? 1 : WarpSize();
+      reduction_dimensions.is_row_reduction ? 1
+                                            : kMaxBlockSize/kNumThreadsForColumn;
   int64_t rows_per_warp =
       reduction_dimensions.is_row_reduction
           ? RowReductionGetRowsPerWarp(shape[kRowMinorReducedDimension])
@@ -1309,9 +1328,9 @@ ReductionFusion::ComputeReductionCodegenInfo(
           max_block_size,
           RoundUpTo(CeilOfRatio(shape[kRowMinorReducedDimension],
                                 reduction_tiling[kRowMinorReducedDimension]),
-                    WarpSize()));
+                    warpSize));
     }
-    return WarpSize();
+    return kNumThreadsForColumn;
   }();
 
   // If we're limited by the size of the x dimension, add additional parallelism
@@ -1319,7 +1338,7 @@ ReductionFusion::ComputeReductionCodegenInfo(
   // parallelizing the z dimension (major reduced dimensions). The general
   // recommendation is to use between 128 and 512 threads, so we just go for
   // 256. See https://forums.developer.nvidia.com/t/55529
-  constexpr int64_t kThreadsPerBlockTarget = 256;
+  constexpr int64_t kThreadsPerBlockTarget = kMaxBlockSize;
   if (reduction_dimensions.is_row_reduction &&
       num_threads_x * 2 <= kThreadsPerBlockTarget) {
     int64_t kept_size = reduction_dimensions.dimensions[kRowKeptDimension];
@@ -1330,7 +1349,7 @@ ReductionFusion::ComputeReductionCodegenInfo(
       // num_threads_x is a power of two, but it may be less than 32. If dim_y
       // is also small, we may have to increase the bound so the total number of
       // threads is a multiple of 32.
-      while ((num_threads_x * num_threads_y) % 32) ++num_threads_y;
+      while ((num_threads_x * num_threads_y) % warpSize) ++num_threads_y;
     } else {
       num_threads_y = kThreadsPerBlockTarget / num_threads_x;
     }
@@ -1358,6 +1377,18 @@ ReductionFusion::ComputeReductionCodegenInfo(
     tiled_shape.push_back(vector_size);
     tile_per_thread.push_back(vector_size);
   }
+
+   VLOG(2) << "tiled_shape "
+           << " [" << tiled_shape[0] << " " << tiled_shape[1] << " "
+          << tiled_shape[2] << "]";
+
+  VLOG(2) << "num_threads "
+           << " [" << num_threads[0] << " " << num_threads[1] << " "
+          << num_threads[2] << "]";
+
+  VLOG(2) << "tile_per_thread "
+           << " [" << tile_per_thread[0] << " " << tile_per_thread[1] << " "
+          << tile_per_thread[2] << "]";
 
   Tiling tiling(tiled_shape, tile_per_thread, num_threads,
                 /*loops_to_unroll=*/{false, false, true, false});
@@ -1403,7 +1434,7 @@ std::optional<IndexingMap> ReductionFusion::ComputeThreadIdToOutputIndexing(
           tiling.GetShape()[kRowMinorReducedDimension]);
       if (rows_per_warp > 1) {
         linear_index.AddConstraint(thread_ids[kRowMinorReducedDimension] %
-                                       (WarpSize() / rows_per_warp),
+                                       (warpSize / rows_per_warp),
                                    {0, 0});
       } else {
         linear_index.AddConstraint(thread_ids[kRowMinorReducedDimension],
@@ -1427,7 +1458,7 @@ std::optional<IndexingMap> ReductionFusion::ComputeThreadIdToOutputIndexing(
     // TODO(b/319081342): Add constraints for the writing threads
     // (`has_output`).
     projected_index.AddConstraint(
-        mlir::getAffineDimExpr(kIndexingMapThreadIdxDims[0], ctx) % WarpSize(),
+        mlir::getAffineDimExpr(kIndexingMapThreadIdxDims[0], ctx) % warpSize,
         {0, 0});
 
     return ComposeIndexingMaps(
