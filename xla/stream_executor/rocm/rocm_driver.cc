@@ -571,6 +571,7 @@ static std::string_view StreamCaptureModeToString(
                                   /*dependencyData=*/nullptr,
                                   /*numDependencies=*/0, hip_mode),
                                   "Failed to begin stream capture graph");
+  return absl::OkStatus();
 }
 
 /* static */ absl::Status GpuDriver::StreamEndCapture(GpuStreamHandle stream,
