@@ -159,7 +159,8 @@ llvm::Value* EmitThreadId(llvm::IRBuilder<>* builder, int64_t threads_per_block,
 // tile and strides of the loops to iterate over the current tile.
 absl::StatusOr<TilingThreadIdInfo> EmitThreadIdInfo(llvm::IRBuilder<>* builder,
                                                     const Tiling& tiling,
-                                                    llvm::Type* index_ty) {
+                                                    llvm::Type* index_ty,
+                                                    const int64_t warpSize) {
   auto constant = [&](uint64_t c) -> llvm::Constant* {
     return llvm::ConstantInt::get(index_ty, c);
   };
@@ -193,7 +194,7 @@ absl::StatusOr<TilingThreadIdInfo> EmitThreadIdInfo(llvm::IRBuilder<>* builder,
   }
 
   info.lane_id =
-      builder->CreateURem(info.thread_id, constant(WarpSize()), "lane_id");
+      builder->CreateURem(info.thread_id, constant(warpSize), "lane_id");
   return info;
 }
 
@@ -201,7 +202,8 @@ absl::StatusOr<TilingThreadIdInfo> EmitThreadIdInfo(llvm::IRBuilder<>* builder,
 
 absl::StatusOr<TilingKernelInfo> EmitTilingKernel(
     llvm::IRBuilder<>* builder, const Tiling& tiling, llvm::Type* index_ty,
-    const TileGenerator& tile_generator) {
+    const TileGenerator& tile_generator,
+    const int64_t warpSize) {
   absl::Span<const int64_t> dims_in_elems = tiling.GetShape();
   const auto& block_counts = tiling.GetBlockCounts();
   auto constant = [&](uint64_t c) -> llvm::Constant* {
@@ -209,7 +211,7 @@ absl::StatusOr<TilingKernelInfo> EmitTilingKernel(
   };
 
   TF_ASSIGN_OR_RETURN(TilingThreadIdInfo thread_id_info,
-                      EmitThreadIdInfo(builder, tiling, index_ty));
+                      EmitThreadIdInfo(builder, tiling, index_ty, warpSize));
 
   KernelSupportLibrary ksl(builder, llvm_ir::UnrollMode::kDefaultUnroll);
 

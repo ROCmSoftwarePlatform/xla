@@ -1123,7 +1123,7 @@ absl::Status ReductionFusion::ReductionEmitter::EmitIRForReduction(
                 };
             EmitTile(builder_, reduction_codegen_info_.GetTiling(),
                      thread_id_info, tile_dimensions, emit_element);
-          }));
+          }, WarpSize()));
 
   KernelSupportLibrary ksl(builder_);
   for (auto reduce : heroes) {
