@@ -713,8 +713,10 @@ absl::Status GpuCompiler::OptimizeHloModule(
       }
       return !gpu::IsMatrixMultiplication(*instr);
     };
-    pipeline.AddPass<DotDimensionSorter>();
-    pipeline.AddPass<DotDecomposer>();
+    if (hlo_module->config().debug_options().xla_gpu_enable_dot_decomposer()) {
+      pipeline.AddPass<DotDimensionSorter>();
+      pipeline.AddPass<DotDecomposer>();
+    }
 
     pipeline.AddPass<OperandUpcaster>(upcaster_filter);
     pipeline.AddPass<ResultCaster>(upcaster_filter);
@@ -825,8 +827,10 @@ absl::Status GpuCompiler::OptimizeHloModule(
       pipeline.AddPass<AlgebraicSimplifier>(layout_insensitive_algsimp_opts);
       pipeline.AddPass<BitcastDtypesExpander>();
       // AlgebraicSimplifier may add contracting dimensions to a dot.
-      pipeline.AddPass<DotDimensionSorter>();
-      pipeline.AddPass<DotDecomposer>();
+      if (hlo_module->config().debug_options().xla_gpu_enable_dot_decomposer()) {
+        pipeline.AddPass<DotDimensionSorter>();
+        pipeline.AddPass<DotDecomposer>();
+      }
       // Only merge "smallish" dots.  This threshold was not set carefully, but
       // so far we know that 1mb is too small.
       pipeline.AddPass<DotMerger>(/*max_size_to_merge=*/int64_t{16} << 20);
