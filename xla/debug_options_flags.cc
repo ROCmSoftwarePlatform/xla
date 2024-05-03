@@ -100,9 +100,9 @@ DebugOptions DefaultDebugOptionsIgnoringFlags() {
   // flag.
   opts.set_xla_gpu_enable_cublaslt(false);
 
-  opts.add_xla_gpu_enable_command_buffer(DebugOptions::FUSION);
-  opts.add_xla_gpu_enable_command_buffer(DebugOptions::CUBLAS);
-  opts.add_xla_gpu_enable_command_buffer(DebugOptions::CUSTOM_CALL);
+  //opts.add_xla_gpu_enable_command_buffer(DebugOptions::FUSION);
+  //opts.add_xla_gpu_enable_command_buffer(DebugOptions::CUBLAS);
+  //opts.add_xla_gpu_enable_command_buffer(DebugOptions::CUSTOM_CALL);
   opts.set_xla_gpu_graph_num_runs_to_instantiate(-1);
   opts.set_xla_gpu_graph_min_graph_size(5);
   opts.set_xla_gpu_graph_enable_concurrent_region(false);
@@ -386,6 +386,7 @@ void MakeDebugOptionsFlags(std::vector<tsl::Flag>* flag_list,
   // Custom "sub-parser" lambda for xla_gpu_graph_level.
   auto setter_for_xla_gpu_graph_level = [debug_options](const int32_t level) {
     debug_options->clear_xla_gpu_enable_command_buffer();
+    /*
     if (level >= 1) {
       debug_options->add_xla_gpu_enable_command_buffer(DebugOptions::FUSION);
     }
@@ -394,7 +395,7 @@ void MakeDebugOptionsFlags(std::vector<tsl::Flag>* flag_list,
     }
     if (level >= 3) {
       debug_options->add_xla_gpu_enable_command_buffer(DebugOptions::CUDNN);
-    }
+    }*/
     return true;
   };
 
