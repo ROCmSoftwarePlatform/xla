@@ -111,6 +111,9 @@ bool IsMatrixMultiplication(const HloInstruction& dot) {
   if (dot.opcode() != HloOpcode::kDot) {
     return false;
   }
+  //! HACK HACK HACK
+  return true;
+  //! HACK HACK HACK
   const Shape& lhs_shape = dot.operand(0)->shape();
   const Shape& rhs_shape = dot.operand(1)->shape();
   const DotDimensionNumbers& dim_numbers = dot.dot_dimension_numbers();
