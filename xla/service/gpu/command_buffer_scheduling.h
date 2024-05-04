@@ -78,7 +78,7 @@ class CommandBufferScheduling : public HloModulePass {
 
   CommandBufferScheduling(const se::DeviceDescription& device_description,
                           int32_t gpu_toolkit_version,
-                          int32_t gpu_driver_version);
+                          int32_t gpu_driver_version=0);
 
   absl::string_view name() const override {
     return "command-buffer-scheduling";

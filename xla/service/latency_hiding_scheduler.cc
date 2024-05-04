@@ -332,8 +332,7 @@ int64_t AsyncTracker::GetNumResourcesPerInstruction(
 void AsyncTracker::SetConcurrentResourceLimits(
     absl::flat_hash_map<int64_t, int64_t>& max_concurrent_resource) const {
   // Set the limits for default resources
-  max_concurrent_resource[ResourceTypeToIndex(
-      ResourceType::kCollectivePermute)] =
+  max_concurrent_resource[ResourceTypeToIndex(ResourceType::kCollectivePermute)] =
       config_.collective_permute_overlap_limit;
   max_concurrent_resource[ResourceTypeToIndex(ResourceType::kCopy)] =
       config_.copy_overlap_limit;

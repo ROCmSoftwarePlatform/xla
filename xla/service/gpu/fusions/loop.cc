@@ -75,6 +75,8 @@ std::pair<bool /*enabled*/, int> RowVectorizationEnabled(
     // Maybe it would work if only the inner dimensions is contiguous.
     return LayoutUtil::IsMonotonicWithDim0Major(instr.shape().layout());
   };
+    
+  // check for roots.size() only == 1
   bool row_vectorized = roots.size() == 1 && !roots[0].shape().IsTuple() &&
                         is_row_major(roots[0]);
   if (!row_vectorized) {

@@ -160,14 +160,14 @@ class ApproximateLatencyEstimator : public LatencyEstimator {
 
  public:
   static constexpr TimeCost kLowCost = 1.0;
-  static constexpr TimeCost kMediumCost = 1000.0;
-  static constexpr TimeCost kHighCost = 5000.0;
+  static constexpr TimeCost kMediumCost = 1500.0;
+  static constexpr TimeCost kHighCost = 8000.0;
 
  protected:
   // These values are empirically derived to obtain an overlap of one output
   // fusion/convolution with 1 async op or 5 loop fusions with an async op.
-  static constexpr TimeCost kLowLatency = 1.0;
-  static constexpr TimeCost kHighLatency = 5000.0;
+  static constexpr TimeCost kLowLatency = 10.0;
+  static constexpr TimeCost kHighLatency = 8000.0;
 };
 
 // Helper class to keep track of which instructions are to be supported and

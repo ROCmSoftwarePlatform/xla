@@ -449,7 +449,7 @@ class GpuLatencyEstimator : public ApproximateLatencyEstimator {
         return ApproximateLatencyEstimator::kHighLatency * 10;
       }
 
-      return ApproximateLatencyEstimator::kHighLatency;
+      return ApproximateLatencyEstimator::kHighLatency * 5;
     }
     // Every other instruction we consider synchronous, which means the
     // latency between each of them is always one unit.

@@ -1,0 +1,2 @@
+Dispatch_ID,GPU_ID,Queue_ID,PID,TID,Grid_Size,Workgroup_Size,LDS_Per_Workgroup,Scratch_Per_Workitem,Arch_VGPR,Accum_VGPR,SGPR,Wave_Size,Kernel_Name,Start_Timestamp,End_Timestamp,Correlation_ID
+1,2,3,3120477,3120477,25165824,128,4608,0,40,0,16,64,"input_transpose_fusion.kd",9763785974373878,9763785974719299,0
