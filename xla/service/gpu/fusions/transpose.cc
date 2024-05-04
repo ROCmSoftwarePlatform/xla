@@ -56,30 +56,44 @@ namespace gpu {
 namespace {
 
 Tiling ComputeTransposeTiling(const TransposeDescription& tiled_transpose) {
-  const int64_t warpSize = 64;
+  const int warpSize = 64;
   constexpr int kNumRows = 8;
   static_assert(warpSize % kNumRows == 0);
 
-  // 3D view over the output shape.
   Vector3 transposed_dims = tiled_transpose.dimensions;
   Vector3 permutation = tiled_transpose.permutation;
 
-  // Note: the supported permutations are their own inverses. Therefore we
-  // always use the permutation, even when we want the inverse.
-  CHECK((permutation == Vector3{0, 2, 1}) || (permutation == Vector3{2, 1, 0}));
+  // Ensure the permutation is one of the supported ones.
+  assert((permutation == Vector3{0, 2, 1}) || (permutation == Vector3{2, 1, 0}));
 
+  // Calculate the input dimensions based on the permutation.
   absl::InlinedVector<int64_t, 4> input_dims{transposed_dims[permutation[0]],
                                              transposed_dims[permutation[1]],
                                              transposed_dims[permutation[2]]};
 
-  // We tile along the minor dimensions pre- and post-transpose.
   absl::InlinedVector<int64_t, 4> tile_sizes{1, 1, 1};
-  tile_sizes[permutation[2]] = warpSize / kNumRows;
   absl::InlinedVector<int64_t, 4> num_threads{1, 1, warpSize};
-  num_threads[permutation[2]] = kNumRows;
+  absl::InlinedVector<bool, 4> loops_to_unroll{false, true, true, true};
 
-  return Tiling(input_dims, tile_sizes, num_threads);
+  // Set the tile sizes and number of threads based on the permutation.
+  if (permutation[2] == 0) {
+    tile_sizes[2] = warpSize / kNumRows;
+    num_threads[0] = kNumRows;
+  } else if (permutation[2] == 1) {
+    tile_sizes[1] = warpSize / kNumRows;
+    num_threads[1] = kNumRows;
+  }
+
+  // Log the permutation, dimensions, tile sizes, and number of threads.
+  VLOG(2) << "Permutation: [" << permutation[0] << ", " << permutation[1] << ", " << permutation[2] << "]";
+  VLOG(2) << "Input Dimensions: [" << input_dims[0] << ", " << input_dims[1] << ", " << input_dims[2] << "]";
+  VLOG(2) << "Num Threads: [" << num_threads[0] << ", " << num_threads[1] << ", " << num_threads[2] << "]";
+  VLOG(2) << "Tile Sizes: [" << tile_sizes[0] << ", " << tile_sizes[1] << ", " << tile_sizes[2] << "]";
+
+  // Return the tiling configuration.
+  return Tiling(input_dims, tile_sizes, num_threads, /*loops_to_unroll=*/loops_to_unroll);
 }
+
 
 void MaybeEmitFenceForAMDGPU(llvm::IRBuilder<>* builder,
                              IrEmitterContext& ir_emitter_context) {
