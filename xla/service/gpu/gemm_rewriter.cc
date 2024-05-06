@@ -2016,7 +2016,9 @@ absl::Status GemmWorkspaceRewriteVisitor::HandleCustomCall(
     for (auto &operand : instr->operands()) {
       operands_byte_size += ShapeUtil::ByteSizeOf(operand->shape());
     }
-    workspace = std::min(workspace, operands_byte_size);
+    // TODO: try with 32Mb workspace size
+    workspace = std::max(workspace, operands_byte_size);
+    workspace = std::min(workspace, GemmConfig::kHopperWorkspace*2);
 
     // Append workspace buffer to instruction outputs.
     std::vector<Shape> output_shapes = {instr->shape()};
