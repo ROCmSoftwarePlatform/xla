@@ -95,6 +95,7 @@ BlockSizes GetBlockSizes(LaunchDimensionsConfig dim_config,
                          const se::DeviceDescription& gpu_device_info,
                          const Shape& shape, int64_t num_elements) {
   if (!dim_config.row_vectorized && !dim_config.few_waves) {
+    // VLOG(-1) << "!dim_config.row_vectorized && !dim_config.few_waves";
     BlockSizes result;
     const int kWarpSchedulers = 4;
     result.threads_per_block_x = std::min<int64_t>(
@@ -107,6 +108,8 @@ BlockSizes GetBlockSizes(LaunchDimensionsConfig dim_config,
 
   int64_t threads_per_block_row_vectorized =
       ThreadsPerBlockRowVectorized(shape, gpu_device_info, dim_config);
+  // VLOG(-1) << "threads_per_block_row_vectorized = " 
+  //           << threads_per_block_row_vectorized;
   // If row vectorized, threads_per_block_x is the vectorized size.
   // Otherwise, we unroll kernels to make use of vectorized
   // loads/stores. This means we need more registers to hold
@@ -120,6 +123,8 @@ BlockSizes GetBlockSizes(LaunchDimensionsConfig dim_config,
           : RoundUpTo(ThreadsPerBlockLimit(gpu_device_info) /
                           dim_config.unroll_factor,
                       int64_t{32});
+  // VLOG(-1) << "max_threads_per_block_x = " << max_threads_per_block_x 
+  //           << " num_elements = " << num_elements;
   result.threads_per_block_x = std::min(num_elements, max_threads_per_block_x);
   // threads_per_block_y > 1 when we row vectorize and have small row size.
   result.threads_per_block_y =
@@ -154,7 +159,7 @@ BlockSizes GetBlockSizes(LaunchDimensionsConfig dim_config,
       }
     } else {
       int64_t capped_threads_per_block_x =
-          std::min<int64_t>(result.threads_per_block_x, 128);
+          std::min<int64_t>(result.threads_per_block_x, 256);
       int64_t capped_block_count =
           gpu_device_info.core_count() *
           (gpu_device_info.threads_per_core_limit() /
@@ -177,6 +182,7 @@ BlockSizes GetBlockSizes(LaunchDimensionsConfig dim_config,
 LaunchDimensions CalculateLaunchDimensions(
     const Shape& shape, const se::DeviceDescription& gpu_device_info,
     LaunchDimensionsConfig dim_config) {
+  VLOG(-1) << "CalculateLaunchDimensions()...";
   int64_t num_elements = ShapeUtil::ElementsIn(shape);
   if (num_elements <= 1) {
     return LaunchDimensions();

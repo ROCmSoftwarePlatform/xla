@@ -48,6 +48,7 @@ void EmitTileRec(const TilingThreadIdInfo& thread_id_info, const Tiling& tiling,
                  int dim, absl::InlinedVector<llvm::Value*, 4> tile_idx,
                  absl::Span<llvm::Value* const> tile_dimensions,
                  llvm::IRBuilder<>* b, const TileElementGenerator& emit_elem) {
+  VLOG(-1) << "void EmitTileRec()";                
   llvm::Type* index_ty = thread_id_info.thread_id->getType();
   auto constant = [&](int64_t val) {
     return llvm::ConstantInt::get(index_ty, val);
@@ -67,9 +68,11 @@ void EmitTileRec(const TilingThreadIdInfo& thread_id_info, const Tiling& tiling,
                                      : llvm_ir::UnrollMode::kDefaultUnroll);
 
   if (tiling.GetBlockTileSize()[dim] == 1) {
+    VLOG(-1) << "tiling.GetBlockTileSize()[dim] == 1";     
     tile_idx[dim] = constant(0);
     recurse();
   } else if (unroll) {
+    VLOG(-1) << "unroll....";     
     // TODO(jreiffers): Check if this unrolling does anything useful.
     int64_t stride = tiling.GetThreadsPerBlock()[dim];
     int64_t dim_size = tiling.GetThreadTileSize()[dim];
@@ -99,6 +102,7 @@ void EmitTileRec(const TilingThreadIdInfo& thread_id_info, const Tiling& tiling,
       make_loop(true)();
     }
   } else {
+    VLOG(-1) << "ksl.For()...";     
     // All dimensions are strided (thread 0 processes elements 0, num_threads,
     // num_threads+2, ...; thread 1 processes elements 1, num_threads + 1 and so
     // on).
@@ -117,6 +121,7 @@ void EmitTile(llvm::IRBuilder<>* builder, const Tiling& tiling,
               const TilingThreadIdInfo& thread_id_info,
               absl::Span<llvm::Value* const> tile_dimensions,
               const TileElementGenerator& emit_elem_function) {
+  VLOG(-1) << "void EmitTile()";
   absl::InlinedVector<llvm::Value*, 4> tile_idx(tiling.GetShape().size());
   EmitTileRec(thread_id_info, tiling, 0, tile_idx, tile_dimensions, builder,
               emit_elem_function);

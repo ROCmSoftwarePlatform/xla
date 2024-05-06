@@ -303,6 +303,7 @@ BuildKernelPrototype(IrEmitterContext& ir_emitter_context,
 absl::StatusOr<FusionEmissionResult> KernelFusionEmitterBase::Emit(
     IrEmitterContext& ir_emitter_context,
     const HloFusionInstruction& fusion) const {
+  VLOG(-1) << "KernelFusionEmitterBase::Emit()";
   llvm::IRBuilder<> builder(ir_emitter_context.llvm_module()->getContext());
   std::string suggested_kernel_name = std::string(fusion.name());
 
@@ -314,7 +315,9 @@ absl::StatusOr<FusionEmissionResult> KernelFusionEmitterBase::Emit(
 
   TF_ASSIGN_OR_RETURN(auto result,
                       EmitInitializers(ir_emitter_context, fusion));
-  auto launch_dims = launch_dimensions();
+  VLOG(-1) << "after EmitInitializers()...";
+  auto launch_dims = launch_dimensions(); // <-- calculate launch dimension
+  VLOG(-1) << "auto launch_dims = launch_dimensions()...";
   std::vector<llvm_ir::IrArray> inputs, outputs;
   auto [status_or_entry, cached] =
       ir_emitter_context.kernel_cache().GetWithStatus(
@@ -328,6 +331,7 @@ absl::StatusOr<FusionEmissionResult> KernelFusionEmitterBase::Emit(
                                      fusion.operand_count(), launch_dims,
                                      &builder));
             if (ir_emitter_context.emit_kernels()) {
+              VLOG(-1) << "TF_RETURN_IF_ERROR(EmitKernel())";
               TF_RETURN_IF_ERROR(EmitKernel(ir_emitter_context, fusion,
                                             launch_dims, std::move(inputs),
                                             std::move(outputs), &builder));
@@ -347,7 +351,7 @@ absl::StatusOr<FusionEmissionResult> KernelFusionEmitterBase::Emit(
     VLOG(3) << "Reuse: " << suggested_kernel_name << " -> "
             << entry->kernel_name;
   }
-
+  VLOG(-1) << "result.thunks.emplace_back(KernelThunk)";
   result.thunks.emplace_back(std::make_unique<KernelThunk>(
       &fusion, entry->kernel_name, kernel_arguments.args(), launch_dims,
       entry->cluster_dim, entry->shmem_bytes));

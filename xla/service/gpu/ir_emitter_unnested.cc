@@ -2483,7 +2483,7 @@ absl::Status IrEmitterUnnested::BuildInitializerThunk(
   // Otherwise fall back to our slow initializer code. The thunk in this case
   // will just need the IR arrays for the initial value and the destination.
   const Shape& dest_shape = instr->shape();
-
+  VLOG(-1) << "within BuildInitializerThunk(), and starts to CalculateLaunchDimensions()";
   LaunchDimensions launch_dimensions = CalculateLaunchDimensions(
       dest_shape, ir_emitter_context_->gpu_device_info());
   TF_ASSIGN_OR_RETURN(

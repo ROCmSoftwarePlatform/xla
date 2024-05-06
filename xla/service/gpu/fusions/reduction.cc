@@ -1142,6 +1142,7 @@ absl::Status ReductionFusion::ReductionEmitter::EmitIRForReduction(
 absl::StatusOr<FusionEmissionResult>
 ReductionFusion::ReductionEmitter::EmitInitializers() {
   FusionEmissionResult result;
+  VLOG(-1) << "ReductionEmitter::EmitInitializers()...";
   if (reduction_codegen_info_.IsRaceFree()) {
     return result;
   }
