@@ -154,7 +154,7 @@ BlockSizes GetBlockSizes(LaunchDimensionsConfig dim_config,
       }
     } else {
       int64_t capped_threads_per_block_x =
-          std::min<int64_t>(result.threads_per_block_x, 128);
+          std::min<int64_t>(result.threads_per_block_x, 256);
       int64_t capped_block_count =
           gpu_device_info.core_count() *
           (gpu_device_info.threads_per_core_limit() /

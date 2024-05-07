@@ -121,7 +121,7 @@ XLA_REGISTER_CUSTOM_CALL_TARGET_WITH_SYM(
 
 TEST_F(SelectAndScatterTest, SelectAndScatterPerformance) {
 
-  std::ifstream ifs("/tf/xla/input.hlo");
+  std::ifstream ifs("/src/xla_dump/fused_transpose_256.hlo");
   if(!ifs)
     throw "Unable to open file";
 
