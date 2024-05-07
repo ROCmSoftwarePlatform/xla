@@ -156,7 +156,7 @@ LaunchDimensionsConfig ComputeLoopFusionConfig(
                           analysis.device_info().core_count();
   if (num_elements >= n_threads_max &&
       !MayPreventVectorization(analysis.fusion())) {
-    unroll_factor = ComputeMaxUnrollFactor(num_elements);
+    unroll_factor = 1; //ComputeMaxUnrollFactor(num_elements);
   }
   // CHECK that unroll_factor is a power-of-2, as needed by the logic below.
   CHECK(absl::has_single_bit(static_cast<uint64_t>(unroll_factor)));
