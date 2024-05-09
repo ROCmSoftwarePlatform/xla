@@ -1319,7 +1319,7 @@ ReductionFusion::ComputeReductionCodegenInfo(
   // parallelizing the z dimension (major reduced dimensions). The general
   // recommendation is to use between 128 and 512 threads, so we just go for
   // 256. See https://forums.developer.nvidia.com/t/55529
-  constexpr int64_t kThreadsPerBlockTarget = 256;
+  constexpr int64_t kThreadsPerBlockTarget = 512;
   if (reduction_dimensions.is_row_reduction &&
       num_threads_x * 2 <= kThreadsPerBlockTarget) {
     int64_t kept_size = reduction_dimensions.dimensions[kRowKeptDimension];
@@ -1359,8 +1359,29 @@ ReductionFusion::ComputeReductionCodegenInfo(
     tile_per_thread.push_back(vector_size);
   }
 
+  absl::InlinedVector<bool, 4> loops_to_unroll{false, false, false, false};
+  if (!reduction_dimensions.is_row_reduction) {
+    tile_per_thread[1] = tile_per_thread[1]/2;
+    // tile_per_thread[1] = tile_per_thread[1]/2;
+    loops_to_unroll = {true, true, true, false};
+  } else {
+    loops_to_unroll = {true, true, true, false};
+  }
+
+  VLOG(2) << "tiled_shape: [" << tiled_shape[0] << ", "
+           << tiled_shape[1] << ", " << tiled_shape[2] << ", "
+           << tiled_shape[3] << "]";
+  
+  VLOG(2) << "tile_per_thread: [" << tile_per_thread[0] << ", "
+          << tile_per_thread[1] << ", " << tile_per_thread[2] << ", "
+          << tile_per_thread[3] << "]";
+
+  VLOG(2) << "num_threads: [" << num_threads[0] << ", "
+          << num_threads[1] << ", " << num_threads[2] << ", "
+          << num_threads[3] << "]";
+
   Tiling tiling(tiled_shape, tile_per_thread, num_threads,
-                /*loops_to_unroll=*/{false, false, true, false});
+                /*loops_to_unroll=*/loops_to_unroll);
   bool reduction_is_race_free = ReductionIsRaceFree(
       hero_reduction->GetModule()->config(), reduction_dimensions);
   return ReductionCodegenInfo(
