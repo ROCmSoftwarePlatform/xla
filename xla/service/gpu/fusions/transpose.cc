@@ -73,13 +73,15 @@ Tiling ComputeTransposeTiling(const TransposeDescription& tiled_transpose) {
 
   absl::InlinedVector<int64_t, 4> tile_sizes{1, 1, 1};
   absl::InlinedVector<int64_t, 4> num_threads{1, 1, warpSize};
-  absl::InlinedVector<bool, 4> loops_to_unroll{false, true, true, true};
+  absl::InlinedVector<bool, 4> loops_to_unroll{false, false, false};
 
   // Set the tile sizes and number of threads based on the permutation.
   if (permutation[2] == 0) {
+    loops_to_unroll = {false, true, true};
     tile_sizes[2] = warpSize / kNumRows;
     num_threads[0] = kNumRows;
   } else if (permutation[2] == 1) {
+    loops_to_unroll = {false, true, true};
     tile_sizes[1] = warpSize / kNumRows;
     num_threads[1] = kNumRows;
   }
