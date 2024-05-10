@@ -56,6 +56,7 @@ namespace gpu {
 namespace {
 
 Tiling ComputeTransposeTiling(const TransposeDescription& tiled_transpose) {
+  VLOG(2) << "ComputeTransposeTiling";
   const int warpSize = 64;
   constexpr int kNumRows = 8;
   static_assert(warpSize % kNumRows == 0);
@@ -65,6 +66,9 @@ Tiling ComputeTransposeTiling(const TransposeDescription& tiled_transpose) {
 
   // Ensure the permutation is one of the supported ones.
   assert((permutation == Vector3{0, 2, 1}) || (permutation == Vector3{2, 1, 0}));
+
+    VLOG(2) << "Permutation: [" << permutation[0] << ", " << permutation[1] << ", " << permutation[2] << "]";
+
 
   // Calculate the input dimensions based on the permutation.
   absl::InlinedVector<int64_t, 4> input_dims{transposed_dims[permutation[0]],
@@ -77,10 +81,12 @@ Tiling ComputeTransposeTiling(const TransposeDescription& tiled_transpose) {
 
   // Set the tile sizes and number of threads based on the permutation.
   if (permutation[2] == 0) {
+    VLOG(2) << "perm0";
     loops_to_unroll = {false, true, true};
     tile_sizes[2] = warpSize / kNumRows;
     num_threads[0] = kNumRows;
   } else if (permutation[2] == 1) {
+    VLOG(2) << "perm1";
     loops_to_unroll = {false, true, true};
     tile_sizes[1] = warpSize / kNumRows;
     num_threads[1] = kNumRows;

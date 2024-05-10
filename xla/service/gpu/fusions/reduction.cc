@@ -1288,7 +1288,7 @@ ReductionFusion::ComputeReductionCodegenInfo(
   ReductionDimensions reduction_dimensions =
       GetReductionKindAndContiguousComponents(*hero_reduction);
   auto shape = reduction_dimensions.dimensions;
-  VLOG(10) << "is_row_reduction " << reduction_dimensions.is_row_reduction
+  VLOG(2) << "is_row_reduction " << reduction_dimensions.is_row_reduction
            << " " << shape[0] << " " << shape[1] << " " << shape[2];
   Vector3 reduction_tiling = GetReductionTiling(reduction_dimensions);
 
@@ -1361,12 +1361,14 @@ ReductionFusion::ComputeReductionCodegenInfo(
 
   absl::InlinedVector<bool, 4> loops_to_unroll{false, false, false, false};
   if (!reduction_dimensions.is_row_reduction) {
-    tile_per_thread[1] = tile_per_thread[1]/2;
-    // tile_per_thread[1] = tile_per_thread[1]/2;
-    loops_to_unroll = {true, true, true, false};
+    loops_to_unroll = {true, true, true, true};
   } else {
     loops_to_unroll = {true, true, true, false};
   }
+
+  VLOG(2) << "reduction_tiling: [" << reduction_tiling[0] << ", "
+           << reduction_tiling[1] << ", " << reduction_tiling[2] << ", "
+           << reduction_tiling[3] << "]";
 
   VLOG(2) << "tiled_shape: [" << tiled_shape[0] << ", "
            << tiled_shape[1] << ", " << tiled_shape[2] << ", "

@@ -91,11 +91,11 @@ Vector3 GetReductionTiling(const ReductionDimensions& reduction_dimensions) {
   if (reduction_dimensions.is_row_reduction) {
     int64_t tile_z = std::min(reduction_dimensions.dimensions[0],
                               BatchedReductionRaceFreeBound());
-    return {tile_z, 1, 64};
+    return {tile_z, 1, 32};
   }
 
   // Column reduction.
-  return {1, 128, 1};
+  return {1, 64, 1};
 }
 
 int64_t ReductionDimensionRaceFreeBound(
