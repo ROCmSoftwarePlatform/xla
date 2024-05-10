@@ -369,6 +369,20 @@ absl::StatusOr<RedzoneCheckStatus> RedzoneAllocator::CheckRedzones() const {
   return RedzoneCheckStatus::OK();
 }
 
+absl::Status RedzoneAllocator::icache_flush() {
+
+  StreamExecutor* executor = stream_->parent();
+  TF_ASSIGN_OR_RETURN(
+      auto flush_kernel,
+      TypedKernel<>::Create(executor, "icache_flush", icache_flush_kernel()));
+
+  int ncores = executor->GetDeviceDescription().core_count();
+// https://github.com/pytorch/pytorch/pull/124362/files#diff-ce78ef2301f507f1378b1cbc58b236cad0a742244d8ca759368223ff3ab92c14R61
+  TF_RETURN_IF_ERROR(stream_->ThenLaunch(
+      ThreadDim(64), BlockDim(ncores*60), flush_kernel));
+  return absl::OkStatus();
+}
+
 std::string RedzoneCheckStatus::RedzoneFailureMsg() const {
   return absl::StrFormat(
       "Redzone mismatch in %s redzone of buffer %p at offset %d; "

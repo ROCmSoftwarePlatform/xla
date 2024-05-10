@@ -99,6 +99,7 @@ class GemmAutotuner {
   std::unique_ptr< se::RedzoneAllocator > redzone_allocator_;
   se::Stream *stream_ = nullptr;
   bool deterministic_ops_ = false;
+  bool icache_flush_ = false;
   int64_t rng_state_ = 0;
   GemmBackendConfig_Epilogue epilogue_ = GemmBackendConfig::DEFAULT;
 
@@ -120,6 +121,8 @@ public:
     const DebugOptions& debug_options =
                        gemm->GetModule()->config().debug_options();
     deterministic_ops_ = debug_options.xla_gpu_deterministic_ops();
+
+    icache_flush_ = debug_options.xla_gpu_enable_icache_flush();
 
     TF_ASSIGN_OR_RETURN(auto gemm_config, GemmConfig::For(gemm));
 
@@ -267,7 +270,7 @@ private:
                                              : GemmConfig::kDefaultWorkspace;
                                 },
                                 [](const se::RocmComputeCapability&) {
-                                  return GemmConfig::kDefaultWorkspace;
+                                  return GemmConfig::kHopperWorkspace;
                                 }},
                  autotune_config_.GetGpuComputeCapability());
 
@@ -354,6 +357,10 @@ private:
       se::blas::ProfileResult profile;
       for(i = 0; i < s_max_tuning_iters + s_num_warmup_iters && 
                                     total_ms < s_max_running_time_ms; i++) {
+        
+        if(icache_flush_) {
+          TF_RETURN_IF_ERROR(redzone_allocator_->icache_flush());
+        }
         TF_ASSIGN_OR_RETURN(profile, run_benchmark(algorithms[k]));
         if (!profile.is_valid()) {  // Unsupported algorithm.
           break;
@@ -522,6 +529,9 @@ private:
       uint32_t i = 0;
       for(; i < s_max_tuning_iters + s_num_warmup_iters && 
                                     total_ms < s_max_running_time_ms; i++) {
+        if(icache_flush_) {
+          TF_RETURN_IF_ERROR(redzone_allocator_->icache_flush());
+        }
         TF_ASSIGN_OR_RETURN(algo.profile, run_benchmark(algo.algorithm));
         if(i >= s_num_warmup_iters) {
           total_ms += algo.profile.elapsed_time_in_ms();
