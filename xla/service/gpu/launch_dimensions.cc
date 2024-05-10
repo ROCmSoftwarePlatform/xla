@@ -96,7 +96,7 @@ BlockSizes GetBlockSizes(LaunchDimensionsConfig dim_config,
                          const Shape& shape, int64_t num_elements) {
   if (!dim_config.row_vectorized && !dim_config.few_waves) {
     BlockSizes result;
-    const int kWarpSchedulers = 4;
+    const int kWarpSchedulers = 1;
     result.threads_per_block_x = std::min<int64_t>(
         gpu_device_info.threads_per_warp() * kWarpSchedulers, num_elements);
     result.threads_per_block_y = 1;

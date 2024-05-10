@@ -158,6 +158,7 @@ LaunchDimensions GpuPerformanceModelBase::EstimateFusionLaunchDimensions(
     }
   }
   int64_t block_size = 128;  // Result for default LaunchDimensionsConfig.
+  VLOG(2) << "Threading...: " << estimated_num_threads;
   int64_t num_blocks = CeilOfRatio(estimated_num_threads, block_size);
   return LaunchDimensions(num_blocks, block_size);
 }
