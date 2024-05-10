@@ -76,7 +76,7 @@ int GetCoalescingWasteFactor(PrimitiveType element_type) {
 // (1830 MHz) to saturate the memory bandwidth (3.35 TB/s).
 float AdjustBandwidth(const se::DeviceDescription& gpu_device_info,
                       float bandwidth, int64_t num_blocks) {
-  float per_block_bandwidth = gpu_device_info.clock_rate_ghz() * 1.0e9f * 32;
+  float per_block_bandwidth = gpu_device_info.clock_rate_ghz() * 1.0e9f * 16;
   float max_bandwidth = num_blocks * per_block_bandwidth;
 
   return std::min(bandwidth, max_bandwidth);
