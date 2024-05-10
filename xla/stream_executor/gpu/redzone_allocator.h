@@ -59,6 +59,8 @@ class RedzoneAllocator : public ScratchAllocator {
     return allocated_bytes_excluding_redzones_;
   }
 
+  absl::Status icache_flush();
+
   absl::StatusOr<DeviceMemory<uint8>> AllocateBytes(int64_t byte_size) override;
 
   // Non-empty redzone check status implies that there was a write into a
@@ -105,6 +107,8 @@ class RedzoneAllocator : public ScratchAllocator {
 
   // Return a pointer to in-process kernel symbol (used to check redzones).
   void* kernel_symbol() const;
+
+  void* icache_flush_kernel() const;
 
  private:
   const int device_ordinal_;

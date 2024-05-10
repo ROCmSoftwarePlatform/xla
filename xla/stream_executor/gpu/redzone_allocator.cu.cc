@@ -30,12 +30,42 @@ __global__ void redzone_checker_kernel(uint8_t* input_buffer,
   if (input_buffer[idx] != redzone_pattern) atomicAdd(out_mismatched_ptr, 1);
 }
 
+__global__ void icache_kernel()
+{
+  asm __volatile__("s_icache_inv \n\t"
+                     "s_nop 0 \n\t"
+                     "s_nop 0 \n\t"
+                     "s_nop 0 \n\t"
+                     "s_nop 0 \n\t"
+                     "s_nop 0 \n\t"
+                     "s_nop 0 \n\t"
+                     "s_nop 0 \n\t"
+                     "s_nop 0 \n\t"
+                     "s_nop 0 \n\t"
+                     "s_nop 0 \n\t"
+                     "s_nop 0 \n\t"
+                     "s_nop 0 \n\t"
+                     "s_nop 0 \n\t"
+                     "s_nop 0 \n\t"
+                     "s_nop 0 \n\t"
+                     "s_nop 0 \n\t" ::
+                         :);
+}
+
 #endif
 }  // namespace
 
 void* RedzoneAllocator::kernel_symbol() const {
 #if TENSORFLOW_USE_ROCM
   return reinterpret_cast<void*>(&redzone_checker_kernel);
+#else
+  return nullptr;
+#endif
+}
+
+void* RedzoneAllocator::icache_flush_kernel() const {
+#if TENSORFLOW_USE_ROCM
+  return reinterpret_cast<void*>(&icache_kernel);
 #else
   return nullptr;
 #endif
