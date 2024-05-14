@@ -161,7 +161,8 @@ absl::Status GpuCommandBuffer::Trace(
     Stream* stream, absl::AnyInvocable<absl::Status()> function) {
   TF_RETURN_IF_ERROR(CheckNotFinalized());
 
-#define USE_CAPTURE_TO_GRAPH 1
+
+#define USE_CAPTURE_TO_GRAPH 0
 
 #if !USE_CAPTURE_TO_GRAPH
   TF_ASSIGN_OR_RETURN(size_t count, GpuDriver::GraphGetNodeCount(graph_));
@@ -173,13 +174,17 @@ absl::Status GpuCommandBuffer::Trace(
           << " on a stream: " << stream->DebugStreamPointers();
 
   auto gpu_stream = AsGpuStreamValue(stream);
+
+  VLOG(0) << "Calling tracing..";
   (void)function();
+  VLOG(0) << "Calling tracing once again..";
 
   // Switch stream into the capture mode.
   uint64_t start_nanos = tsl::Env::Default()->NowNanos();
 #if USE_CAPTURE_TO_GRAPH
   TF_RETURN_IF_ERROR(GpuDriver::StreamBeginCaptureToGraph(
         gpu_stream, graph_, GpuDriver::StreamCaptureMode::kThreadLocal));
+  VLOG(0) << "Call to StreamBeginCaptureToGraph succeeded";
 #else
   TF_RETURN_IF_ERROR(GpuDriver::StreamBeginCapture(
       gpu_stream, GpuDriver::StreamCaptureMode::kThreadLocal));
@@ -189,6 +194,7 @@ absl::Status GpuCommandBuffer::Trace(
   // Always stop capturing the stream before checking `traced` result.
   GpuGraphHandle captured_graph;
   TF_RETURN_IF_ERROR(GpuDriver::StreamEndCapture(gpu_stream, &captured_graph));
+  VLOG(0) << "Captured graph " << captured_graph;
 #if USE_CAPTURE_TO_GRAPH
   DCHECK(captured_graph == graph_) << "Stream capture should update graph_";
 #else
