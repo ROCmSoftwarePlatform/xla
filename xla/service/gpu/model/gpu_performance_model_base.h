@@ -132,7 +132,7 @@ class GpuPerformanceModelBase {
   // also we do not count what occupies cache, but rather claim that what is
   // much smaller than the cache size will likely stay in it.
   // For reference, it can be up to 256 kB per SM on RTX A6000.
-  static constexpr float kL1CacheSizePerSM = 2 * 1024;
+  static constexpr float kL1CacheSizePerSM = 32 * 1024;
 
   // Uses HloFusionAnalysis for computing the actual number of threads and
   // blocks that the IR emitter will use.
