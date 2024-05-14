@@ -1373,4 +1373,39 @@ static void BM_UpdateCommandBuffer(benchmark::State& state) {
 
 BENCHMARK_SIZES(BM_UpdateCommandBuffer);
 
+static void BM_ExecuteCommandBuffer(benchmark::State& state) {
+  Platform* platform = GpuPlatform();
+  StreamExecutor* executor = platform->ExecutorForDevice(0).value();
+
+  Stream stream(executor);
+  CHECK_OK(stream.Initialize());
+
+  MultiKernelLoaderSpec spec(/*arity=*/3);
+  spec.AddInProcessSymbol(internal::GetAddI32Kernel(), "add");
+  TF_ASSERT_OK_AND_ASSIGN(auto add, AddI32Kernel::Create(executor, spec));
+
+  size_t byte_length = state.range(0) * sizeof(int);
+
+  DeviceMemory<int32_t> tmp = executor->AllocateArray<int32_t>(state.range(0), 0);
+  stream.Memset32(&tmp, 1, byte_length));
+
+  DeviceMemory<int32_t> a = executor->AllocateArray<int32_t>(state.range(0), 0);
+  DeviceMemory<int32_t> b = executor->AllocateArray<int32_t>(state.range(0), 0);
+  DeviceMemory<int32_t> c = executor->AllocateArray<int32_t>(state.range(0), 0);
+
+  auto cmd_buffer = CommandBuffer::Create(executor, primary).value();
+  CHECK_OK(cmd_buffer->MemcpyDeviceToDevice(&a, tmp, byte_length));
+  CHECK_OK(cmd_buffer->MemcpyDeviceToDevice(&b, tmp, byte_length));
+  CHECK_OK(cmd_buffer->MemcpyDeviceToDevice(&c, tmp, byte_length));
+  CHECK_OK(cmd_buffer->Launch(add, ThreadDim(state.range(0)), BlockDim(), a, b, c));
+  CHECK_OK(cmd_buffer->Finalize());
+
+  for (auto s : state) {
+    TF_ASSERT_OK(executor->Submit(&stream, *cmd_buffer));
+  }
+}
+
+BENCHMARK_SIZES(BM_ExecuteCommandBuffer);
+
+
 }  // namespace stream_executor::gpu
