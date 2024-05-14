@@ -549,28 +549,8 @@ static std::string_view StreamCaptureModeToString(
 
 /* static */ absl::Status GpuDriver::StreamBeginCaptureToGraph(
     GpuStreamHandle stream, GpuGraphHandle graph, StreamCaptureMode mode) {
-  
-  hipStreamCaptureMode hip_mode;
-  switch (mode) {
-    case StreamCaptureMode::kGlobal:
-      hip_mode = hipStreamCaptureModeGlobal;
-      break;
-    case StreamCaptureMode::kThreadLocal:
-      hip_mode = hipStreamCaptureModeThreadLocal;
-      break;
-    case StreamCaptureMode::kRelaxed:
-      hip_mode = hipStreamCaptureModeRelaxed;
-      break;
-  }
-
-  VLOG(2) << "Beginning stream " << stream << " capture in "
-          << StreamCaptureModeToString(mode) << " mode to graph " << graph;
-  RETURN_IF_ROCM_ERROR(
-      wrap::hipStreamBeginCaptureToGraph(stream, graph,
-                                  /*dependencies=*/nullptr,
-                                  /*dependencyData=*/nullptr,
-                                  /*numDependencies=*/0, hip_mode),
-                                  "Failed to begin stream capture graph");
+  return absl::UnimplementedError(
+      "StreamBeginCaptureToGraph is not implemented");
 }
 
 /* static */ absl::Status GpuDriver::StreamEndCapture(GpuStreamHandle stream,
@@ -733,9 +713,7 @@ GpuDriver::GraphNodeGetType(hipGraphNode_t node) {
     hipGraph_t graph, const char* path, bool return_printed_graph) {
   VLOG(2) << "Print HIP graph " << graph << " debug dot file to " << path;
 
-  int flags = hipGraphDebugDotFlagsHandles | 
-        hipGraphDebugDotFlagsMemcpyNodeParams |
-        hipGraphDebugDotFlagsMemsetNodeParams;
+  int flags = hipGraphDebugDotFlagsVerbose;
   RETURN_IF_ROCM_ERROR(wrap::hipGraphDebugDotPrint(graph, path, flags),
                        "Failed to print gpu graph debug file");
 

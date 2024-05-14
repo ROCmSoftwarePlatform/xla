@@ -160,45 +160,39 @@ static GpuDevicePtr AsDevicePtr(const DeviceMemoryBase& mem) {
 absl::Status GpuCommandBuffer::Trace(
     Stream* stream, absl::AnyInvocable<absl::Status()> function) {
   TF_RETURN_IF_ERROR(CheckNotFinalized());
-
-
-#define USE_CAPTURE_TO_GRAPH 0
-
-#if !USE_CAPTURE_TO_GRAPH
+#if defined(TENSORFLOW_USE_ROCM)
   TF_ASSIGN_OR_RETURN(size_t count, GpuDriver::GraphGetNodeCount(graph_));
   if (count != 0 || !is_owned_graph_)
     return absl::InternalError("Stream can't be traced on non empty command buffer");
-#endif
+#endif // TENSORFLOW_USE_ROCM
 
   VLOG(5) << "Trace into GPU command buffer graph " << graph_
           << " on a stream: " << stream->DebugStreamPointers();
 
   auto gpu_stream = AsGpuStreamValue(stream);
 
-  VLOG(0) << "Calling tracing..";
+  VLOG(100) << "Calling tracing..";
   (void)function();
-  VLOG(0) << "Calling tracing once again..";
+  VLOG(100) << "Calling tracing once again..";
 
   // Switch stream into the capture mode.
   uint64_t start_nanos = tsl::Env::Default()->NowNanos();
-#if USE_CAPTURE_TO_GRAPH
+#if !defined(TENSORFLOW_USE_ROCM)
   TF_RETURN_IF_ERROR(GpuDriver::StreamBeginCaptureToGraph(
-        gpu_stream, graph_, GpuDriver::StreamCaptureMode::kThreadLocal));
-  VLOG(0) << "Call to StreamBeginCaptureToGraph succeeded";
+      gpu_stream, graph_, GpuDriver::StreamCaptureMode::kThreadLocal));
 #else
   TF_RETURN_IF_ERROR(GpuDriver::StreamBeginCapture(
       gpu_stream, GpuDriver::StreamCaptureMode::kThreadLocal));
-#endif
+#endif // TENSORFLOW_USE_ROCM
   auto traced = function();
 
   // Always stop capturing the stream before checking `traced` result.
   GpuGraphHandle captured_graph;
   TF_RETURN_IF_ERROR(GpuDriver::StreamEndCapture(gpu_stream, &captured_graph));
-  VLOG(0) << "Captured graph " << captured_graph;
-#if USE_CAPTURE_TO_GRAPH
+#if !defined(TENSORFLOW_USE_ROCM)
   DCHECK(captured_graph == graph_) << "Stream capture should update graph_";
 #else
-   TF_RETURN_IF_ERROR(GpuDriver::DestroyGraph(std::exchange(graph_, captured_graph)));
+  TF_RETURN_IF_ERROR(GpuDriver::DestroyGraph(std::exchange(graph_, captured_graph)));
 #endif // TENSORFLOW_USE_ROCM
   uint64_t end_nanos = tsl::Env::Default()->NowNanos();
 

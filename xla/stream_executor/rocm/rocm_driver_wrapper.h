@@ -162,7 +162,6 @@ namespace wrap {
   __macro(hipSetDevice)                             \
   __macro(hipStreamAddCallback)                     \
   __macro(hipStreamBeginCapture)                    \
-  __macro(hipStreamBeginCaptureToGraph)             \
   __macro(hipStreamCreateWithFlags)                 \
   __macro(hipStreamCreateWithPriority)              \
   __macro(hipStreamDestroy)                         \
