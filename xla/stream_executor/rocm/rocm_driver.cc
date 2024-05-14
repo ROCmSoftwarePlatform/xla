@@ -1276,11 +1276,10 @@ struct BitPatternToValue {
   ScopedActivateContext activated{context};
   hipError_t res;
   if (priority == 0) {
-    res = wrap::hipStreamCreateWithFlags(
-        stream, hipStreamDefault);  // switch to hipStreamNonBlocking?
+    res = wrap::hipStreamCreateWithFlags(stream, hipStreamNonBlocking);
   } else {
-    res = wrap::hipStreamCreateWithPriority(
-        stream, hipStreamDefault, priority);  // switch to hipStreamNonBlocking?
+    res = wrap::hipStreamCreateWithPriority(stream, hipStreamNonBlocking,
+                                            priority);
   }
   if (res != hipSuccess) {
     LOG(ERROR) << "could not allocate ROCM stream for device "
