@@ -1294,7 +1294,9 @@ TEST(GpuCommandBufferTest, ConditionalWhileInExecutionScope) {
 //===----------------------------------------------------------------------===//
 
 #define BENCHMARK_SIZES(NAME) \
-  BENCHMARK(NAME)->Arg(8)->Arg(32)->Arg(128)->Arg(512)->Arg(1024);
+  BENCHMARK(NAME)->ArgsProduct({ \
+      benchmark::CreateDenseRange(1, 1024, /*step=*/32) \
+    })
 
 // In benchmarks we construct command buffers in nested mode when we
 // do not want to measure graph executable instantiation overhead.
