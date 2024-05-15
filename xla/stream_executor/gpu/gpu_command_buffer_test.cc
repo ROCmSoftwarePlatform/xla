@@ -1397,7 +1397,9 @@ static void BM_ExecuteCommandBuffer(benchmark::State& state) {
   CHECK_OK(cmd_buffer->MemcpyDeviceToDevice(&a, tmp, byte_length));
   CHECK_OK(cmd_buffer->MemcpyDeviceToDevice(&b, tmp, byte_length));
   CHECK_OK(cmd_buffer->MemcpyDeviceToDevice(&c, tmp, byte_length));
-  CHECK_OK(cmd_buffer->Launch(add, ThreadDim(state.range(0)), BlockDim(), a, b, c));
+  for (int i = 1; i < state.range(0); ++i) {
+    CHECK_OK(cmd_buffer->Launch(add, ThreadDim(state.range(0)), BlockDim(), a, b, c));
+  }
   CHECK_OK(cmd_buffer->Finalize());
 
   for (auto s : state) {
