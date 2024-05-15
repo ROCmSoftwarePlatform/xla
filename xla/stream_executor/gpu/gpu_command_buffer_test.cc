@@ -1387,7 +1387,7 @@ static void BM_ExecuteCommandBuffer(benchmark::State& state) {
   size_t byte_length = state.range(0) * sizeof(int);
 
   DeviceMemory<int32_t> tmp = executor->AllocateArray<int32_t>(state.range(0), 0);
-  stream.Memset32(&tmp, 1, byte_length));
+  CHECK_OK(stream.Memset32(&tmp, 1, byte_length));
 
   DeviceMemory<int32_t> a = executor->AllocateArray<int32_t>(state.range(0), 0);
   DeviceMemory<int32_t> b = executor->AllocateArray<int32_t>(state.range(0), 0);
