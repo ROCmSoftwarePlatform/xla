@@ -216,7 +216,9 @@ ENTRY e {
                          "num_ctas":1}}}
 })";
 
-  TF_EXPECT_OK(CreateTritonIrAndFileCheckForDot(kHloText, "triton_dot", R"(
+  TritonGemmConfig config(16, 16, 32, 1, 1, 1);
+  TF_EXPECT_OK(
+      CreateTritonIrAndFileCheck(kHloText, config, EmitMatMul, "triton_dot", R"(
 CHECK:    tt.func @triton_fn(%[[LHS:.*]]: !tt.ptr<f32> {tt.divisibility = 16 : i32}, %[[RHS:.*]]: !tt.ptr<f32> {tt.divisibility = 16 : i32}, %[[OUT:.*]]: !tt.ptr<f32> {tt.divisibility = 16 : i32}) {
 CHECK-DAG:  %[[ZERO_KN:.*]] = arith.constant dense<0.000000e+00> : tensor<32x16xf32>
 CHECK-DAG:  %[[ZERO_MK:.*]] = arith.constant dense<0.000000e+00> : tensor<16x32xf32>
@@ -1004,10 +1006,11 @@ ENTRY main {
 
   TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<VerifiedHloModule> module,
                           ParseAndReturnVerifiedModule(kHloText));
-  TF_ASSERT_OK(CreateTritonIrAndFileCheck(kHloText,
-                                          FromOutputTileSizes({1, 1, 16}),
-                                          "triton_softmax_computation", R"(
-// CHECK: #[[MAP:.*]] = affine_map<(d0) -> (d0 * 16)>
+
+  TritonGemmConfig config(16, 64, 32, 1, 1, 1);
+  TF_ASSERT_OK(CreateTritonIrAndFileCheck(kHloText, config, EmitSoftMax,
+                                       "triton_softmax_computation", R"(
+// CHECK: #[[MAP:.*]] = affine_map<()[s0] -> (s0 * 16)>
 // CHECK-LABEL:   tt.func @triton_fn(
 // CHECK-SAME:                       %[[P0:[^:]*]]: !tt.ptr<f32> {tt.divisibility = 16 : i32},
 // CHECK-SAME:                       %[[P1:[^:]*]]: !tt.ptr<f32> {tt.divisibility = 16 : i32},
@@ -2414,6 +2417,9 @@ ENTRY e {
 
 TEST_F(TritonGemmTestAny,
        DoNotFuseConcatenationOfSplitNonContractingDimension) {
+  if (std::holds_alternative<se::RocmComputeCapability>(GpuComputeComp())) {
+    GTEST_SKIP() << "Not using autotuner on ROCM yet.";
+  }
   if (SkipBF16Tests()) {
     GTEST_SKIP() << "BF16 not supported.";
   }
@@ -3565,6 +3571,9 @@ ENTRY e {
 }
 
 TEST_F(CompareTest, UsingOptinSharedMemoryOnAmpereProducesSameResult) {
+  if (std::holds_alternative<se::RocmComputeCapability>(GpuComputeComp())) {
+    GTEST_SKIP() << "No Optin Shared Memory on AMD.";
+  }
   const se::DeviceDescription dev_info =
       backend().default_stream_executor()->GetDeviceDescription();
   constexpr int kBytesOfSharedMemoryTested = 64 * 1024;
@@ -4784,7 +4793,9 @@ ENTRY e {
     {"block_m":32,"block_n":32,"block_k":32,"split_k":1,"num_stages":1,"num_warps":1,"num_ctas":1}}}
 }
 )";
-  TF_ASSERT_OK(CreateTritonIrAndFileCheckForDot(kHloText, "triton_dot", R"(
+  TritonGemmConfig config(32, 32, 32, 1, 1, 1);
+  TF_ASSERT_OK(
+      CreateTritonIrAndFileCheck(kHloText, config, EmitMatMul, "triton_dot", R"(
 CHECK:          %[[INFINITY:.*]] = arith.constant dense<0x7F800000> : tensor<32x32xf32>
 CHECK:          %[[C_MASK:.*]] = arith.constant dense<-65536> : tensor<32x32xi32>
 CHECK:          %[[C0:.*]] = arith.constant dense<0.000000e+00> : tensor<32x32xf32>
@@ -5011,6 +5022,9 @@ CHECK-COUNT-6:  %{{.*}} = tt.dot %{{.*}}, %{{.*}}, %{{.*}} : tensor<32x32xbf16> 
 }
 
 TEST_F(Triton6xBF16GemmTest, Emit6xBF16GemmEndToEnd) {
+  if (std::holds_alternative<se::RocmComputeCapability>(GpuComputeComp())) {
+    GTEST_SKIP() << "ALG_DOT_BF16_BF16_F32_X6 not supported on ROCM.";
+  }
   const char* kHloText = R"(
 HloModule t
 
@@ -5103,7 +5117,9 @@ ENTRY e {
     {"block_m":32,"block_n":32,"block_k":32,"split_k":1,"num_stages":1,"num_warps":1,"num_ctas":1}}}
 }
 )";
-  TF_ASSERT_OK(CreateTritonIrAndFileCheckForDot(kHloText, "triton_dot", R"(
+  TritonGemmConfig config(32, 32, 32, 1, 1, 1);
+  TF_ASSERT_OK(
+      CreateTritonIrAndFileCheck(kHloText, config, EmitMatMul, "triton_dot", R"(
 CHECK:          %[[INFINITY:.*]] = arith.constant dense<0x7F800000> : tensor<32x32xf32>
 CHECK:          %[[C_MASK:.*]] = arith.constant dense<-65536> : tensor<32x32xi32>
 CHECK:          %[[C0:.*]] = arith.constant dense<0.000000e+00> : tensor<32x32xf32>
@@ -5347,6 +5363,9 @@ CHECK-COUNT-3:  %{{.*}} = tt.dot %{{.*}}, %{{.*}}, %{{.*}} : tensor<32x32xbf16> 
 }
 
 TEST_F(Triton3xBF16GemmTest, Emit3xBF16GemmEndToEnd) {
+  if (std::holds_alternative<se::RocmComputeCapability>(GpuComputeComp())) {
+    GTEST_SKIP() << "ALG_DOT_BF16_BF16_F32_X3 not supported on ROCM.";
+  }
   const char* kHloText = R"(
 HloModule t
 
