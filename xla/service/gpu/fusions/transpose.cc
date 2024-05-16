@@ -57,8 +57,8 @@ namespace {
 
 Tiling ComputeTransposeTiling(const se::DeviceDescription& gpu_device_info,
                               const TransposeDescription& tiled_transpose) {
+  // knumrows should be a divisor of warp/wavefront size.
   constexpr int kNumRows = 4;
-  static_assert(WarpSize() % kNumRows == 0);
 
   // 3D view over the output shape.
   Vector3 transposed_dims = tiled_transpose.dimensions;
@@ -74,8 +74,8 @@ Tiling ComputeTransposeTiling(const se::DeviceDescription& gpu_device_info,
 
   // We tile along the minor dimensions pre- and post-transpose.
   absl::InlinedVector<int64_t, 4> tile_sizes{1, 1, 1};
-  tile_sizes[permutation[2]] = WarpSize() / kNumRows;
-  absl::InlinedVector<int64_t, 4> num_threads{1, 1, WarpSize()};
+  tile_sizes[permutation[2]] = gpu_device_info.threads_per_warp() / kNumRows;
+  absl::InlinedVector<int64_t, 4> num_threads{1, 1, gpu_device_info.threads_per_warp()};
   num_threads[permutation[2]] = kNumRows;
 
   auto capability = gpu_device_info.gpu_compute_capability();
