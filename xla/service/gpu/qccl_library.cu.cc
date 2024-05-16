@@ -17,7 +17,7 @@ namespace xla::gpu {
   return QCCL_Result::Failed; \
 }
 
-#if 1
+#if 0
 #define gprint(fmt, ...) printf(fmt"\n", ##__VA_ARGS__)
 #else
 #define gprint(fmt, ...)
@@ -96,7 +96,7 @@ __global__ void rcclKernel(WorkInfo *gworkInfo);
 class GpuCommLib {
 
   static constexpr size_t s_defNumWorkItems = 8;
-  static constexpr size_t s_numWorkThreads = 512;
+  static constexpr size_t s_numWorkThreads = 256;
   static constexpr size_t s_numRegsPerThread = 16;
 
   struct ThreadInfo {
@@ -124,7 +124,10 @@ public:
 
     auto& info = m_infos[ID];
     if(info.gpuId < 0) {
-        size_t exchangeSz = sizeof(void *) * STotalSlots;
+
+        VLOG(0) << "Running init for " << ID;
+
+        size_t exchangeSz = sizeof(void *) * STotalSlots * 8;
         info.workItems.reserve(s_defNumWorkItems);
         CHK(hipSetDevice(ID));
         int flags = //hipDeviceMallocDefault;
@@ -137,6 +140,8 @@ public:
             return res;
         }
         info.gpuId = ID; 
+
+        VLOG(0) << "Running init for " << ID << " DONE";
 #if 0
         int nBlocks = 0;
         CHK(hipOccupancyMaxActiveBlocksPerMultiprocessor(&nBlocks, 
@@ -154,7 +159,7 @@ public:
 
     if(ID >= m_infos.size()) return QCCL_Result::InvalidParams;
     // skip self for now
-    if(ID == inPeer || ID == outPeer) return QCCL_Result::OK;
+    // if(ID == inPeer || ID == outPeer) return QCCL_Result::OK;
 
     auto& info = m_infos[ID];
     // NOTE: exchange pointers are always allocated on the receiver side!!
@@ -168,7 +173,7 @@ public:
           .size = (uint32_t)inSize,
           // exchange buf on the receiver side: two entries per link
           // (we are receiver here): there we always publish our pointer
-          .exchangeBuf = (void **)m_infos[ID].exchangeBuf,
+          .exchangeBuf = (void **)m_infos[ID].exchangeBuf + inPeer*STotalSlots,
           .targetBuf = (uint8_t *)targetBuf,
     };
     w.outgoing = { // whom we are sending to
@@ -176,7 +181,7 @@ public:
           .size = (uint32_t)outSize,
           // exchange buf on the receiver side: two entries per link
           // node 'outPeer' is a receiver 
-          .exchangeBuf = (void **)m_infos[outPeer].exchangeBuf, 
+          .exchangeBuf = (void **)m_infos[outPeer].exchangeBuf + ID*STotalSlots,
           .sourceBuf = (uint8_t *)sourceBuf,
     };
     return QCCL_Result::OK;
@@ -239,8 +244,8 @@ public:
       }
     }
     uint32_t nBlocks = info.workItems.size();
-     VLOG(0) << ID << ": workItemSz: " << sizeof(WorkInfo) << " running with #blocks:" 
-             << nBlocks;
+    //  VLOG(0) << ID << ": workItemSz: " << sizeof(WorkInfo) << " running with #blocks:" 
+    //          << nBlocks;
     // NOTE: do we really need to copy workBuf all the time ???
     CHK(hipMemcpyAsync(info.workBuf, info.workItems.data(), 
           sizeof(WorkInfo) * nBlocks, hipMemcpyHostToDevice, stream));
@@ -281,8 +286,7 @@ __shared__ WorkInfo ds_work;
 
 __forceinline__ __device__ void setupInPtrs() {
 
-
-  gprint("%d: setupInPtrs", ds_work.ID);
+  // gprint("%d: setupInPtrs", ds_work.ID);
   if(ds_work.ID == ds_work.incoming.peer) {
     return; // we are receiving from ourselves
   }
@@ -294,7 +298,7 @@ __forceinline__ __device__ void setupInPtrs() {
   auto counter = (uint32_t GLOBAL *)(slot + SReadyFlagCounter);
   auto targetBuf = ds_work.incoming.targetBuf;
 
-    gprint("%d / %p: Starting sending target buf", ds_work.ID, slot);
+    // gprint("%d / %p: Starting sending target buf", ds_work.ID, slot);
 
   //! NOTE hangs here because we reset ready flag too fast (or too late)
   ds_work.readyFlagCache = ATOMIC_LOAD(counter);
@@ -349,7 +353,7 @@ __forceinline__ __device__ void setupOutPtrs() {
 
   auto& item = ds_work.outgoing;
   void *volatile *slot = item.exchangeBuf;
-  gprint("%d / %p: Starting receive target buf", ds_work.ID, slot);
+  // gprint("%d / %p: Starting receive target buf", ds_work.ID, slot);
 
   void *ptr;
   while (true) {
@@ -359,7 +363,7 @@ __forceinline__ __device__ void setupOutPtrs() {
   ds_work.targetBuf = (uint8_t *)(reinterpret_cast<uintptr_t>(ptr) ^ 
                                   reinterpret_cast<uintptr_t>(slot));
   gprint("%d / %p: Received target buf: %p from recv peer %d", 
-            ds_work.ID, slot, ds_work.incoming.targetBuf, 
+            ds_work.ID, slot, ds_work.targetBuf, 
                                  ds_work.outgoing.peer);
 }
 
@@ -384,8 +388,8 @@ __forceinline__ __device__ void finalizeSendRecv(uint32_t tid) {
     //  __atomic_store_n(send_done, 1, __ATOMIC_SEQ_CST);
     auto readyCnt = (uint32_t *)(slot + SReadyFlagCounter);
     auto val = 1 + atomicAdd(readyCnt, 1u);
-    gprint("%d: incremented ready counter: %p / %d", 
-            ds_work.ID, readyCnt, val);
+    // gprint("%d: incremented ready counter: %p / %d", 
+    //         ds_work.ID, readyCnt, val);
 
     // gateway nodes do not need to wait here, also do not wait if
     // target buffer is NULL (we do not receive anything)
@@ -406,8 +410,8 @@ __forceinline__ __device__ void finalizeSendRecv(uint32_t tid) {
     while(1) {
       auto val =  ATOMIC_LOAD(readyCnt);
       if(val - cacheVal == numPeers) {
-        gprint("%d: Waiting done: counter: %d, cacheVal: %d", 
-            ds_work.ID, val, cacheVal);
+        // gprint("%d: Waiting done: counter: %d, cacheVal: %d", 
+        //     ds_work.ID, val, cacheVal);
         break;
       }
       // __builtin_amdgcn_s_sleep(1);
@@ -559,9 +563,9 @@ __global__ void rcclKernel(WorkInfo *gworkInfo) {
 
   if(tid == 0) {
     resetBufferPtrs(); // when spinning is done, we reset buffer pointers
-    gprint("============= %d: sourceBuf: %p, targetBuf: %p dataOfs: %d / %X size: %d / %X", 
-      ds_work.ID, ds_work.outgoing.sourceBuf,
-      ds_work.incoming.targetBuf, ds_work.dataOfs, ds_work.dataOfs,
+    gprint("============= %d: peer: %d / %d; sourceBuf: %p, targetBuf: %p dataOfs: %d / %X size: %d / %X", 
+      ds_work.ID, ds_work.incoming.peer, ds_work.outgoing.peer, ds_work.outgoing.sourceBuf,
+      ds_work.targetBuf, ds_work.dataOfs, ds_work.dataOfs,
       ds_work.outgoing.size, ds_work.outgoing.size);
   }
 #if 0
@@ -597,10 +601,10 @@ __global__ void rcclKernel(WorkInfo *gworkInfo) {
                    wordsLeft = bytesLeft / sizeof(Word);
 
     if(tid == 0) {
-      gprint("ID %d; nwords: %d; bytes: %d mod16: %d niters: %d "
-             "bytesPerIter: %d bytesLeft: %d wordsLeft: %d", 
-            ds_work.ID, nwords, bytes, bytes%16, totalIters, bytesPerIter, 
-            bytesLeft, wordsLeft);
+      // gprint("ID %d; nwords: %d; bytes: %d mod16: %d niters: %d "
+      //        "bytesPerIter: %d bytesLeft: %d wordsLeft: %d", 
+      //       ds_work.ID, nwords, bytes, bytes%16, totalIters, bytesPerIter, 
+      //       bytesLeft, wordsLeft);
     }
 
     // we are left with at most BlockSz*NumRegs
@@ -643,61 +647,6 @@ QCCL_Result qcclGatewaySend(uint32_t ID, uint32_t numSubscribedPeers,
 
 QCCL_Result qcclRun(uint32_t ID, hipStream_t stream) {
   return GpuCommLib::i().run(ID, stream);
-}
-
-__global__ void gpuSyncKernel(uint32_t *exchangePtr) { 
-
-  constexpr uint32_t NumGpus = 8;
-  uint32_t val = atomicAdd(exchangePtr, 1);
-  // spin until all GPUs sync..
-  while(val % NumGpus != 0) {
-    __builtin_amdgcn_s_sleep(1);
-    val = atomicAdd(exchangePtr, 0);
-  }
-}
-
-struct GpuSync {
-
-  ~GpuSync() {
-    if(sharedPtr_ != nullptr) {
-      (void)hipFree(sharedPtr_);
-    }
-  }
-
-  static GpuSync& i() {
-    static GpuSync obj;
-    return obj;
-  }
-
-  QCCL_Result init() {
-    if(sharedPtr_ == nullptr) {
-      CHK(hipSetDevice(0));
-      CHK(hipExtMallocWithFlags((void **)&sharedPtr_, 16, 
-        hipDeviceMallocFinegrained));
-    }
-    return QCCL_Result::OK;
-  }
-
-  QCCL_Result run(hipStream_t stream) {
-    if(sharedPtr_ == nullptr) {
-      return QCCL_Result::NotInitialized;
-    }
-    gpuSyncKernel<<< 1, 64, 0, stream >>>(sharedPtr_);
-    return QCCL_Result::OK;
-  }
-protected:
-  GpuSync() = default;
-
-  uint32_t *sharedPtr_ = nullptr;
-};
-
-// to be called once to allocate mem
-QCCL_Result qcclSyncInit() {
-  return GpuSync::i().init();
-}
-
-QCCL_Result qcclSyncGPUs(hipStream_t stream) {
-  return GpuSync::i().run(stream);
 }
 
 } // namespace xla::gpu

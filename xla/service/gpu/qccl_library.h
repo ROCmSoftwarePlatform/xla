@@ -32,9 +32,6 @@ QCCL_Result qcclGatewaySend(uint32_t ID, uint32_t numSubscribedPeers,
 // run previously enqueued send-recv primitives on a stream
 QCCL_Result qcclRun(uint32_t ID, ::stream_executor::gpu::GpuStreamHandle stream);
 
-QCCL_Result qcclSyncInit();
-QCCL_Result qcclSyncGPUs(::stream_executor::gpu::GpuStreamHandle stream);
-
 }
 
 #endif // QCCL_LIB_H

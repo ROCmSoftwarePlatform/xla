@@ -177,49 +177,33 @@ absl::Status NcclAllToAllStartThunk::RunNcclCollective(
 }
 
 bool NcclAllToAllStartThunk::IsQCCLAvailable() {
-  return qccl_available_;
+  return !qccl_devices_.empty();
 }
 
 absl::Status NcclAllToAllStartThunk::SetupQCCL() {
 
-  for(int i = 0; i < 8; i++) {
+  auto sz = config().replica_groups.size();
+  if(sz > 1) {
+    return absl::OkStatus(); // do not support more than 1 replica group
+  }
+
+  constexpr uint32_t maxDevices = 8;
+  for(uint32_t i = 0; i < maxDevices; i++) {
     CHKQCCL(qcclInit(i));
   }
-  qccl_available_ = true;
-  return absl::OkStatus();
-}
+  qccl_devices_.resize(maxDevices);
 
-static StatusOr< uint32_t > SizeInBytes(PrimitiveType element_type) {
-  switch (element_type) {
-    case S8:
-    case F8E5M2:
-    case F8E4M3FN:
-      return 1;
-    case PRED:
-    case U8:
-      return 1;
-    case S32:
-    case U32:
-      return 4;
-    case S64:
-    case U64:
-      return 8;
-    case F16:
-      return 2;
-    case F32:
-      return 4;
-    case C64:
-    case F64:
-      return 8;
-    case C128:
-      return 16;
-    case S16:
-    case U16:
-    case BF16:
-      return 2;
-    default:
-      return absl::InternalError("Unknown datatype");
+  if(sz == 0) {
+    for(uint32_t i = 0; i < maxDevices; i++) {
+      qccl_devices_[i] = i;
+    }
+  } else {
+    uint32_t i = 0;
+    for(const auto j: config().replica_groups[0].replica_ids()) {
+      qccl_devices_[i++] = j;
+    }
   }
+  return absl::OkStatus();
 }
 
 absl::Status NcclAllToAllStartThunk::RunQCCL(int32_t num_participants, 
@@ -234,20 +218,16 @@ absl::Status NcclAllToAllStartThunk::RunQCCL(int32_t num_participants,
       TF_RET_CHECK(buffer.element_count % num_participants == 0)
           << "Buffer was not an exact multiple of the number of participants.";
 
-      auto sz = SizeInBytes(buffer.element_type).value();
+      size_t multiplier = ShapeUtil::ByteSizeOfPrimitiveType(buffer.element_type);
       size_t chunk_elements = buffer.element_count / num_participants,
-             chunk_sz = chunk_elements * sz;
-            
-      for (int peer = 0; peer < num_participants; ++peer) {
-        se::DeviceMemoryBase send_slice =
-            NcclApi::Slice(buffer.source_buffer, buffer.element_type,
-                           peer * chunk_elements, chunk_elements);
+             chunk_sz = chunk_elements * multiplier, byte_ofs = 0;
 
-        se::DeviceMemoryBase recv_slice =
-            NcclApi::Slice(buffer.destination_buffer, buffer.element_type,
-                           peer * chunk_elements, chunk_elements);
+      for (int peer = 0; peer < num_participants; ++peer, byte_ofs += chunk_sz) {
 
-        auto inP = peer, outP = peer;
+        auto send_slice = buffer.source_buffer.GetByteSlice(byte_ofs, chunk_sz);
+        auto recv_slice = buffer.destination_buffer.GetByteSlice(byte_ofs, chunk_sz);
+
+        auto inP = qccl_devices_[peer], outP = inP;
         CHKQCCL(qcclSendRecv(current_id, numSubscribedPeers, inP, recv_slice.opaque(), 
              chunk_sz, outP, send_slice.opaque(), chunk_sz));
       }
@@ -261,10 +241,10 @@ absl::Status NcclAllToAllStartThunk::RunQCCL(int32_t num_participants,
     for (size_t i = 0; i < buffers.size(); ++i) {
       DeviceBufferPair& buffer = buffers[i];
 
-      auto sz = SizeInBytes(buffer.element_type).value();
-      size_t chunk_sz = buffer.element_count * sz;
+      auto multiplier = ShapeUtil::ByteSizeOfPrimitiveType(buffer.element_type);
+      size_t chunk_sz = buffer.element_count * multiplier;
 
-      auto inP = i, outP = i;
+      auto inP = qccl_devices_[i], outP = inP;
       CHKQCCL(qcclSendRecv(current_id, numSubscribedPeers, inP, 
              buffer.destination_buffer.opaque(), 
              chunk_sz, outP, buffer.source_buffer.opaque(), chunk_sz));
@@ -291,8 +271,8 @@ absl::Status RunAllToAll(NcclApi* nccl_api, bool has_split_dimension,
   // and produces a tuple of outputs.
   if (has_split_dimension) {
 
-    VLOG(0) << device_ordinal << " num_participants " << num_participants
-          << " -- num bufs " << buffers.size(); 
+    // VLOG(0) << device_ordinal << " num_participants " << num_participants
+    //       << " -- num bufs " << buffers.size(); 
     for (DeviceBufferPair& buffer : buffers) {
       TF_RET_CHECK(buffer.element_count % num_participants == 0)
           << "Buffer was not an exact multiple of the number of participants.";

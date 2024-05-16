@@ -72,7 +72,7 @@ class NcclAllToAllStartThunk : public NcclCollectiveThunk {
                                  NcclApi::NcclCommHandle comm) override;
 
  private:
-  bool qccl_available_ = false;
+  std::vector< int32_t > qccl_devices_;
   const NcclAllToAllConfig config_;
   const std::vector<Buffer> buffers_;
 };

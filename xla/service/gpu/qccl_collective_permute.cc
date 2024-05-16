@@ -43,8 +43,6 @@ namespace xla::gpu {
     return absl::InternalError(absl::StrFormat("%d: QCCL failed with %d", __LINE__, (int)res)); \
   }
 
-static StatusOr< uint32_t > SizeInBytes(PrimitiveType element_type);
-
 template < class T >
 struct Matrix : std::vector< T > {
 
@@ -168,9 +166,8 @@ absl::Status NcclCollectivePermuteStartThunk::SetupQCCL() {
   }
   // TODO: if some in/out is not set here, we still could use QCCL
   // but just use NULL buffers
-
-  TF_ASSIGN_OR_RETURN(size_t elem_sz, 
-              SizeInBytes(config_.config.operand_element_type[0]));
+  size_t elem_sz = ShapeUtil::ByteSizeOfPrimitiveType(
+                                        config_.config.operand_element_type[0]);
   auto *extra = graph[nNodes];
   size_t size = elem_sz * buffer_.element_count;
   extra[0].ofs = 0;
@@ -264,39 +261,6 @@ absl::Status NcclCollectivePermuteStartThunk::RunQCCL(DeviceBufferPair& buffer,
   }
   CHKQCCL(qcclRun(current_id, se::gpu::AsGpuStreamValue(&stream)));
   return absl::OkStatus();
-}
-
-static StatusOr< uint32_t > SizeInBytes(PrimitiveType element_type) {
-  switch (element_type) {
-    case S8:
-    case F8E5M2:
-    case F8E4M3FN:
-      return 1;
-    case PRED:
-    case U8:
-      return 1;
-    case S32:
-    case U32:
-      return 4;
-    case S64:
-    case U64:
-      return 8;
-    case F16:
-      return 2;
-    case F32:
-      return 4;
-    case C64:
-    case F64:
-      return 8;
-    case C128:
-      return 16;
-    case S16:
-    case U16:
-    case BF16:
-      return 2;
-    default:
-      return absl::InternalError("Unknown datatype");
-  }
 }
 
 } // namespace xla::gpu

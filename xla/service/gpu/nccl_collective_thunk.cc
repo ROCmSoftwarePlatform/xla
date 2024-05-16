@@ -47,7 +47,6 @@ limitations under the License.
 #include "xla/service/gpu/nccl_clique.h"
 #include "xla/service/gpu/nccl_clique_key.h"
 #include "xla/service/gpu/thunk.h"
-#include "xla/service/gpu/qccl_library.h"
 #include "xla/service/rendezvous.h"
 #include "xla/shape.h"
 #include "xla/status.h"
@@ -218,8 +217,6 @@ NcclCollectiveThunk::NcclCollectiveThunk(Kind kind, ThunkInfo thunk_info,
     : Thunk(kind, thunk_info),
       nccl_api_(nccl_api),
       async_events_(is_sync ? nullptr : new AsyncEvents()) {
-
-  qcclSyncInit();
 }
 
 static absl::StatusOr<NcclCliqueKey> GetNcclCliqueKey(
