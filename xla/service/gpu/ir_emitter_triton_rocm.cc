@@ -14,7 +14,7 @@ limitations under the License.
 ==============================================================================*/
 // TODO(ROCm): Enable and include ROCm Triton passes when ROCm Triton is
 // included in build.
-// #include "third_party/amd/include/TritonAMDGPUToLLVM/Passes.h"
+#include "third_party/amd/include/TritonAMDGPUToLLVM/Passes.h"
 #include "mlir/Conversion/ArithToLLVM/ArithToLLVM.h"  // from @llvm-project
 #include "mlir/Conversion/ControlFlowToLLVM/ControlFlowToLLVM.h"  // from @llvm-project
 #include "mlir/Conversion/IndexToLLVM/IndexToLLVM.h"  // from @llvm-project
@@ -30,6 +30,7 @@ limitations under the License.
 #include "triton/Dialect/Triton/Transforms/Passes.h"
 #include "triton/Dialect/TritonGPU/Transforms/Passes.h"
 #include "triton/Dialect/TritonNvidiaGPU/Transforms/Passes.h"
+#include "triton/Conversion/TritonGPUToLLVM/Passes.h"
 
 namespace xla {
 namespace gpu {
@@ -77,8 +78,6 @@ absl::Status CreateTritonPipeline(
   pm.addPass(mt::gpu::createRemoveLayoutConversionsPass());
   pm.addPass(mt::gpu::createOptimizeDotOperandsPass());
   pm.addPass(mlir::createCSEPass());
-  pm.addPass(mt::gpu::createPipelinePass(config.num_stages, config.num_warps,
-                                         config.num_ctas, ccAsInt));
   pm.addPass(mt::gpu::createPrefetchPass());
 
   pm.addPass(mt::gpu::createOptimizeDotOperandsPass());
@@ -95,7 +94,7 @@ absl::Status CreateTritonPipeline(
   pm.addPass(mlir::createConvertSCFToCFPass());
   pm.addPass(mlir::createConvertIndexToLLVMPass());
   pm.addPass(mt::gpu::createAllocateSharedMemoryPass());
-  // pm.addPass(mt::createConvertTritonAMDGPUToLLVMPass());
+  pm.addPass(mt::createConvertTritonAMDGPUToLLVMPass());
   pm.addPass(mlir::createArithToLLVMConversionPass());
   pm.addPass(mlir::createCanonicalizerPass());
   pm.addPass(mlir::createCSEPass());
