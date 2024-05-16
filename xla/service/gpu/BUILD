@@ -601,6 +601,9 @@ cc_library(
         "@triton//:TritonLLVMIR",
     ]) + if_rocm_is_configured([
         "@tsl//tsl/platform:rocm_rocdl_path",
+        "@triton//:TritonLLVMIR",
+        "@triton//third_party/amd:TritonAMDGPUToLLVM",
+        "@triton//third_party/amd:TritonAMDGPUTransforms",
     ]),
 )
 
