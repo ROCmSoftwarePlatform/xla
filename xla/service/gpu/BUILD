@@ -592,6 +592,7 @@ cc_library(
         "@triton//:TritonGPUTransforms",
         "@triton//:TritonLLVMIR",
         "@triton//third_party/amd:TritonAMDGPUToLLVM",
+        "@triton//third_party/amd:TritonAMDGPUTransforms",
     ]),
 )
 
