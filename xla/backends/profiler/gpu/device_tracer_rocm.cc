@@ -114,6 +114,12 @@ RocmTracerOptions GpuTracer::GetRocmTracerOptions() {
       HIP_API_ID_hipHccModuleLaunchKernel,
       HIP_API_ID_hipLaunchKernel,
       HIP_API_ID_hipExtLaunchKernel,
+      HIP_API_ID_hipExtLaunchMultiKernelMultiDevice, // 63
+      HIP_API_ID_hipLaunchCooperativeKernel, //105
+      HIP_API_ID_hipLaunchCooperativeKernelMultiDevice, // 106
+      HIP_API_ID_hipModuleLaunchCooperativeKernel, // 358
+      HIP_API_ID_hipModuleLaunchCooperativeKernelMultiDevice, // 359
+      HIP_API_ID_hipGraphAddKernelNode,
       // MEMCPY
       HIP_API_ID_hipMemcpy,
       HIP_API_ID_hipMemcpyAsync,
@@ -144,33 +150,10 @@ RocmTracerOptions GpuTracer::GetRocmTracerOptions() {
       // GENERIC
       HIP_API_ID_hipStreamSynchronize,
   };
-  // clang-format on
 
   options.api_tracking_set =  std::set<uint32_t>(hip_api_domain_ops.begin(), hip_api_domain_ops.end());
 
-  // These are the list of APIs we track since roctracer activity
-  // does not provide all the information necessary to fully populate the
-  // TF events. We need to track the APIs for those activities in API domain but
-  // we only use them for filling the missing items in their corresponding
-  // activity (using correlation id).
-  // clang-format off
-  std::vector<uint32_t> hip_api_aux_ops{
-    HIP_API_ID_hipStreamWaitEvent,
-    // TODO(rocm-profiler): finding device ID from hipEventSynchronize need some
-    // extra work, we ignore it for now.
-    // HIP_API_ID_hipEventSynchronize,
-    HIP_API_ID_hipHostFree,
-    HIP_API_ID_hipHostMalloc,
-    HIP_API_ID_hipSetDevice  //  added to track default device
-  };
-
-  // clang-format on
-
-  hip_api_domain_ops.insert(hip_api_domain_ops.end(), hip_api_aux_ops.begin(), hip_api_aux_ops.end());
-
-  //options.api_callbacks.emplace(ACTIVITY_DOMAIN_HIP_API, hip_api_domain_ops);
   options.api_callbacks.emplace(ACTIVITY_DOMAIN_HIP_API, empty_vec);
-
   options.activity_tracing.emplace(ACTIVITY_DOMAIN_HIP_OPS, empty_vec);
 
   return options;
