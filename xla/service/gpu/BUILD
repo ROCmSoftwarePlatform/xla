@@ -1516,6 +1516,40 @@ cc_library(
 )
 
 cc_library(
+    name = "gemm_transpose_fuse",
+    srcs = ["gemm_transpose_fuse.cc"],
+    hdrs = ["gemm_transpose_fuse.h"],
+    local_defines = if_cuda_is_configured(["GOOGLE_CUDA=1"]) + if_rocm_is_configured([
+        "TENSORFLOW_USE_ROCM=1",
+    ]),
+    deps = [
+        ":backend_configs_cc",
+        ":ir_emission_utils",
+        ":matmul_utils",
+        ":cublas_cudnn",
+        "//xla:shape_util",
+        "//xla:status",
+        "//xla:status_macros",
+        "//xla:statusor",
+        "//xla:xla_data_proto_cc",
+        "//xla/hlo/evaluator:hlo_evaluator",
+        "//xla/hlo/ir:hlo",
+        "//xla/service:hlo_creation_utils",
+        "//xla/service:hlo_pass",
+        "//xla/service:pattern_matcher",
+        "//xla/stream_executor:blas",
+        "//xla/stream_executor:device_description",
+        "//xla/stream_executor/gpu:gpu_blas_lt",
+        "@com_google_absl//absl/algorithm:container",
+        "@com_google_absl//absl/log",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/strings",
+        "@tsl//tsl/platform:errors",
+        "@tsl//tsl/platform:statusor",
+    ],
+)
+
+cc_library(
     name = "triton_support",
     srcs = ["triton_support.cc"],
     hdrs = ["triton_support.h"],
@@ -3438,6 +3472,7 @@ cc_library(
         ":gemm_broadcast_folding_rewriter",
         ":gemm_rewriter_triton",
         ":gemm_rewriter",
+        ":gemm_transpose_fuse",
         ":gpu_all_gather_optimizer",
         ":gpu_async_collective_annotator",
         ":gpu_constants",

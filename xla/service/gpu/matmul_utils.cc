@@ -118,8 +118,11 @@ absl::StatusOr<Shape> GetBatchRowColumnShape(
     auto check_physically_sequential = [&](absl::Span<const int64_t> dims) {
       for (auto it = dims.rbegin(); it != dims.rend(); ++it) {
         // NOTE: `i` is incremented as we check the dimensions.
-        if (*it != shape.layout().minor_to_major()[i++])
-          return InvalidArgument("dims not physically_sequential");
+        if (*it != shape.layout().minor_to_major()[i++]) {
+          int *aaa = (int *)(123);
+          VLOG(0) << *aaa;
+          return InvalidArgument("dims not physically_sequential 1");
+        }
       }
       return absl::OkStatus();
     };
@@ -135,7 +138,7 @@ absl::StatusOr<Shape> GetBatchRowColumnShape(
       minor_to_major.push_back(0);
       TF_RETURN_IF_ERROR(check_physically_sequential(batch_dims));
     } else {
-      return InvalidArgument("dims not physically sequential");
+      return InvalidArgument("dims not physically sequential 2");
     }
   }
 
@@ -302,6 +305,15 @@ absl::StatusOr<bool> CanFoldTransposeOperandIntoDot(const HloInstruction& dot,
                          compute_precision, grad_x, grad_y);
 }
 
+template < class NT >
+std::ostream& operator<<(std::ostream& os, const absl::Span<NT> & s) {
+  os << '[';
+  for(auto a : s) {
+    os << a << ',';
+  }
+  return os << ']';
+}
+
 /*static*/ absl::StatusOr<GemmConfig> GemmConfig::For(
     const Shape& lhs_shape, absl::Span<const int64_t> lhs_batch_dims,
     absl::Span<const int64_t> lhs_contracting_dims, const Shape& rhs_shape,
@@ -315,6 +327,11 @@ absl::StatusOr<bool> CanFoldTransposeOperandIntoDot(const HloInstruction& dot,
       std::vector<int64_t> lhs_row_dims,
       GetNonContractingDims(lhs_shape, lhs_batch_dims, lhs_col_dims));
 
+  // std::ostringstream oss;
+  // oss << "batch: " << lhs_batch_dims << " col_dims: " << lhs_col_dims;
+  // VLOG(0) << oss.str();
+
+  // VLOG(0) << "Checking LHS!";
   TF_ASSIGN_OR_RETURN(
       MatrixLayout lhs_layout,
       MatrixLayout::For(lhs_shape, lhs_batch_dims, lhs_row_dims, lhs_col_dims));

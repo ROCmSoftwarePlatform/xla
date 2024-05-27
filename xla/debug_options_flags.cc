@@ -234,6 +234,7 @@ DebugOptions DefaultDebugOptionsIgnoringFlags() {
   opts.set_xla_gpu_qccl_collectives(0);
   opts.set_xla_gpu_enable_dot_decomposer(true);
   opts.set_xla_gpu_enable_icache_flush(false);
+  opts.set_xla_gpu_enable_gemm_transpose_fuse(false);
 
   return opts;
 }
@@ -754,6 +755,11 @@ void MakeDebugOptionsFlags(std::vector<tsl::Flag>* flag_list,
       bool_setter_for(&DebugOptions::set_xla_gpu_enable_icache_flush),
       debug_options->xla_gpu_enable_icache_flush(),
       "Enables icache invalidate during GEMM tuning for more adequate profiling"));
+flag_list->push_back(tsl::Flag(
+      "xla_gpu_enable_gemm_transpose_fuse",
+      bool_setter_for(&DebugOptions::set_xla_gpu_enable_gemm_transpose_fuse),
+      debug_options->xla_gpu_enable_gemm_transpose_fuse(),
+      "Fuses transpose ops into the gemm op (experimental)"));
   flag_list->push_back(tsl::Flag(
       "xla_force_host_platform_device_count",
       int32_setter_for(&DebugOptions::set_xla_force_host_platform_device_count),

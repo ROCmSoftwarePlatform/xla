@@ -94,15 +94,15 @@ absl::Status AMDGPUCompiler::OptimizeHloPostLayoutAssignment(
     tsl::thread::ThreadPool* thread_pool) {
   HloPassPipeline pre_pipeline("AMDGPU post-layout_assignment part 1");
 
-  auto rocm_compute_capability = std::get<se::RocmComputeCapability>(
-      gpu_target_config.device_description.gpu_compute_capability());
-
   pre_pipeline.AddPass<DotDimensionMerger>();
 
-  for (const auto& req : HipblasPaddingRequirements) {
-    pre_pipeline.AddPass<CublasPadForGemms>(rocm_compute_capability,
-                                            req.data_type, req.multiple_of);
-  }
+  // const auto& gpu_comp = gpu_target_config.device_description.
+  //                                               gpu_compute_capability();
+  // NOTE NOTE do we need gemm padding???
+  // for (const auto& req : HipblasPaddingRequirements) {
+  //   pre_pipeline.AddPass<CublasPadForGemms>(std::get<se::RocmComputeCapability>(gpu_comp),
+  //                                           req.data_type, req.multiple_of);
+  // }
   // Padding a gemm operand that's a constant results in pad(constant).  Run
   // constant-folding to simplify this into a new constant.
   pre_pipeline.AddPass<HloConstantFolding>();

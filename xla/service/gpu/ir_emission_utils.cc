@@ -111,9 +111,6 @@ bool IsMatrixMultiplication(const HloInstruction& dot) {
   if (dot.opcode() != HloOpcode::kDot) {
     return false;
   }
-  //! HACK HACK HACK
-  return true;
-  //! HACK HACK HACK
   const Shape& lhs_shape = dot.operand(0)->shape();
   const Shape& rhs_shape = dot.operand(1)->shape();
   const DotDimensionNumbers& dim_numbers = dot.dot_dimension_numbers();
@@ -127,12 +124,12 @@ bool IsMatrixMultiplication(const HloInstruction& dot) {
       (output_primitive_type == S32 && lhs_shape.element_type() == S8 &&
        rhs_shape.element_type() == S8);
   bool shapes_are_valid =
-      type_is_allowed &&
-      IsRank2(lhs_shape, dim_numbers.lhs_batch_dimensions_size()) &&
-      IsRank2(rhs_shape, dim_numbers.lhs_batch_dimensions_size()) &&
-      IsRank2(dot.shape(), dim_numbers.lhs_batch_dimensions_size()) &&
-      !ShapeUtil::IsZeroElementArray(lhs_shape) &&
-      !ShapeUtil::IsZeroElementArray(rhs_shape);
+      type_is_allowed && true;
+      // IsRank2(lhs_shape, dim_numbers.lhs_batch_dimensions_size()) &&
+      // IsRank2(rhs_shape, dim_numbers.lhs_batch_dimensions_size()) &&
+      // IsRank2(dot.shape(), dim_numbers.lhs_batch_dimensions_size()) &&
+      // !ShapeUtil::IsZeroElementArray(lhs_shape) &&
+      // !ShapeUtil::IsZeroElementArray(rhs_shape);
 
   if (!shapes_are_valid) {
     return false;

@@ -707,7 +707,9 @@ message DebugOptions {
 
   bool xla_gpu_enable_icache_flush = 279;
 
-  // Next id: 280
+  bool xla_gpu_enable_gemm_transpose_fuse = 280;
+
+  // Next id: 281
 
   // Extra options to pass to the compilation backend (e.g. LLVM); specific
   // interpretation of these values is left to the backend.

@@ -130,6 +130,7 @@ limitations under the License.
 #include "xla/service/gpu/gemm_broadcast_folding_rewriter.h"
 #include "xla/service/gpu/gemm_rewriter.h"
 #include "xla/service/gpu/gemm_rewriter_triton.h"
+#include "xla/service/gpu/gemm_transpose_fuse.h"
 #include "xla/service/gpu/gpu_all_gather_optimizer.h"
 #include "xla/service/gpu/gpu_async_collective_annotator.h"
 #include "xla/service/gpu/gpu_constants.h"
@@ -1364,8 +1365,11 @@ absl::Status GpuCompiler::OptimizeHloPostLayoutAssignment(
     pipeline.AddPass<HloPassFix<AlgebraicSimplifier>>(simplifier_options);
   }
 
-  TF_RETURN_IF_ERROR(AddConvAndGemmAutotuningPasses(
+  // autotuning shall be run after gemm-transpose-fusion
+  if(!debug_options.xla_gpu_enable_gemm_transpose_fuse()) {
+    TF_RETURN_IF_ERROR(AddConvAndGemmAutotuningPasses(
       &pipeline, hlo_module, autotune_config, thread_pool));
+  }
 
   // The Triton autotuner can insert new bf16 reductions that need to be
   // normalized again.
@@ -1393,6 +1397,13 @@ absl::Status GpuCompiler::OptimizeHloPostLayoutAssignment(
   pipeline.AddPass<HloCSE>(/*is_layout_sensitive=*/true,
                            /*only_fusion_computations=*/false,
                            /*ignore_control_dependencies=*/true);
+
+  if(debug_options.xla_gpu_enable_gemm_transpose_fuse()) {
+    pipeline.AddPass<GemmTransposeFuser>(gpu_version);
+
+    TF_RETURN_IF_ERROR(AddConvAndGemmAutotuningPasses(
+      &pipeline, hlo_module, autotune_config, thread_pool));
+  }
 
 #ifdef NDEBUG
   // Verify the module in non-debug builds. For debug builds, the verifier
