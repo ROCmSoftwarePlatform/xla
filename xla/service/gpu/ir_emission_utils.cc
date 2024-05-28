@@ -79,6 +79,8 @@ limitations under the License.
 #include "tsl/platform/errors.h"
 #include "tsl/platform/statusor.h"
 
+#include "llvm/IR/IntrinsicsAMDGPU.h"
+
 namespace xla {
 namespace gpu {
 
@@ -230,6 +232,56 @@ llvm::Value* EmitAMDGPUShflDown(llvm::Value* value, llvm::Value* offset,
   return b->CreateBitCast(result, value->getType());
 }
 
+llvm::Value* EmitAMDGPUDPP(llvm::Value* value, llvm::Value* offset,
+                          llvm::IRBuilder<>* b, bool num_res) {
+  llvm::Module* module = b->GetInsertBlock()->getModule();
+  CHECK_EQ(value->getType()->getPrimitiveSizeInBits(), 32);
+  auto* i32_ty = b->getInt32Ty();
+  
+  // Get the declaration of the amdgcn_mov_dpp intrinsic
+  llvm::Function* intrinsic = llvm::Intrinsic::getDeclaration(
+    module, llvm::Intrinsic::amdgcn_mov_dpp, i32_ty);
+
+  llvm::Value* all_mask = b->getInt32(0xf);
+  llvm::Value* ctrl_value;
+  if (num_res) {
+      if (auto constant_offset = llvm::dyn_cast<llvm::ConstantInt>(offset)) {
+      int offset_value = constant_offset->getSExtValue();
+      switch (offset_value) {
+        case 16: ctrl_value = b->getInt32(0x143); break;
+        case 8: ctrl_value = b->getInt32(0x118); break;
+        case 4: ctrl_value = b->getInt32(0x114); break;
+        case 2: ctrl_value = b->getInt32(0x112); break;
+        case 1: ctrl_value = b->getInt32(0x111); break;
+        default: LOG(FATAL) << "Invalid offset value " << offset_value;
+      }
+  } else {
+    LOG(FATAL) << "Offset must be a constant integer value.";
+  }
+  } else {
+      if (auto constant_offset = llvm::dyn_cast<llvm::ConstantInt>(offset)) {
+      int offset_value = constant_offset->getSExtValue();
+      switch (offset_value) {
+        case 16: ctrl_value = b->getInt32(0x118); break;
+        case 8: ctrl_value = b->getInt32(0x104); break;
+        case 4: ctrl_value = b->getInt32(0x103); break;
+        case 2: ctrl_value = b->getInt32(0x102); break;
+        case 1: ctrl_value = b->getInt32(0x101); break;
+        default: LOG(FATAL) << "Invalid offset value " << offset_value;
+      }
+    } else {
+      LOG(FATAL) << "Offset must be a constant integer value.";
+    }
+  }
+
+  // Create the call to the intrinsic
+  llvm::Value* result = b->CreateCall(intrinsic, {
+    b->CreateBitCast(value, i32_ty), ctrl_value, all_mask, all_mask, b->getTrue()});
+
+  // // The intrinsic returns an i32 type, so bitcast it back to the original type
+  return b->CreateBitCast(result, value->getType());
+}
+
 // Helper function to emit call to NVPTX shfl_down intrinsic.
 llvm::Value* EmitNVPTXShflDown(llvm::Value* value, llvm::Value* offset,
                                llvm::IRBuilder<>* b) {
@@ -271,7 +323,7 @@ llvm::Value* EmitSPIRShflDown(llvm::Value* value, llvm::Value* offset,
 }
 
 llvm::Value* EmitFullWarpShuffleDown(llvm::Value* value, llvm::Value* offset,
-                                     llvm::IRBuilder<>* builder) {
+                                     llvm::IRBuilder<>* builder, bool num_res) {
   int bit_width = value->getType()->getPrimitiveSizeInBits();
   llvm::Module* module = builder->GetInsertBlock()->getModule();
   llvm::Triple target_triple = llvm::Triple(module->getTargetTriple());
@@ -281,7 +333,7 @@ llvm::Value* EmitFullWarpShuffleDown(llvm::Value* value, llvm::Value* offset,
     if (target_triple.isNVPTX()) {
       return EmitNVPTXShflDown(value, offset, builder);
     } else if (target_triple.getArch() == llvm::Triple::amdgcn) {
-      return EmitAMDGPUShflDown(value, offset, builder);
+      return EmitAMDGPUDPP(value, offset, builder, num_res);
     } else if (target_triple.isSPIR()) {
       return EmitSPIRShflDown(value, offset, builder);
     } else {
@@ -303,8 +355,8 @@ llvm::Value* EmitFullWarpShuffleDown(llvm::Value* value, llvm::Value* offset,
       insert_val = EmitNVPTXShflDown(builder->CreateExtractElement(x, i),
                                      offset, builder);
     } else if (target_triple.getArch() == llvm::Triple::amdgcn) {
-      insert_val = EmitAMDGPUShflDown(builder->CreateExtractElement(x, i),
-                                      offset, builder);
+      insert_val = EmitAMDGPUDPP(builder->CreateExtractElement(x, i),
+                                      offset, builder, num_res);
     } else if (target_triple.isSPIR()) {
       insert_val = EmitSPIRShflDown(builder->CreateExtractElement(x, i), offset,
                                     builder);

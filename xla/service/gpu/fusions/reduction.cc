@@ -81,6 +81,8 @@ limitations under the License.
 #include "tsl/platform/status.h"
 #include "tsl/platform/statusor.h"
 
+#include "llvm/IR/IntrinsicsAMDGPU.h"
+
 namespace xla {
 namespace gpu {
 namespace {
@@ -563,7 +565,7 @@ void ReductionGroupEmitter::EmitFullWarpShuffleDownLoopForReduce(
                               "partial_reduction_result");
       builder->CreateStore(
           EmitFullWarpShuffleDown(partial_result, builder->getInt32(distance),
-                                  builder),
+                                  builder, num_results_per_warp == 1),
           result_from_other_lane);
     }
 
