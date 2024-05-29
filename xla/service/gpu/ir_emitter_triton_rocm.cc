@@ -79,8 +79,8 @@ absl::Status CreateTritonPipeline(
   // TODO ROCm Check if we want to compare MI100 and greater
   pm.addPass(mt::gpu::createTritonGPUOptimizeDotOperands({true}));
   pm.addPass(mlir::createCSEPass());
-  pm.addPass(mt::gpu::createTritonGPUPipeline(
-      {config.num_stages, config.num_warps, config.num_ctas, ccAsInt}));
+  pm.addPass(mt::gpu::createTritonGPUPipeline({config.num_stages, config.num_warps,
+                                         config.num_ctas, ccAsInt}));
   pm.addPass(mt::gpu::createTritonGPUPrefetch());
 
   // TODO ROCm Check if we want to compare MI100 and greater
