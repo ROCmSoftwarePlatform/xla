@@ -232,40 +232,6 @@ llvm::Value* EmitAMDGPUShflDown(llvm::Value* value, llvm::Value* offset,
   return b->CreateBitCast(result, value->getType());
 }
 
-llvm::Value* EmitAMDGPUPermute(llvm::Value* value, llvm::Value* offset, llvm::IRBuilder<>* b) {
-  llvm::Module* module = b->GetInsertBlock()->getModule();
-  CHECK_EQ(value->getType()->getPrimitiveSizeInBits(), 32);
-  auto* i32_ty = b->getInt32Ty();
-  
-  // Get the lane ID (wave lane ID)
-  llvm::FunctionCallee lane_id_fn = module->getOrInsertFunction(
-      "llvm.amdgcn.mbcnt.lo.i32",
-      llvm::FunctionType::get(i32_ty, {i32_ty}, false));
-
-  llvm::Value* lane_id = b->CreateCall(lane_id_fn, {llvm::ConstantInt::get(i32_ty, 0)});
-  
-  // Calculate the index
-  llvm::Value* index = b->CreateAdd(lane_id, offset);
-  
-  llvm::Value* wave_size = llvm::ConstantInt::get(i32_ty, 64); // WAVESIZE is usually 64
-  llvm::Value* masked_lane_id = b->CreateAnd(lane_id, llvm::ConstantInt::get(i32_ty, 63)); // WAVESIZE - 1
-  
-  llvm::Value* cmp = b->CreateICmpUGE(b->CreateAdd(masked_lane_id, offset), wave_size);
-  index = b->CreateSelect(cmp, lane_id, index);
-
-  // Perform ds.bpermute
-  llvm::FunctionCallee ds_bpermute_fn = module->getOrInsertFunction(
-      "llvm.amdgcn.ds.bpermute",
-      llvm::FunctionType::get(i32_ty, {i32_ty, i32_ty}, false));
-  
-  llvm::Value* permuted_value = b->CreateCall(ds_bpermute_fn, {
-      b->CreateShl(index, llvm::ConstantInt::get(i32_ty, 2)), // index << 2
-      value
-  });
-
-  return permuted_value;
-}
-
 llvm::Value* EmitAMDGPUDPP(llvm::Value* value, llvm::Value* offset,
                           llvm::IRBuilder<>* b) {
   llvm::Module* module = b->GetInsertBlock()->getModule();
@@ -286,19 +252,19 @@ llvm::Value* EmitAMDGPUDPP(llvm::Value* value, llvm::Value* offset,
   unsigned mask = 15;
   switch (distance) {
     case 1:
-      dppCtrl = 0x111; // ROW_ROR0 + 1
+      dppCtrl = 0x101;
       break;
     case 2:
-      dppCtrl = 0x112; // ROW_ROR0 + 2
+      dppCtrl = 0x102;
       break;
     case 4:
-      dppCtrl = 0x114; // ROW_ROR0 + 4
+      dppCtrl = 0x104;
       break;
     case 8:
-      dppCtrl = 0x118; // ROW_ROR0 + 8
+      dppCtrl = 0x108;
       break;
     case 16:
-      dppCtrl = 0x142; // (Does it even makes sense?)
+      dppCtrl = 0x110;
       break;
     default:
       dppCtrl = 0x142;
