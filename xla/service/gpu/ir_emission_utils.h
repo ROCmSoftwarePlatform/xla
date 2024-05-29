@@ -115,7 +115,7 @@ bool IsContiguousSlice(const Shape& orig, const Shape& sliced);
 //
 // https://docs.nvidia.com/cuda/parallel-thread-execution/#data-movement-and-conversion-instructions-shfl-sync
 llvm::Value* EmitFullWarpShuffleDown(llvm::Value* value, llvm::Value* offset,
-                                     llvm::IRBuilder<>* builder, bool num_res);
+                                     llvm::IRBuilder<>* builder);
 
 // Emits code that determines whether the current thread is thread 0 within
 // block 0 of the kernel.

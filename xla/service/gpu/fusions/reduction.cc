@@ -538,10 +538,12 @@ void ReductionGroupEmitter::EmitFullWarpShuffleDownLoopForReduce(
   CHECK_EQ(threads_per_block % 32, 0);
   CHECK_EQ(WarpSize() % num_results_per_warp, 0);
 
+  VLOG(2) << "red size: " << partial_result_addresses.size();
+
   auto* builder = reduction_emitter_.builder_;
   for (int distance = 16 / num_results_per_warp; distance >= 1; distance /= 2) {
     absl::InlinedVector<llvm::Value*, 2> reduction_params;
-
+    
     for (auto acc : partial_result_addresses) {
       reduction_params.push_back(acc.first);
     }
@@ -563,9 +565,12 @@ void ReductionGroupEmitter::EmitFullWarpShuffleDownLoopForReduce(
       llvm::Value* partial_result =
           builder->CreateLoad(shuffled_value_type, partial_result_address,
                               "partial_reduction_result");
+      
+      VLOG(2) << "distance: " << distance;
+      
       builder->CreateStore(
           EmitFullWarpShuffleDown(partial_result, builder->getInt32(distance),
-                                  builder, num_results_per_warp == 1),
+                                  builder),
           result_from_other_lane);
     }
 

@@ -232,53 +232,87 @@ llvm::Value* EmitAMDGPUShflDown(llvm::Value* value, llvm::Value* offset,
   return b->CreateBitCast(result, value->getType());
 }
 
-llvm::Value* EmitAMDGPUDPP(llvm::Value* value, llvm::Value* offset,
-                          llvm::IRBuilder<>* b, bool num_res) {
+llvm::Value* EmitAMDGPUPermute(llvm::Value* value, llvm::Value* offset, llvm::IRBuilder<>* b) {
   llvm::Module* module = b->GetInsertBlock()->getModule();
   CHECK_EQ(value->getType()->getPrimitiveSizeInBits(), 32);
   auto* i32_ty = b->getInt32Ty();
   
-  // Get the declaration of the amdgcn_mov_dpp intrinsic
-  llvm::Function* intrinsic = llvm::Intrinsic::getDeclaration(
-    module, llvm::Intrinsic::amdgcn_mov_dpp, i32_ty);
+  // Get the lane ID (wave lane ID)
+  llvm::FunctionCallee lane_id_fn = module->getOrInsertFunction(
+      "llvm.amdgcn.mbcnt.lo.i32",
+      llvm::FunctionType::get(i32_ty, {i32_ty}, false));
 
-  llvm::Value* all_mask = b->getInt32(0xf);
-  llvm::Value* ctrl_value;
-  if (num_res) {
-      if (auto constant_offset = llvm::dyn_cast<llvm::ConstantInt>(offset)) {
-      int offset_value = constant_offset->getSExtValue();
-      switch (offset_value) {
-        case 16: ctrl_value = b->getInt32(0x143); break;
-        case 8: ctrl_value = b->getInt32(0x118); break;
-        case 4: ctrl_value = b->getInt32(0x114); break;
-        case 2: ctrl_value = b->getInt32(0x112); break;
-        case 1: ctrl_value = b->getInt32(0x111); break;
-        default: LOG(FATAL) << "Invalid offset value " << offset_value;
-      }
-  } else {
-    LOG(FATAL) << "Offset must be a constant integer value.";
+  llvm::Value* lane_id = b->CreateCall(lane_id_fn, {llvm::ConstantInt::get(i32_ty, 0)});
+  
+  // Calculate the index
+  llvm::Value* index = b->CreateAdd(lane_id, offset);
+  
+  llvm::Value* wave_size = llvm::ConstantInt::get(i32_ty, 64); // WAVESIZE is usually 64
+  llvm::Value* masked_lane_id = b->CreateAnd(lane_id, llvm::ConstantInt::get(i32_ty, 63)); // WAVESIZE - 1
+  
+  llvm::Value* cmp = b->CreateICmpUGE(b->CreateAdd(masked_lane_id, offset), wave_size);
+  index = b->CreateSelect(cmp, lane_id, index);
+
+  // Perform ds.bpermute
+  llvm::FunctionCallee ds_bpermute_fn = module->getOrInsertFunction(
+      "llvm.amdgcn.ds.bpermute",
+      llvm::FunctionType::get(i32_ty, {i32_ty, i32_ty}, false));
+  
+  llvm::Value* permuted_value = b->CreateCall(ds_bpermute_fn, {
+      b->CreateShl(index, llvm::ConstantInt::get(i32_ty, 2)), // index << 2
+      value
+  });
+
+  return permuted_value;
+}
+
+llvm::Value* EmitAMDGPUDPP(llvm::Value* value, llvm::Value* offset,
+                          llvm::IRBuilder<>* b) {
+  llvm::Module* module = b->GetInsertBlock()->getModule();
+  CHECK_EQ(value->getType()->getPrimitiveSizeInBits(), 32);
+  auto* i32_ty = b->getInt32Ty();
+  auto* i1_ty = b->getInt1Ty();
+  
+  llvm::FunctionCallee mov_dpp_fn = module->getOrInsertFunction(
+      "llvm.amdgcn.mov.dpp.i32",
+      llvm::FunctionType::get(
+          /*Result=*/i32_ty,
+          {i32_ty, i32_ty, i32_ty, i32_ty, i1_ty},
+          /*isVarArg=*/false));
+  
+  // Extract the distance value from the offset
+  int distance = llvm::cast<llvm::ConstantInt>(offset)->getZExtValue();
+  unsigned dppCtrl;
+  unsigned mask = 15;
+  switch (distance) {
+    case 1:
+      dppCtrl = 0x111; // ROW_ROR0 + 1
+      break;
+    case 2:
+      dppCtrl = 0x112; // ROW_ROR0 + 2
+      break;
+    case 4:
+      dppCtrl = 0x114; // ROW_ROR0 + 4
+      break;
+    case 8:
+      dppCtrl = 0x118; // ROW_ROR0 + 8
+      break;
+    case 16:
+      dppCtrl = 0x142; // (Does it even makes sense?)
+      break;
+    default:
+      dppCtrl = 0x142;
+      break;
   }
-  } else {
-      if (auto constant_offset = llvm::dyn_cast<llvm::ConstantInt>(offset)) {
-      int offset_value = constant_offset->getSExtValue();
-      switch (offset_value) {
-        case 16: ctrl_value = b->getInt32(0x118); break;
-        case 8: ctrl_value = b->getInt32(0x104); break;
-        case 4: ctrl_value = b->getInt32(0x103); break;
-        case 2: ctrl_value = b->getInt32(0x102); break;
-        case 1: ctrl_value = b->getInt32(0x101); break;
-        default: LOG(FATAL) << "Invalid offset value " << offset_value;
-      }
-    } else {
-      LOG(FATAL) << "Offset must be a constant integer value.";
-    }
-  }
 
-  // Create the call to the intrinsic
-  llvm::Value* result = b->CreateCall(intrinsic, {
-    b->CreateBitCast(value, i32_ty), ctrl_value, all_mask, all_mask, b->getTrue()});
+  llvm::Value* result = b->CreateCall(mov_dpp_fn, {
+      b->CreateBitCast(value, i32_ty),
+      llvm::ConstantInt::get(i32_ty, dppCtrl),
+      llvm::ConstantInt::get(i32_ty, 15),
+      llvm::ConstantInt::get(i32_ty, 15),
+      llvm::ConstantInt::get(i1_ty, 1)
+  });
 
-  // // The intrinsic returns an i32 type, so bitcast it back to the original type
   return b->CreateBitCast(result, value->getType());
 }
 
@@ -323,7 +357,7 @@ llvm::Value* EmitSPIRShflDown(llvm::Value* value, llvm::Value* offset,
 }
 
 llvm::Value* EmitFullWarpShuffleDown(llvm::Value* value, llvm::Value* offset,
-                                     llvm::IRBuilder<>* builder, bool num_res) {
+                                     llvm::IRBuilder<>* builder) {
   int bit_width = value->getType()->getPrimitiveSizeInBits();
   llvm::Module* module = builder->GetInsertBlock()->getModule();
   llvm::Triple target_triple = llvm::Triple(module->getTargetTriple());
@@ -333,7 +367,7 @@ llvm::Value* EmitFullWarpShuffleDown(llvm::Value* value, llvm::Value* offset,
     if (target_triple.isNVPTX()) {
       return EmitNVPTXShflDown(value, offset, builder);
     } else if (target_triple.getArch() == llvm::Triple::amdgcn) {
-      return EmitAMDGPUDPP(value, offset, builder, num_res);
+      return EmitAMDGPUDPP(value, offset, builder);
     } else if (target_triple.isSPIR()) {
       return EmitSPIRShflDown(value, offset, builder);
     } else {
@@ -356,7 +390,7 @@ llvm::Value* EmitFullWarpShuffleDown(llvm::Value* value, llvm::Value* offset,
                                      offset, builder);
     } else if (target_triple.getArch() == llvm::Triple::amdgcn) {
       insert_val = EmitAMDGPUDPP(builder->CreateExtractElement(x, i),
-                                      offset, builder, num_res);
+                                      offset, builder);
     } else if (target_triple.isSPIR()) {
       insert_val = EmitSPIRShflDown(builder->CreateExtractElement(x, i), offset,
                                     builder);
