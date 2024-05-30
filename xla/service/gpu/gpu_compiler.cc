@@ -1378,10 +1378,10 @@ absl::Status GpuCompiler::OptimizeHloPostLayoutAssignment(
     // ReductionDimensionGrouper, as that makes matching the softmax pattern
     // harder.
     if (debug_options.xla_gpu_enable_triton_softmax_fusion() &&
-        cuda_cc != nullptr &&
-        cuda_cc->IsAtLeast(se::CudaComputeCapability::AMPERE)) {
-      pipeline.AddPass<HloPassFix<GpuAlgebraicSimplifier>>(simplifier_options,
-                                                           gpu_version);
+        ((cuda_cc != nullptr &&
+        cuda_cc->IsAtLeast(se::CudaComputeCapability::AMPERE)) ||
+        rocm_cc != nullptr)) {
+      pipeline.AddPass<HloPassFix<AlgebraicSimplifier>>(simplifier_options);
       pipeline.AddPass<SoftmaxRewriterTriton>(gpu_version);
     }
 
