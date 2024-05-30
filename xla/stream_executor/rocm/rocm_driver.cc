@@ -73,9 +73,6 @@ constexpr bool kVerifyGpuContext = false;
 namespace stream_executor {
 namespace gpu {
 
-/* static */ absl::Mutex CreatedContexts::mu_{absl::kConstInit};
-/* static */ int64_t CreatedContexts::next_id_ = 1;  // 0 means "no context"
-
 // Formats hipError_t to output prettified values into a log stream.
 // Error summaries taken from:
 string ToString(hipError_t result) {
@@ -117,21 +114,6 @@ string ToString(hipError_t result) {
 
 namespace {
 
-// Returns the current context and checks that it is in the set of HIP contexts
-// created by StreamExecutor (to ensure that the HIP runtime didn't create a
-// context behind our backs).
-hipCtx_t CurrentContext() {
-  hipCtx_t current = rocm::CurrentContextOrDie();
-  if (current != nullptr && !CreatedContexts::Has(current)) {
-    LOG(FATAL) << "current context was not created by the StreamExecutor "
-                  "rocm_driver API: "
-               << current
-               << "; a HIP runtime call "
-                  "was likely performed without using a StreamExecutor context";
-  }
-  return current;
-}
-
 // ROCM driver routines may require a large amount of stack (particularly
 // hipModuleLoadDataEx, in our experience). To avoid stack overflow when using
 // stack-limited threads (such as those spawned by a default-argument
@@ -167,10 +149,8 @@ void SynchronizeOrDie() {
   }
 }
 
-thread_local struct ThreadLocalData {
-  int current_device_ordinal;
-  GpuContext* context;  // Only valid if id == a known good context.
-  int depth;
+static thread_local struct ThreadLocalData {
+  GpuContext* current_context = nullptr;
 } tls_data = {};
 
 }  // namespace
@@ -179,36 +159,19 @@ ScopedActivateContext::ScopedActivateContext(GpuContext* hip_context) {
   if (FLAGS_gpuexec_rocm_sync_around_driver_calls) SynchronizeOrDie();
 
   auto* tls = &tls_data;
-  if (tls->depth == 0) {
-    VLOG(3) << "ScopedActivateContext switching to "
-            << hip_context->device_ordinal();
-    FAIL_IF_ROCM_ERROR(wrap::hipCtxSetCurrent(hip_context->context()),
+  to_restore_ = nullptr;
+  if (tls->current_context == hip_context)
+    return;
+
+  CHECK(tls->current_context == nullptr ||
+        tls->current_context->device_ordinal() !=
+            hip_context->device_ordinal());
+
+  FAIL_IF_ROCM_ERROR(wrap::hipSetDevice(hip_context->device_ordinal()),
                        "Failed setting context");
-    tls->depth = 1;
-    tls->current_device_ordinal = hip_context->device_ordinal();
-    tls->context = hip_context;
-    to_restore_ = nullptr;
-    return;
-  }
+  to_restore_ = tls->current_context;
+  tls->current_context = hip_context;
 
-  tls->depth++;
-  if (tls->current_device_ordinal == hip_context->device_ordinal()) {
-    if (kVerifyGpuContext) {
-      CHECK_EQ(CurrentContext(), hip_context->context());
-    }
-    DCHECK_EQ(CurrentContext(), hip_context->context());
-    return;
-  }
-  VLOG(3) << "ScopedActivateContext switching device from "
-          << tls->current_device_ordinal << " to "
-          << hip_context->device_ordinal();
-
-  to_restore_ = tls->context;
-  // Set the device and update thread local.
-  FAIL_IF_ROCM_ERROR(wrap::hipCtxSetCurrent(hip_context->context()),
-                     "Failed setting context");
-  tls->current_device_ordinal = hip_context->device_ordinal();
-  tls->context = hip_context;
 }
 
 ScopedActivateContext::~ScopedActivateContext() {
@@ -216,23 +179,14 @@ ScopedActivateContext::~ScopedActivateContext() {
 
   auto* tls = &tls_data;
 
-  if (kVerifyGpuContext) {
-    CHECK_EQ(CurrentContext(),
-             tls->context == nullptr ? nullptr : tls->context->context());
-  }
-
-  tls->depth--;
-  DCHECK_GE(tls->depth, 0);
-
   if (to_restore_ == nullptr) {
     return;  // Leave context, tls->current_device_ordinal, and tls->context set
   }
 
   // Set context and update thread local.
-  FAIL_IF_ROCM_ERROR(wrap::hipCtxSetCurrent(to_restore_->context()),
-                     "Failed setting context");
-  tls->current_device_ordinal = to_restore_->device_ordinal();
-  tls->context = to_restore_;
+  FAIL_IF_ROCM_ERROR(wrap::hipSetDevice(to_restore_->device_ordinal()),
+                       "Failed setting context");
+  tls->current_context = to_restore_;
 }
 
 namespace {
@@ -339,127 +293,19 @@ static absl::Status InternalInit() {
   return absl::OkStatus();
 }
 
-bool DeviceOptionsToContextFlags(const DeviceOptions& device_options,
-                                 int* flags) {
-  static_assert(DeviceOptions::kMask == 0xf,
-                "needs update for new device options");
-
-  if (device_options.flags() & DeviceOptions::kDoNotReclaimStackAllocation) {
-    *flags |= hipDeviceLmemResizeToMax;
-  }
-
-  if (device_options.flags() & DeviceOptions::kScheduleSpin) {
-    *flags |= hipDeviceScheduleSpin;
-  }
-  if (device_options.flags() & DeviceOptions::kScheduleYield) {
-    *flags |= hipDeviceScheduleYield;
-  }
-  if (device_options.flags() & DeviceOptions::kScheduleBlockingSync) {
-    *flags |= hipDeviceScheduleBlockingSync;
-  }
-
-  return true;
-}
-
 /* static */ absl::Status GpuDriver::CreateContext(
     int device_ordinal, hipDevice_t device, const DeviceOptions& device_options,
     GpuContext** context) {
-  *context = nullptr;
-
-  int flags = 0;
-  if (!DeviceOptionsToContextFlags(device_options, &flags)) {
-    LOG(WARNING) << "could not convert all device options into context flags";
-  }
-
-  hipError_t res;
-  hipCtx_t former_context;
-  hipCtx_t new_context;
-
-  unsigned int former_primary_context_flags;
-  int former_primary_context_is_active;
-  CHECK_EQ(hipSuccess, wrap::hipDevicePrimaryCtxGetState(
-                           device, &former_primary_context_flags,
-                           &former_primary_context_is_active));
-  if (former_primary_context_flags != flags) {
-    if (former_primary_context_is_active) {
-      LOG(ERROR)
-          << "The primary context is active and has a different flag set ("
-          << former_primary_context_flags << ") than the desired flag set ("
-          << flags << ").";
-    } else {
-      CHECK_EQ(hipSuccess, wrap::hipDevicePrimaryCtxSetFlags(device, flags));
-    }
-  }
-
-  former_context = rocm::CurrentContextOrDie();
-  res = wrap::hipDevicePrimaryCtxRetain(&new_context, device);
-  if (former_context != nullptr) {
-    hipDevice_t former_device;
-    if (wrap::hipCtxGetDevice(&former_device) == hipSuccess) {
-      if (former_device == device) {
-        if (former_context == new_context) {
-          VLOG(2) << "The primary context " << former_context << " for device "
-                  << device
-                  << " exists before initializing the StreamExecutor.";
-        } else {
-          LOG(WARNING) << "A non-primary context " << former_context
-                       << " for device " << device
-                       << " exists before initializing the StreamExecutor. The "
-                       << "primary context is now " << new_context << ". We "
-                       << "haven't verified StreamExecutor works with that.";
-        }
-      }
-    } else {
-      LOG(ERROR) << "Failed to get the device of the current context "
-                 << former_context;
-    }
-  }
-  CHECK_EQ(hipSuccess, wrap::hipCtxSetCurrent(former_context));
-
-  if (res == hipSuccess) {
-    *context = CreatedContexts::Add(new_context, device_ordinal);
-    CHECK(*context != nullptr)
-        << "success in this call must entail non-null result";
-    VLOG(2) << "created or reused context " << new_context
-            << " for this thread";
-    return absl::OkStatus();
-  }
-
-  std::string message =
-      "failed call to hipDevicePrimaryCtxRetain: " + ToString(res);
-  if (res == hipErrorOutOfMemory) {
-    uint64_t total_memory;
-    if (GetDeviceTotalMemory(device, &total_memory)) {
-      absl::StrAppend(&message, "; total memory reported: ", total_memory);
-    } else {
-      absl::StrAppend(&message, "; could not query total memory");
-    }
-  }
-
-  return absl::InternalError(message);
+  *context = GpuContext::FromOrdinal(device_ordinal);
+  return absl::OkStatus();
 }
 
 /* static */ void GpuDriver::DestroyContext(GpuContext* context) {
-  if (context == nullptr) {
-    return;
-  }
-  hipCtx_t former_context = CurrentContext();
-  hipError_t res = wrap::hipCtxSetCurrent(context->context());
-  hipDevice_t device;
-  CHECK_EQ(hipSuccess, wrap::hipCtxGetDevice(&device));
-  CHECK_EQ(hipSuccess, wrap::hipCtxSetCurrent(former_context));
-
-  res = wrap::hipDevicePrimaryCtxRelease(device);
-
-  if (res != hipSuccess) {
-    LOG(ERROR) << "failed to release HIP context; leaking: " << ToString(res);
-  }
-
-  CreatedContexts::Remove(context->context());
+  CHECK(context != nullptr);
 }
 
 /* static */ hipCtx_t GpuDriver::GetContextHandle(GpuContext* context) {
-  return context->context();
+  LOG(FATAL) << "Unreachable";
 }
 
 /* static */ absl::Status GpuDriver::FuncGetAttribute(
@@ -976,7 +822,7 @@ GpuDriver::GraphGetMemAllocNodeParams(GpuGraphNodeHandle node) {
   VLOG(2) << "Add memcpy d2d node to a graph " << graph
           << "; dst: " << reinterpret_cast<void*>(gpu_dst)
           << "; src: " << reinterpret_cast<void*>(gpu_src) << "; size: " << size
-          << "; context: " << context->context() << "; deps: " << deps.size();
+          << "; deps: " << deps.size();
 
   RETURN_IF_ROCM_ERROR(wrap::hipGraphAddMemcpyNode1D(
                            node, graph, deps.data(), deps.size(), gpu_dst,
@@ -991,8 +837,7 @@ GpuDriver::GraphGetMemAllocNodeParams(GpuGraphNodeHandle node) {
     GpuDevicePtr gpu_dst, GpuDevicePtr gpu_src, uint64_t size) {
   VLOG(2) << "Set memcpy d2d node params " << node << " in graph executable "
           << exec << "; dst: " << reinterpret_cast<void*>(gpu_dst)
-          << "; src: " << reinterpret_cast<void*>(gpu_src) << "; size: " << size
-          << "; context: " << context->context();
+          << "; src: " << reinterpret_cast<void*>(gpu_src) << "; size: " << size;
 
   RETURN_IF_ROCM_ERROR(
       wrap::hipGraphExecMemcpyNodeSetParams1D(exec, node, gpu_dst, gpu_src,
@@ -1043,7 +888,7 @@ struct BitPatternToValue {
           << "; dst: " << reinterpret_cast<void*>(dst)
           << "; bit_pattern: " << std::visit(BitPatternToString(), bit_pattern)
           << "; num_elements: " << num_elements
-          << "; context: " << context->context() << "; deps: " << deps.size();
+          << "; deps: " << deps.size();
 
   auto [value, element_size] = std::visit(BitPatternToValue(), bit_pattern);
 
@@ -1070,8 +915,7 @@ struct BitPatternToValue {
   VLOG(2) << "Set memset node params " << node << " in graph executable "
           << exec << "; dst: " << reinterpret_cast<void*>(dst)
           << "; bit_pattern: " << std::visit(BitPatternToString(), bit_pattern)
-          << "; num_elements: " << num_elements
-          << "; context: " << context->context();
+          << "; num_elements: " << num_elements;
 
   auto [value, element_size] = std::visit(BitPatternToValue(), bit_pattern);
 
@@ -2115,7 +1959,7 @@ static absl::StatusOr<T> GetSimpleAttribute(hipDevice_t device,
 
   ScopedActivateContext activated{from};
   hipError_t result =
-      wrap::hipCtxEnablePeerAccess(to->context(), 0 /* = flags */);
+      wrap::hipDeviceEnablePeerAccess(to->device_ordinal(), 0 /* = flags */);
   if (result != hipSuccess && result != hipErrorPeerAccessAlreadyEnabled) {
     return absl::Status{
         absl::StatusCode::kInternal,
@@ -2153,13 +1997,6 @@ absl::Status OccupancyGetMaxPotentialBlockSize(int* gridSize, int* blockSize,
           gridSize, blockSize, kernel, dynSharedMemPerBlk, blockSizeLimit),
       "Failed to calculate maximal potential block size");
   return absl::OkStatus();
-}
-
-hipCtx_t CurrentContextOrDie() {
-  hipCtx_t current = nullptr;
-  FAIL_IF_ROCM_ERROR(hipCtxGetCurrent(&current),
-                     "Failed to query current context");
-  return current;
 }
 
 }  // namespace rocm
