@@ -627,15 +627,12 @@ absl::StatusOr<bool> SoftmaxRewriterTriton::Run(
     const absl::flat_hash_set<absl::string_view>& execution_threads) {
   auto cuda_compute_capability =
       std::get_if<se::CudaComputeCapability>(&gpu_version_);
-  if (!cuda_compute_capability) {
+  auto rocm_compute_capability =
+      std::get_if<se::RocmComputeCapability>(&gpu_version_);
+  if ((!cuda_compute_capability || !cuda_compute_capability->IsAtLeastAmpere())
+      &&  !rocm_compute_capability) {
     return absl::FailedPreconditionError(
-        "Triton support is only enabled for CUDA GPUs.");
-  } else if (!cuda_compute_capability->IsAtLeastAmpere()) {
-    return absl::FailedPreconditionError(
-        absl::StrCat("Triton support is only enabled for Ampere GPUs (compute ",
-                     "capability 8.0) and up, but got compute capability ",
-                     cuda_compute_capability->major, ".",
-                     cuda_compute_capability->minor, "."));
+        "Triton support is only enabled for ROCm and Ampere GPUs and up.");
   }
 
   std::vector<DiamondChainDescriptor> diamond_chains =
