@@ -75,9 +75,7 @@ LocalDeviceState::LocalDeviceState(se::StreamExecutor* executor,
   device_to_host_streams_.reserve(num_device_to_host_streams);
   for (int i = 0; i < num_device_to_host_streams; ++i) {
     auto stream = std::make_unique<se::Stream>(executor);
-    if (stream_options.has_value()) {
-      stream->SetPriority(stream_options->priority);
-    }
+    stream->SetPriority(stream_executor::StreamPriority::Highest);
     stream->Init();
     device_to_host_streams_.push_back(std::move(stream));
   }
