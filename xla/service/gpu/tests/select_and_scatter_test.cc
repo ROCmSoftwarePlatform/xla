@@ -129,12 +129,12 @@ TEST_F(SelectAndScatterTest, SelectAndScatterPerformance) {
   buffer << ifs.rdbuf();
 
   HloModuleConfig config = GetModuleConfigForTest();
-
-  TF_ASSERT_OK_AND_ASSIGN(auto module, ParseAndReturnVerifiedModule(buffer.str(), 
-          config));
-
-  ErrorSpec error_spec{1e-2, 1e-3};
 #if 1
+  //config.set_num_partitions(8);
+
+TF_ASSERT_OK_AND_ASSIGN(auto module, ParseAndReturnVerifiedModule(buffer.str(), 
+          config));
+  ErrorSpec error_spec{1e-2, 1e-3};
   auto ref_module = module->Clone();  
   TF_ASSERT_OK_AND_ASSIGN(auto exec, CreateExecutable(std::move(module), true));
 
@@ -144,32 +144,54 @@ TEST_F(SelectAndScatterTest, SelectAndScatterPerformance) {
         false /* use large range*/).value();
   auto arg_ptrs = MakePointerVector<xla::Literal>(fake_arguments);
 
-
   // auto& ref_runner = HloTestBase::reference_runner_;
   // TF_ASSERT_OK_AND_ASSIGN(
   //     auto ref_exec, ref_runner.CreateExecutable(std::move(ref_module), true));
 
-#if 1
   // TF_ASSERT_OK_AND_ASSIGN(auto truth, 
   //       ReadLiteralFromProto("/tf/xla/expected.pb"));
-#else
-  TF_ASSERT_OK_AND_ASSIGN(auto truth, 
-  ref_runner.ExecuteWithExecutable(ref_exec.get(), arg_ptrs, nullptr));
-  WriteLiteralToTempFile(truth, "expected");
-#endif
-  VLOG(0) << "Got expected literal from file.. running test";
+  // TF_ASSERT_OK_AND_ASSIGN(auto truth, 
+  // ref_runner.ExecuteWithExecutable(ref_exec.get(), arg_ptrs, nullptr));
+  // WriteLiteralToTempFile(truth, "expected");
+  //VLOG(0) << "Got expected literal from file.. running test";
 
-  for(int i = 0; i < 1; i++) {
+  for(int i = 0; i < 3; i++) {
+    VLOG(0) << "Running " << i;
      TF_ASSERT_OK_AND_ASSIGN(auto test_res, 
          HloTestBase::test_runner_.ExecuteWithExecutable(exec.get(), arg_ptrs, nullptr));
-    // if(i == 0) {
-    //   //WriteLiteralToTempFile(test_res, "actual");
-    //   EXPECT_TRUE(LiteralTestUtil::Near(truth, test_res, error_spec));
-    // }
+    if(i == 0) {
+      //WriteLiteralToTempFile(test_res, "actual");
+      // EXPECT_TRUE(LiteralTestUtil::Near(truth, test_res, error_spec));
+    }
   }
+  // EXPECT_TRUE(RunAndCompare(std::move(module), 
+  //     absl::Span< xla::Literal * const>(arg_ptrs.data(), arg_ptrs.size()), error_spec));
 #else
-  EXPECT_TRUE(RunAndCompare(std::move(module), 
-      absl::Span< xla::Literal * const>(arg_ptrs.data(), arg_ptrs.size()), error_spec));
+  int kNumReplicas = 1;
+  config.set_replica_count(kNumReplicas);
+  config.set_num_partitions(4);
+
+  TF_ASSERT_OK_AND_ASSIGN(
+      auto module, ParseAndReturnVerifiedModule(buffer.str(), config));
+  DeviceAssignment assn(/*replica_count=*/kNumReplicas,
+                        /*computation_count=*/8);
+  for (int64_t i = 0; i < 8; ++i) {
+    assn(0, i) = i;
+  }
+
+  auto fake_arguments = xla::MakeFakeArguments(
+      module.get(),
+      false, /*pseudo-random*/
+      false /* use large range*/).value();
+  std::vector<Literal*> fake_ptrs(fake_arguments.size());
+  for (int i = 0; i < fake_arguments.size(); i++) {
+    fake_ptrs[i] = &fake_arguments[i];
+  }
+  TF_ASSERT_OK_AND_ASSIGN(std::vector<Literal> results,
+                          HloTestBase::ExecuteReplicated(
+                              std::move(module), fake_ptrs, kNumReplicas, &assn,
+                              true /*run_hlo_passes*/, true /*use-threads*/));
+  ASSERT_EQ(results.size(), kNumReplicas);
 #endif
 }
 

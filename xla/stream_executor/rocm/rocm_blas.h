@@ -112,11 +112,6 @@ class ROCMBlas : public blas::BlasSupport {
 
  private:
   // Tells rocBLAS to enqueue the BLAS operation onto a particular Stream.
-  //
-  // rocBLAS is stateful, and only be associated with one stream (in order to
-  // enqueue dispatch) at a given time. As a result, this generally must be
-  // invoked before calling into rocBLAS.
-  bool SetStream(Stream *stream) ABSL_EXCLUSIVE_LOCKS_REQUIRED(mu_);
 
   // Returns the underlying ROCm stream
   hipStream_t ROCMStream(Stream *stream);
@@ -210,6 +205,7 @@ class ROCMBlas : public blas::BlasSupport {
   ROCMBlas(const ROCMBlas &) = delete;
   void operator=(const ROCMBlas &) = delete;
 
+  Stream *stream_ = nullptr;
   bool has_mfma_ = false;
   bool use_hgemm_alt_impl_ = false;
 };

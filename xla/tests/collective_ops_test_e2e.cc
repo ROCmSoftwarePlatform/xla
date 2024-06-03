@@ -27,6 +27,7 @@ limitations under the License.
 #include "xla/tests/hlo_test_base.h"
 #include "xla/tests/literal_test_util.h"
 #include "xla/tests/test_macros.h"
+#include "xla/tests/test_utils.h"
 
 namespace xla {
 namespace {
@@ -146,6 +147,82 @@ XLA_TEST_P(AsyncCollectiveOps, AsyncAllReduce) {
   const uint32_t expected = kNumReplicas * (kNumReplicas - 1) / 2;
   for (int i = 0; i < kNumReplicas; ++i) {
     LiteralTestUtil::ExpectR0Equal<uint32_t>(expected, results[i]);
+  }
+}
+
+XLA_TEST_P(AsyncCollectiveOps, MatmulReplicated) {
+  // collective_permute = f32[16,32]{1,0} collective-permute(x_unscaled),
+  // source_target_pairs={{0,1}, {1,2}, {2,3}, {3,0}}
+  absl::string_view kModuleReplicatedStr = R"(
+    HloModule test
+
+    ENTRY test {
+      x_f32 = f32[16,32] parameter(0)
+      y_f32 = f32[16,32] parameter(1)
+      replica_id = u32[] replica-id()
+      addend = f32[] convert(replica_id)
+      addend_bcast = f32[16,32] broadcast(addend), dimensions={}
+      x_add = f32[16,32] add(addend_bcast, x_f32)
+      ROOT dot_a = f32[16,16] dot(x_add, y_f32), lhs_contracting_dims={1}, rhs_contracting_dims={1}
+   }
+  )";
+
+  absl::string_view kModuleSingleStr = R"(
+    HloModule test
+
+    ENTRY test {
+      x_f32 = f32[16,32] parameter(0)
+      y_f32 = f32[16,32] parameter(1)
+      replica_id = u32[] parameter(2)
+      addend = f32[] convert(replica_id)
+      addend_bcast = f32[16,32] broadcast(addend), dimensions={}
+      x_add = f32[16,32] add(addend_bcast, x_f32)
+      ROOT dot_a = f32[16,16] dot(x_add, y_f32), lhs_contracting_dims={1}, rhs_contracting_dims={1}
+   }
+  )";
+  const int64_t kNumReplicas = 4;
+
+  HloModuleConfig config =
+      GetModuleConfigForTest(/*replica_count=*/kNumReplicas);
+  auto opts = GetDebugOptionsForTest();
+  opts.set_xla_gpu_enable_cublaslt(GetParam());
+  VLOG(0) << "Running with CUBLAS enabled: " << opts.xla_gpu_enable_cublaslt();
+  config.set_debug_options(opts);
+
+  TF_ASSERT_OK_AND_ASSIGN(
+      auto module, ParseAndReturnVerifiedModule(kModuleReplicatedStr, config));
+  DeviceAssignment assn(/*replica_count=*/kNumReplicas,
+                        /*computation_count=*/1);
+  for (int64_t i = 0; i < kNumReplicas; ++i) {
+    assn(i, 0) = i;
+  }
+
+  auto fake_arguments = xla::MakeFakeArguments(module.get()).value();
+  std::vector<Literal*> fake_ptrs(fake_arguments.size());
+  for (int i = 0; i < fake_arguments.size(); i++) {
+    fake_ptrs[i] = &fake_arguments[i];
+  }
+  TF_ASSERT_OK_AND_ASSIGN(std::vector<Literal> results,
+                          HloTestBase::ExecuteReplicated(
+                              std::move(module), fake_ptrs, kNumReplicas, &assn,
+                              true /*run_hlo_passes*/, true /*use-threads*/));
+  ASSERT_EQ(results.size(), kNumReplicas);
+
+  auto& ref_runner = HloTestBase::reference_runner_;
+  TF_ASSERT_OK_AND_ASSIGN(
+      auto ref_module, ParseAndReturnVerifiedModule(kModuleSingleStr, config));
+  TF_ASSERT_OK_AND_ASSIGN(
+      auto ref_exec, ref_runner.CreateExecutable(std::move(ref_module), true));
+
+  ErrorSpec error_spec{1e-5, 1e-5};
+  fake_ptrs.push_back(nullptr);
+  for (int i = 0; i < kNumReplicas; i++) {
+    auto replica_id =
+        LiteralUtil::CreateFullWithDescendingLayout<uint32_t>({}, i);
+    fake_ptrs.back() = &replica_id;
+    TF_ASSERT_OK_AND_ASSIGN(
+        auto res, ref_runner.ExecuteWithExecutable(ref_exec.get(), fake_ptrs));
+    EXPECT_TRUE(LiteralTestUtil::Near(res, results[i], error_spec));
   }
 }
 

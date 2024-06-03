@@ -113,10 +113,10 @@ bool ROCMBlas::Init() {
   }
 
 #if TF_HIPBLASLT
-  if (!blas_lt_.Init().ok()) {
-    LOG(ERROR) << "Failed to initialize hipblasLt";
-    return false;
-  }
+  // if (!blas_lt_.Init().ok()) {
+  //   LOG(ERROR) << "Failed to initialize hipblasLt";
+  //   return false;
+  // }
 #endif
 
   int dev = 0;
@@ -150,6 +150,11 @@ ROCMBlas::~ROCMBlas() {
 }
 
 bool ROCMBlas::SetStream(Stream *stream) {
+
+  // if(stream_ == stream) return true;
+  // VLOG(0) << this << " setting new stream: " << stream << 
+  //     " for device: " << parent_->device_ordinal();
+
   CHECK(stream != nullptr);
   CHECK(AsGpuStreamValue(stream) != nullptr);
   CHECK(blas_ != nullptr);
@@ -161,7 +166,7 @@ bool ROCMBlas::SetStream(Stream *stream) {
     LOG(ERROR) << "failed to set stream for rocBLAS calls: " << ToString(ret);
     return false;
   }
-
+  // stream_ = stream;
   return true;
 }
 
@@ -343,12 +348,12 @@ absl::Status ROCMBlas::DoBlasInternalImpl(FuncT rocblas_func, Stream *stream,
                  << ": " << ToString(ret);
     }
   }
-#if TF_ROCM_VERSION >= 60000
-  if (auto *workspace = GetWorkspace();
-      workspace && workspace->opaque() && workspace->size() > 0) {
-      (void)wrap::rocblas_set_workspace(blas_, workspace->opaque(), workspace->size());
-  }
-#endif
+// #if TF_ROCM_VERSION >= 60000
+//   if (auto *workspace = GetWorkspace();
+//       workspace && workspace->opaque() && workspace->size() > 0) {
+//       (void)wrap::rocblas_set_workspace(blas_, workspace->opaque(), workspace->size());
+//   }
+// #endif
 
   ret = rocblas_func(blas_, std::forward<Args>(args)...);
   if (ret != rocblas_status_success) {
