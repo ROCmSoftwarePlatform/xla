@@ -42,7 +42,10 @@ limitations under the License.
 #include "xla/service/gpu/nccl_api.h"
 #include "xla/service/gpu/nccl_clique_key.h"
 #include "xla/service/gpu/nccl_collective_thunk.h"
+#include "xla/service/gpu/nccl_collective_permute_thunk.h"
 #include "xla/service/gpu/runtime/custom_call_thunk.h"
+#include "xla/service/gpu/runtime/nccl_all_to_all_thunk.h"
+#include "xla/service/gpu/runtime/command_buffer_memset.h"
 #include "xla/service/gpu/thunk.h"
 #include "xla/status.h"
 #include "xla/stream_executor/command_buffer.h"
@@ -276,6 +279,8 @@ class CommandBufferCmdSequence {
     Append(std::make_unique<T>(std::forward<Args>(args)...));
   }
 
+  static absl::Status DebugBlockHostUntilDone(const Thunk::ExecuteParams& params);
+
   // Prepares all commands added to a sequence.
   absl::Status Prepare(const Thunk::PrepareParams& params,
                        Thunk::ResourceRequests& resource_requests);
@@ -354,7 +359,8 @@ class TracedCommandBuffer : public CommandBufferCmd::State {
   // traces and caches a new command buffer using user provided callback.
   absl::StatusOr<se::CommandBuffer*> GetOrTraceCommandBuffer(
       const BufferAllocations* buffer_allocation, se::StreamExecutor* executor,
-      se::Stream* stream, absl::FunctionRef<absl::Status(se::Stream*)> trace);
+      se::Stream* stream, absl::FunctionRef<absl::Status(se::Stream*)> trace,
+      bool *need_update);
 
  private:
   std::vector<BufferAllocation::Index> allocs_indices_;
@@ -410,7 +416,7 @@ class ComputationIdCmd : public CommandBufferCmd {
   BufferAllocation::Slice dest_;
   Kind kind_;
 
-#if defined(GOOGLE_CUDA)
+//#if defined(GOOGLE_CUDA)
   // Command sequence can be recorded concurrently for multiple command buffers
   // on different stream executors and we need to synchronize mutable state.
   absl::Mutex mutex_;
@@ -422,7 +428,7 @@ class ComputationIdCmd : public CommandBufferCmd {
   // memset. This should be removed when bug is fixed in CUDA.
   absl::flat_hash_map<se::StreamExecutor*, std::unique_ptr<se::Kernel>>
       memset_kernels_ ABSL_GUARDED_BY(mutex_);
-#endif // GOOGLE_CUDA
+//#endif // GOOGLE_CUDA
 };
 
 //===----------------------------------------------------------------------===//
@@ -724,7 +730,7 @@ class GemmCmd : public TracedCommandBufferCmd {
           const BufferAllocation::Slice& lhs_buffer,
           const BufferAllocation::Slice& rhs_buffer,
           const BufferAllocation::Slice& output_buffer,
-          const BufferAllocation::Slice& workspace, bool deterministic);
+          bool deterministic);
 
   absl::Status Initialize(const Thunk::InitializeParams& params,
                           StateManager& state) override;
@@ -742,7 +748,6 @@ class GemmCmd : public TracedCommandBufferCmd {
   const BufferAllocation::Slice lhs_buffer_;
   const BufferAllocation::Slice rhs_buffer_;
   const BufferAllocation::Slice output_buffer_;
-  const BufferAllocation::Slice workspace_;
   // Whether to run deterministically.
   const bool deterministic_;
 };
@@ -888,6 +893,48 @@ class AllGatherCmd : public CollectiveCmd {
   };
 
  private:
+  std::vector<NcclCollectiveThunk::Buffer> buffers_;
+};
+
+class AllToAllCmd : public CollectiveCmd {
+ public:
+  AllToAllCmd(ExecutionStreamId execution_stream_id, NcclApi* nccl_api,
+               const NcclAllToAllConfig& config,
+               absl::Span<const NcclCollectiveThunk::Buffer> buffers);
+
+  absl::Status Record(const Thunk::ExecuteParams& execute_params,
+                      const RecordParams& record_params,
+                      se::CommandBuffer* command_buffer) override;
+
+  BufferUsageVector buffers() override;
+
+  AsyncStreamKind GetAsyncStreamKind() override {
+    return AsyncStreamKind::kCollective;
+  };
+
+ private:
+  bool has_split_dimension_;
+  std::vector<NcclCollectiveThunk::Buffer> buffers_;
+};
+
+class CollectivePermuteCmd : public CollectiveCmd {
+ public:
+  CollectivePermuteCmd(ExecutionStreamId execution_stream_id, NcclApi* nccl_api,
+               const NcclP2PConfig& config,
+               absl::Span<const NcclCollectiveThunk::Buffer> buffers);
+
+  absl::Status Record(const Thunk::ExecuteParams& execute_params,
+                      const RecordParams& record_params,
+                      se::CommandBuffer* command_buffer) override;
+
+  BufferUsageVector buffers() override;
+
+  AsyncStreamKind GetAsyncStreamKind() override {
+    return AsyncStreamKind::kCollective;
+  };
+
+ private:
+  NcclP2PConfig::IdToSourceTargetMap id_to_source_target_;
   std::vector<NcclCollectiveThunk::Buffer> buffers_;
 };
 

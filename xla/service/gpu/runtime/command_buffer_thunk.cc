@@ -213,7 +213,9 @@ absl::Status CommandBufferThunk::ExecuteOnStream(const ExecuteParams& params) {
   absl::MutexLock lock(&cmd_buffer->mutex);
 
   if (cmd_buffer->ShouldUpdateCommandBuffer(commands_, params)) {
-    VLOG(3) << "Update command buffer on device #" << executor->device_ordinal()
+
+    //TF_RETURN_IF_ERROR(CommandBufferCmdSequence::DebugBlockHostUntilDone(params));
+    VLOG(1) << "Update command buffer on device #" << executor->device_ordinal()
             << " by recoding command buffer cmd sequence" << " after "
             << cmd_buffer->num_executions << " executions since last update"
             << "; num_commands=" << commands_.size();
@@ -233,7 +235,11 @@ absl::Status CommandBufferThunk::ExecuteOnStream(const ExecuteParams& params) {
                                         cmd_buffer->command_buffer.get()));
 
     uint64_t end_micros = tsl::Env::Default()->NowMicros();
-    VLOG(3) << "Updated command buffer in " << (end_micros - start_micros)
+
+    //TF_RETURN_IF_ERROR(CommandBufferCmdSequence::DebugBlockHostUntilDone(params));
+    
+    VLOG(1) << "Updated command buffer on device #" << executor->device_ordinal() 
+            << " in " << (end_micros - start_micros)
             << " μs; num_commands=" << commands_.size();
     cmd_buffer->num_executions = 0;
   }

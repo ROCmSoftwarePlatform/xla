@@ -567,7 +567,7 @@ absl::Status RendezvousAfterInitialization(
       run_options->run_options().run_id().ToInt());
 
   RendezvousSingle(rendezvous_name, rendezvous_key, num_local_participants,
-                   absl::Seconds(10), absl::Seconds(30));
+                   absl::Seconds(30), absl::Seconds(60));
 
   return absl::OkStatus();
 }

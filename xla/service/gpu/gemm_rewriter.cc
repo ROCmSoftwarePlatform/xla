@@ -1981,8 +1981,8 @@ absl::StatusOr<bool> RunOnComputation(HloComputation *computation,
                                       se::GpuComputeCapability gpu_version) {
   GemmRewriterVisitor visitor(gpu_version);
   TF_RETURN_IF_ERROR(computation->Accept(&visitor));
-  GemmWorkspaceRewriteVisitor workspace_visitor(gpu_version);
-  TF_RETURN_IF_ERROR(computation->Accept(&workspace_visitor));
+  // GemmWorkspaceRewriteVisitor workspace_visitor(gpu_version);
+  // TF_RETURN_IF_ERROR(computation->Accept(&workspace_visitor));
   return visitor.changed();
 }
 

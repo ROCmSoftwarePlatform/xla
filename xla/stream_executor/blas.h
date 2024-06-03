@@ -220,6 +220,8 @@ class BlasSupport {
  public:
   virtual ~BlasSupport() {}
 
+  virtual bool SetStream(Stream *stream) = 0;
+
   virtual gpu::BlasLt *GetBlasLt() = 0;
 
   // Performs a BLAS y <- ax+y operation.
@@ -748,6 +750,7 @@ class BlasSupport {
 // Macro used to quickly declare overrides for abstract virtuals in the
 // BlasSupport base class.
 #define TENSORFLOW_STREAM_EXECUTOR_GPU_BLAS_SUPPORT_OVERRIDES                  \
+  bool SetStream(Stream *stream) override;                                     \
   bool DoBlasAxpy(Stream *stream, uint64_t elem_count, float alpha,            \
                   const DeviceMemory<float> &x, int incx,                      \
                   DeviceMemory<float> *y, int incy) override;                  \

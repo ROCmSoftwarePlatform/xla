@@ -82,6 +82,7 @@ limitations under the License.
 #include "tsl/platform/errors.h"
 #include "tsl/platform/fingerprint.h"
 #include "tsl/platform/logging.h"
+#include "tsl/platform/path.h"
 #include "tsl/platform/statusor.h"
 
 // LOG(ERROR) uses a const named ERROR, so a macro with the same name is
@@ -97,6 +98,8 @@ limitations under the License.
 #error \
     "CUDA runtime being included into CUDA GPU executor; should be driver only."
 #endif
+
+#define GPU_GRAPH_API_DEBUG 0
 
 extern bool FLAGS_check_gpu_leaks;
 bool FLAGS_prefer_cubin_to_ptx = true;
@@ -129,6 +132,44 @@ GpuContext* ExtractGpuContext(GpuExecutor* cuda_exec) {
   return cuda_exec->gpu_context();
 }
 
+#if GPU_GRAPH_API_DEBUG
+static struct FinalPrinter 
+{
+  constexpr static const uint32_t Num = 8;
+  void dump(uint32_t deviceID, GpuGraphHandle graph) {
+    if(deviceID >= Num) {
+      VLOG(0) << "ERROR: wrong deviceID: " << deviceID;
+    }
+    auto& map = graph_map_[deviceID];
+    auto [it, created] = map.emplace(graph, std::tuple{"", 0ull});
+    auto& [name, count] = it->second;
+    if(created) {
+      std::string path = tsl::io::GetTempFilename(/*extension=*/"dot");
+      auto res = GpuDriver::GraphDebugDotPrint(graph, path.c_str(), false);
+      if(res.ok()) VLOG(0) << "Printed graph to: " << path;
+      name = path;
+    }
+    count++;
+  }
+
+  ~FinalPrinter() {
+    int ID = 0;
+    for(const auto& map : graph_map_) {
+      VLOG(0) << "======================= graph stats " << ID++ 
+              << "========================";
+      for(const auto &[id, tuple] : map) {
+        const auto& [name,count] = tuple;
+        VLOG(0) << name << " called " << count << " times";
+      }
+    }
+  }
+private:  
+  using Map = std::unordered_map< GpuGraphHandle, 
+                            std::tuple<std::string, uint64_t> >;
+  std::array< Map, Num > graph_map_{};
+} s_printer;
+#endif
+
 GpuExecutor::~GpuExecutor() {
   CHECK(kernel_to_gpu_binary_.empty()) << "GpuExecutor has live kernels.";
   CHECK(gpu_binary_to_module_.empty()) << "GpuExecutor has loaded modules.";
@@ -140,7 +181,6 @@ GpuExecutor::~GpuExecutor() {
 absl::Status GpuExecutor::Init(int device_ordinal,
                                DeviceOptions device_options) {
   device_ordinal_ = device_ordinal;
-
   TF_RETURN_IF_ERROR(GpuDriver::Init());
   TF_RETURN_IF_ERROR(GpuDriver::GetDevice(device_ordinal_, &device_));
   TF_RETURN_IF_ERROR(GpuDriver::CreateContext(device_ordinal_, device_,
@@ -543,7 +583,11 @@ absl::Status GpuExecutor::Submit(Stream* stream,
         "Can't submit non-primary command buffer for execution");
   }
 
-  auto exec = GpuCommandBuffer::Cast(&command_buffer)->executable();
+  auto *gpu_buf = GpuCommandBuffer::Cast(&command_buffer);
+  auto exec = gpu_buf->executable();
+#if GPU_GRAPH_API_DEBUG
+  s_printer.dump(device_ordinal_, gpu_buf->graph());
+#endif
   VLOG(3) << "Launch command buffer execuable graph " << exec
           << " on a stream: " << stream->DebugStreamPointers();
   return GpuDriver::GraphLaunch(exec, AsGpuStreamValue(stream));
