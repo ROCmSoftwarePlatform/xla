@@ -19,17 +19,17 @@ limitations under the License.
 #include <utility>
 #include <vector>
 
+#include "absl/status/status.h"
 #include "absl/types/span.h"
 #include "xla/pjrt/pjrt_client.h"
 #include "xla/pjrt/pjrt_future.h"
 #include "xla/python/ifrt/array.h"
 #include "xla/python/ifrt/future.h"
-#include "xla/status.h"
 #include "xla/util.h"
 
 namespace xla {
 
-Status AwaitBuffersReady(absl::Span<ifrt::Array* const> ifrt_arrays) {
+absl::Status AwaitBuffersReady(absl::Span<ifrt::Array* const> ifrt_arrays) {
   ifrt::Future<> future;
   if (ifrt_arrays.size() == 1) {
     future = ifrt_arrays[0]->GetReadyFuture();
@@ -42,7 +42,7 @@ Status AwaitBuffersReady(absl::Span<ifrt::Array* const> ifrt_arrays) {
     future = ifrt::JoinFutures(absl::MakeSpan(futures));
   }
 
-  Status s = future.Await();
+  absl::Status s = future.Await();
   if (!s.ok()) {
     // Fix up error string because some clients rely on it.
     if (s.message() == "GetReadyFuture() called on deleted or donated buffer") {

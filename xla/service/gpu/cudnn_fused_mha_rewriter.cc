@@ -132,6 +132,7 @@ auto OptionalBroadcast(Pattern pattern) {
 
 bool IsBatchedMatmul(const HloInstruction* instr) {
   if (instr->opcode() != HloOpcode::kDot) return false;
+  if (Cast<HloDotInstruction>(instr)->sparse_operands()) return false;
   const DotDimensionNumbers& dot_dims = instr->dot_dimension_numbers();
   bool is_batch_dot = !dot_dims.lhs_batch_dimensions().empty() ||
                       !dot_dims.rhs_batch_dimensions().empty();
@@ -1574,7 +1575,7 @@ absl::StatusOr<bool> FuseBwdMultiHeadedAttentionBlock(
   return true;
 }
 
-Status RestoreFwdGraph(
+absl::Status RestoreFwdGraph(
     HloComputation* comp, HloInstruction* fwd_fmha_call, HloInstruction* bmm2,
     HloInstruction* activation, HloInstruction* original_bmm2_producer0,
     HloInstruction* original_bmm2_producer1,
@@ -1610,7 +1611,7 @@ Status RestoreFwdGraph(
   }
   TF_RETURN_IF_ERROR(
       comp->ReplaceInstruction(activation_gte, cloned_activation));
-  return OkStatus();
+  return absl::OkStatus();
 }
 }  // namespace
 
@@ -1625,7 +1626,7 @@ absl::StatusOr<bool> CudnnFusedMHARewriter::Run(
     const DebugOptions& debug_options =
         comp->parent()->config().debug_options();
     const se::dnn::VersionInfo cudnn_version =
-        GetDnnVersionInfo(stream_executor_, cudnn_version_);
+        GetDnnVersionInfoOrDefault(stream_executor_, cudnn_version_);
 #if !defined(GOOGLE_CUDA) || CUDA_VERSION < 12000
     // CUDA needs to be >= 12.0 for cuDNN to work with all supported hardware.
     // Some cuDNN versions work with CUDA 11, but it is impractical for us to

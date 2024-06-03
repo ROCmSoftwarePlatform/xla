@@ -624,7 +624,7 @@ IndexingMap ComposeIndexingMapsForWindow(
   // Composed indexing.
   IndexingMap result =
       ComposeIndexingMaps(input_indexing_no_padding, padded_input_indexing);
-  result.Simplify(GetIndexingMapForInstruction);
+  result.Simplify();
   result.RemoveUnusedSymbols();
   return result;
 }
@@ -941,7 +941,7 @@ HloInstructionIndexing ComputeOutputToInputReshapeOpIndexing(
   IndexingMap reshape_indexing_map = IndexingMap::FromTensorSizes(
       ComputeReshapeIndexingMap(input, output, mlir_context),
       output.dimensions(), {});
-  reshape_indexing_map.Simplify(GetIndexingMapForInstruction);
+  reshape_indexing_map.Simplify();
   return HloInstructionIndexing::FromIndexingMaps({reshape_indexing_map});
 }
 HloInstructionIndexing ComputeInputToOutputReshapeOpIndexing(
@@ -952,7 +952,7 @@ HloInstructionIndexing ComputeInputToOutputReshapeOpIndexing(
   IndexingMap reshape_indexing_map = IndexingMap::FromTensorSizes(
       ComputeReshapeIndexingMap(output, input, mlir_context),
       input.dimensions(), {});
-  reshape_indexing_map.Simplify(GetIndexingMapForInstruction);
+  reshape_indexing_map.Simplify();
   return HloInstructionIndexing::FromIndexingMaps({reshape_indexing_map});
 }
 
@@ -1096,7 +1096,7 @@ HloInstructionIndexing ComputeOutputToInputBitcastOpIndexing(
     const HloInstruction* bitcast, MLIRContext* mlir_context) {
   auto bitcast_map = GetBitcastMap(bitcast->shape(),
                                    bitcast->operand(0)->shape(), mlir_context);
-  bitcast_map.Simplify(GetIndexingMapForInstruction);
+  bitcast_map.Simplify();
   return HloInstructionIndexing::FromIndexingMaps({bitcast_map});
 }
 
@@ -1104,7 +1104,7 @@ HloInstructionIndexing ComputeInputToOutputBitcastOpIndexing(
     const HloInstruction* bitcast, MLIRContext* mlir_context) {
   auto bitcast_map = GetBitcastMap(bitcast->operand(0)->shape(),
                                    bitcast->shape(), mlir_context);
-  bitcast_map.Simplify(GetIndexingMapForInstruction);
+  bitcast_map.Simplify();
   return HloInstructionIndexing::FromIndexingMaps({bitcast_map});
 }
 
@@ -1141,8 +1141,7 @@ IndexingMap CreateIdentityMap(const Shape& shape, MLIRContext* mlir_context) {
 }
 
 llvm::SmallVector<AffineExpr, 4> DelinearizeInBoundsIndex(
-    AffineExpr linear, absl::Span<const int64_t> sizes,
-    absl::Span<const int64_t> strides) {
+    AffineExpr linear, absl::Span<const int64_t> sizes) {
   llvm::SmallVector<AffineExpr, 4> result;
   result.reserve(sizes.size());
   if (absl::c_linear_search(sizes, 0)) {
@@ -1152,6 +1151,7 @@ llvm::SmallVector<AffineExpr, 4> DelinearizeInBoundsIndex(
     return result;
   }
 
+  auto strides = ComputeStrides(sizes);
   for (auto [size, stride] : llvm::zip(sizes, strides)) {
     result.push_back(linear.floorDiv(stride) % size);
   }
@@ -1171,7 +1171,7 @@ IndexingMap GetIndexingMapFromPhysicalLayoutToLogical(
     const Shape& shape, MLIRContext* mlir_context) {
   if (shape.rank() == 0) {
     return IndexingMap(AffineMap::get(mlir_context),
-                       /*dim_vars=*/{}, /*range vars=*/{}, /*rt_vars=*/{});
+                       /*dimensions=*/{}, /*range vars=*/{}, /*rt_vars=*/{});
   }
   return IndexingMap::FromTensorSizes(
       ComputeTransposeIndexingMap(
@@ -1186,7 +1186,7 @@ IndexingMap GetIndexingMapFromLogicalToPhysicalLayout(
     const Shape& shape, MLIRContext* mlir_context) {
   if (shape.rank() == 0) {
     return IndexingMap(AffineMap::get(mlir_context),
-                       /*dim_vars=*/{}, /*range vars=*/{}, /*rt_vars=*/{});
+                       /*dimensions=*/{}, /*range vars=*/{}, /*rt_vars=*/{});
   }
   return IndexingMap::FromTensorSizes(
       ComputeTransposeIndexingMap(ToTransposeDimensions(shape.layout()),
@@ -1197,8 +1197,7 @@ IndexingMap GetIndexingMapFromLogicalToPhysicalLayout(
 AffineMap GetBlockOffsetsForTiling(const Tiling& tiling,
                                    MLIRContext* mlir_context) {
   auto offsets = DelinearizeInBoundsIndex(getAffineDimExpr(3, mlir_context),
-                                          tiling.GetBlockCounts(),
-                                          tiling.GetBlockStrides());
+                                          tiling.GetBlockCounts());
   for (auto&& [offset, tile_size] :
        llvm::zip(offsets, tiling.GetBlockTileSize())) {
     offset = offset * tile_size;
@@ -1209,8 +1208,7 @@ AffineMap GetBlockOffsetsForTiling(const Tiling& tiling,
 AffineMap GetThreadOffsetsForTiling(const Tiling& tiling,
                                     MLIRContext* mlir_context) {
   auto offsets = DelinearizeInBoundsIndex(getAffineDimExpr(0, mlir_context),
-                                          tiling.GetThreadsPerBlock(),
-                                          tiling.GetThreadStrides());
+                                          tiling.GetThreadsPerBlock());
   for (int dim = 0; dim < tiling.GetShape().size(); ++dim) {
     if (tiling.GetThreadTileSize()[dim] > 1) {
       offsets[dim] = offsets[dim] + getAffineSymbolExpr(dim, mlir_context) *
@@ -1264,7 +1262,7 @@ bool HloInstructionIndexing::Simplify() {
       to_remove.push_back(map);
       if (map.IsUndefined()) {
         to_add.push_back(map);
-      } else if (map.Simplify(GetIndexingMapForInstruction)) {
+      } else if (map.Simplify()) {
         map.RemoveUnusedSymbols();
       } else {
         to_remove.pop_back();
@@ -1379,7 +1377,7 @@ GroupedByOpIndexingMap ComputeGroupedOutputToInputIndexing(
       for (const IndexingMap& producer_map : producer_operand_indexing) {
         for (const IndexingMap& consumer_map : consumer_indexing_maps_copy) {
           auto composed_map = ComposeIndexingMaps(consumer_map, producer_map);
-          composed_map.Simplify(GetIndexingMapForInstruction);
+          composed_map.Simplify();
           composed_map.RemoveUnusedSymbols();
           grouped_indexing_maps[&producer_operand_adaptor.instruction()].insert(
               composed_map);
@@ -1538,7 +1536,7 @@ IndexingMap ComputeEpilogueInputToOutputIndexing(
     auto user_indexing = ComputeInputToOutputIndexing(
         &user, user.operand_index(&producer), mlir_context);
     root_indexing = root_indexing * *user_indexing.indexing_maps[0].begin();
-    root_indexing.Simplify(GetIndexingMapForInstruction);
+    root_indexing.Simplify();
     root_indexing.RemoveUnusedSymbols();
   }
   return root_indexing;

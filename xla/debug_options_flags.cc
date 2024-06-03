@@ -78,6 +78,7 @@ DebugOptions DefaultDebugOptionsIgnoringFlags() {
 #ifdef XLA_CPU_USE_ACL
   opts.set_xla_cpu_use_acl(true);
 #endif
+  opts.set_xla_cpu_use_thunk_runtime(false);
 
   opts.set_xla_cpu_enable_fast_math(false);
   // Disable forms of fast math that have caused users problems in the past.
@@ -125,6 +126,7 @@ DebugOptions DefaultDebugOptionsIgnoringFlags() {
   opts.set_xla_gpu_reduce_scatter_combine_threshold_bytes(kDefaultThreshold);
   opts.set_xla_gpu_enable_all_gather_combine_by_dim(true);
   opts.set_xla_gpu_enable_reduce_scatter_combine_by_dim(true);
+  opts.set_xla_gpu_all_reduce_contiguous(true);
 
   opts.set_xla_gpu_enable_reassociation_for_converted_ar(true);
 
@@ -139,14 +141,13 @@ DebugOptions DefaultDebugOptionsIgnoringFlags() {
   opts.set_xla_gpu_nccl_termination_timeout_seconds(-1);
   opts.set_xla_gpu_enable_shared_constants(true);
   opts.set_xla_gpu_enable_nccl_user_buffers(false);
-  opts.set_xla_gpu_enable_nccl_comm_splitting(true);
+  opts.set_xla_gpu_enable_nccl_comm_splitting(false);
   opts.set_xla_gpu_enable_nccl_per_stream_comms(false);
 
   // Set 4GB space limit for redzone scratch allocator.
   opts.set_xla_gpu_redzone_scratch_max_megabytes(1LL << 12);
   opts.set_xla_gpu_redzone_padding_bytes(8 * 1024 * 1024);
   opts.set_xla_gpu_shape_checks(DebugOptions::RUNTIME);
-  opts.set_xla_gpu_normalize_layouts(true);
   opts.set_xla_dump_latency_hiding_schedule(false);
   opts.set_xla_gpu_enable_latency_hiding_scheduler(false);
   opts.set_xla_gpu_lhs_enable_gpu_async_tracker(true);
@@ -187,6 +188,7 @@ DebugOptions DefaultDebugOptionsIgnoringFlags() {
   opts.set_xla_gpu_enable_while_loop_reduce_scatter_code_motion(false);
 
   opts.set_xla_gpu_collective_inflation_factor(1);
+  opts.set_xla_llvm_force_inline_before_split(true);
 
   opts.set_xla_gpu_exhaustive_tiling_search(false);
 
@@ -250,6 +252,8 @@ DebugOptions DefaultDebugOptionsIgnoringFlags() {
   opts.set_xla_reduce_window_rewrite_base_length(32);
 
   opts.set_xla_gpu_require_complete_aot_autotune_results(false);
+
+  opts.set_xla_gpu_enable_host_memory_offloading(false);
 
   return opts;
 }
@@ -762,6 +766,11 @@ void MakeDebugOptionsFlags(std::vector<tsl::Flag>* flag_list,
       "xla_cpu_use_acl", bool_setter_for(&DebugOptions::set_xla_cpu_use_acl),
       debug_options->xla_cpu_use_acl(),
       "Generate calls to ACL (Arm Compute Library) in the CPU backend."));
+  flag_list->push_back(
+      tsl::Flag("xla_cpu_use_thunk_runtime",
+                bool_setter_for(&DebugOptions::set_xla_cpu_use_thunk_runtime),
+                debug_options->xla_cpu_use_thunk_runtime(),
+                "Use Thunk-based runtime for the CPU backend."));
   flag_list->push_back(tsl::Flag(
       "xla_gpu_crash_on_verification_failures",
       bool_setter_for(
@@ -1011,6 +1020,11 @@ void MakeDebugOptionsFlags(std::vector<tsl::Flag>* flag_list,
                 debug_options->xla_gpu_deterministic_ops(),
                 "Guarantees run-to-run determinism on GPU."));
   flag_list->push_back(tsl::Flag(
+      "xla_gpu_exclude_nondeterministic_ops",
+      bool_setter_for(&DebugOptions::set_xla_gpu_exclude_nondeterministic_ops),
+      debug_options->xla_gpu_exclude_nondeterministic_ops(),
+      "Excludes non-deterministic ops from compiled executables."));
+  flag_list->push_back(tsl::Flag(
       "xla_gpu_disable_async_collectives",
       setter_for_xla_gpu_disable_async_collectives,
       collective_op_types_to_string(
@@ -1080,6 +1094,14 @@ void MakeDebugOptionsFlags(std::vector<tsl::Flag>* flag_list,
       debug_options->xla_gpu_collective_inflation_factor(),
       "Inflation factor for collectives. If set to > 1, each XLA/GPU "
       "collective will execute multiple times (will yield incorrect results)"));
+
+  flag_list->push_back(tsl::Flag(
+      "xla_llvm_force_inline_before_split",
+      bool_setter_for(&DebugOptions::set_xla_llvm_force_inline_before_split),
+      debug_options->xla_llvm_force_inline_before_split(),
+      "Decide whether to force inline before llvm module split to get a more "
+      "balanced splits for parallel compilation"));
+
   flag_list->push_back(tsl::Flag(
       "xla_gpu_enable_reassociation_for_converted_ar",
       bool_setter_for(
@@ -1234,12 +1256,6 @@ void MakeDebugOptionsFlags(std::vector<tsl::Flag>* flag_list,
       "xla_gpu_shape_checks", setter_for_xla_gpu_shape_checks,
       DebugOptions::ShapeChecks_Name(debug_options->xla_gpu_shape_checks()),
       "When to perform shape checks in XLA:GPU."));
-  flag_list->push_back(
-      tsl::Flag("xla_gpu_normalize_layouts",
-                bool_setter_for(&DebugOptions::set_xla_gpu_normalize_layouts),
-                debug_options->xla_gpu_normalize_layouts(),
-                "An experimental option to force all layouts present in the "
-                "after-optimizations HLO to be descending"));
   flag_list->push_back(tsl::Flag(
       "xla_cpu_strict_dot_conv_math",
       bool_setter_for(&DebugOptions::set_xla_cpu_strict_dot_conv_math),
@@ -1670,6 +1686,11 @@ void MakeDebugOptionsFlags(std::vector<tsl::Flag>* flag_list,
           &DebugOptions::set_xla_reduce_window_rewrite_base_length),
       debug_options->xla_reduce_window_rewrite_base_length(),
       "Base length to rewrite the reduce window to, no rewrite if set to 0."));
+  flag_list->push_back(tsl::Flag(
+      "xla_gpu_enable_host_memory_offloading",
+      bool_setter_for(&DebugOptions::set_xla_gpu_enable_host_memory_offloading),
+      debug_options->xla_gpu_enable_host_memory_offloading(),
+      "Whether to trigger host memory offloading on a device."));
 }  // NOLINT(readability/fn_size)
 
 // Allocates flag_values and flag_objects; this function must not be called more

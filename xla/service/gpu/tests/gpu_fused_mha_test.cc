@@ -83,7 +83,7 @@ class MultiHeadedAttentionTest : public GpuCodegenTest {
         .cuda_compute_capability();
   }
 
-  ErrorSpec error_spec_{2.5E-3, 1e-5};
+  ErrorSpec mha_error_spec_{2.5E-3, 1e-5};
 
  protected:
   DebugOptions GetDebugOptionsForTest() override {
@@ -131,7 +131,7 @@ class MultiHeadedAttentionTest : public GpuCodegenTest {
         ExecuteAndTransfer(std::move(test_module), literals);
 
     EXPECT_TRUE(
-        LiteralTestUtil::Near(expected_result, actual_result, error_spec_));
+        LiteralTestUtil::Near(expected_result, actual_result, mha_error_spec_));
   }
 
   template <typename T>
@@ -352,7 +352,7 @@ class FlashAttentionBMMScaleCausalMaskSoftmaxBMM
   template <typename T>
   void TestImpl_Flash_Attention_BMM1_CausalMask_Softmax_BMM2() {
     if (skip_reason_) GTEST_SKIP() << *skip_reason_;
-    if (GetDnnVersionInfo(backend().default_stream_executor()) <
+    if (GetDnnVersionInfoOrDefault(backend().default_stream_executor()) <
         se::dnn::VersionInfo(8, 9, 4)) {
       GTEST_SKIP() << "Flash Attention requires cuDNN >= 8.9.4.";
     }
@@ -373,7 +373,7 @@ class FlashAttentionBMMScaleCausalMaskSoftmaxBMM
   template <typename T>
   void TestImpl_Flash_Attention_Training_BMM1_CausalMask_Softmax_BMM2() {
     if (skip_reason_) GTEST_SKIP() << *skip_reason_;
-    if (GetDnnVersionInfo(backend().default_stream_executor()) <
+    if (GetDnnVersionInfoOrDefault(backend().default_stream_executor()) <
         se::dnn::VersionInfo(8, 9, 4)) {
       GTEST_SKIP() << "Flash Attention requires cuDNN >= 8.9.4.";
     }
@@ -668,7 +668,7 @@ class FlashAttentionBMMScaleBiasSoftmaxBMM : public MultiHeadedAttentionTest {
   template <typename T>
   void TestImpl_Flash_Attention_BMM1_Bias_Softmax_BMM2() {
     if (skip_reason_) GTEST_SKIP() << *skip_reason_;
-    if (GetDnnVersionInfo(backend().default_stream_executor()) <
+    if (GetDnnVersionInfoOrDefault(backend().default_stream_executor()) <
         se::dnn::VersionInfo(8, 9, 4)) {
       GTEST_SKIP() << "Flash Attention requires cuDNN >= 8.9.4.";
     }
@@ -690,7 +690,7 @@ class FlashAttentionBMMScaleBiasSoftmaxBMM : public MultiHeadedAttentionTest {
   template <typename T>
   void TestImpl_Flash_Attention_Training_BMM1_Bias_Softmax_BMM2() {
     if (skip_reason_) GTEST_SKIP() << *skip_reason_;
-    if (GetDnnVersionInfo(backend().default_stream_executor()) <
+    if (GetDnnVersionInfoOrDefault(backend().default_stream_executor()) <
         se::dnn::VersionInfo(8, 9, 4)) {
       GTEST_SKIP() << "Flash Attention requires cuDNN >= 8.9.4.";
     }
@@ -715,7 +715,7 @@ class FlashAttentionBMMScaleBiasSoftmaxBMM : public MultiHeadedAttentionTest {
   template <typename T>
   void TestImpl_Flash_Attention_BMM1_Bias_Softmax_BMM2_Cross_Attention() {
     if (skip_reason_) GTEST_SKIP() << *skip_reason_;
-    if (GetDnnVersionInfo(backend().default_stream_executor()) <
+    if (GetDnnVersionInfoOrDefault(backend().default_stream_executor()) <
         se::dnn::VersionInfo(8, 9, 4)) {
       GTEST_SKIP() << "Flash Attention cross attention requires "
                       "cuDNN >= 8.9.4.";
@@ -739,7 +739,7 @@ class FlashAttentionBMMScaleBiasSoftmaxBMM : public MultiHeadedAttentionTest {
   void TestImpl_Flash_Attention_BMM1_Bias_Softmax_BMM2_Dbias() {
     if (skip_reason_) GTEST_SKIP() << *skip_reason_;
     auto cc = GetCudaComputeCapability();
-    if (GetDnnVersionInfo(backend().default_stream_executor()) <
+    if (GetDnnVersionInfoOrDefault(backend().default_stream_executor()) <
             se::dnn::VersionInfo(8, 9, 6) ||
         !cc.IsAtLeastHopper() || cc.minor != 0) {
       GTEST_SKIP()
@@ -859,7 +859,7 @@ class FlashAttentionBMMScaleSoftmaxBMM : public MultiHeadedAttentionTest {
   template <typename T>
   void TestImpl_Flash_Attention_Training_BMM1_Softmax_BMM2() {
     if (skip_reason_) GTEST_SKIP() << *skip_reason_;
-    if (GetDnnVersionInfo(backend().default_stream_executor()) <
+    if (GetDnnVersionInfoOrDefault(backend().default_stream_executor()) <
         se::dnn::VersionInfo(8, 9, 4)) {
       GTEST_SKIP() << "Flash Attention requires cuDNN >= 8.9.4.";
     }
@@ -1013,7 +1013,7 @@ class FlashAttentionBMMScalePaddingMaskSoftmaxBMM
   template <typename T>
   void TestImpl_Flash_Attention_Training_BMM1_PaddingMask_Softmax_BMM2() {
     if (skip_reason_) GTEST_SKIP() << *skip_reason_;
-    if (GetDnnVersionInfo(backend().default_stream_executor()) <
+    if (GetDnnVersionInfoOrDefault(backend().default_stream_executor()) <
         se::dnn::VersionInfo(8, 9, 3)) {
       GTEST_SKIP() << "Flash Attention requires cuDNN >= 8.9.3.";
     }

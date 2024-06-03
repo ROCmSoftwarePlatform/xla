@@ -53,6 +53,29 @@ filegroup(
     ]),
 )
 
+# Collection of XLA tests that support XLA:CPU thunk-based runtime. We keep
+# running them on TAP while we keep working on porting XLA:CPU to the new
+# runtime.
+#
+# XLA:CPU thunks enabled with:
+#   --test_env=XLA_FLAGS=--xla_cpu_use_thunk_runtime=true
+#
+test_suite(
+    name = "thunk_runtime_tests",
+    tests = [
+        "//xla/tests:array_elementwise_ops_test_cpu",
+        "//xla/tests:axpy_simple_test_cpu",
+        "//xla/tests:convert_test_cpu",
+        "//xla/tests:copy_test_cpu",
+        "//xla/tests:floor_ceil_test_cpu",
+        "//xla/tests:numerics_test_cpu",
+        "//xla/tests:reshape_test_cpu",
+        "//xla/tests:reverse_test_cpu",
+        "//xla/tests:unary_op_test_cpu",
+        "//xla/tests/exhaustive:exhaustive_binary_16_bit_test_cpu",
+    ],
+)
+
 bool_flag(
     name = "experimental_mlir_gpu",
     build_setting_default = False,
@@ -232,11 +255,13 @@ cc_library(
         ":executable_proto_cc",
         ":ir_emission_utils",
         ":ir_emitter",
+        ":ir_emitter2",
         ":onednn_matmul_rewriter",
         ":onednn_ops_rewriter",
         ":parallel_task_assignment",
         ":simple_orc_jit",
         ":target_machine_features",
+        ":thunk_emitter",
         ":xla_framework",
         "//xla:cpu_function_runtime",
         "//xla:debug_options_flags",
@@ -338,6 +363,7 @@ cc_library(
         "//xla/service:while_loop_invariant_code_motion",
         "//xla/service:while_loop_simplifier",
         "//xla/service:zero_sized_hlo_elimination",
+        "//xla/service/cpu/runtime:thunk",
         "//xla/service/llvm_ir:llvm_command_line_options",
         "//xla/service/llvm_ir:llvm_util",
         "//xla/service/spmd:stateful_rng_spmd_partitioner",
@@ -557,6 +583,7 @@ cc_library(
         ":buffer_desc",
         ":simple_orc_jit",
         ":xla_framework",
+        "//xla:executable_run_options",
         "//xla:shape_tree",
         "//xla:shape_util",
         "//xla:status_macros",
@@ -567,46 +594,123 @@ cc_library(
         "//xla/hlo/ir:hlo",
         "//xla/service:buffer_assignment",
         "//xla/service:computation_layout",
+        "//xla/service:custom_call_status",
         "//xla/service:custom_call_status_internal",
         "//xla/service:executable",
         "//xla/service:hlo_dataflow_analysis",
         "//xla/service:hlo_execution_profile",
+        "//xla/service:hlo_value",
         "//xla/service:logical_buffer",
         "//xla/service:maybe_owning_device_memory",
         "//xla/service:shaped_buffer",
         "//xla/service:xla_debug_info_manager",
+        "//xla/service/cpu/runtime:buffer_allocations",
+        "//xla/service/cpu/runtime:thunk",
         "//xla/stream_executor",
         "//xla/stream_executor:device_memory_allocator",
+        "//xla/stream_executor/host:host_kernel_c_api",
         "//xla/stream_executor/host:host_stream",
         "@com_google_absl//absl/algorithm:container",
+        "@com_google_absl//absl/base:dynamic_annotations",
         "@com_google_absl//absl/cleanup",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/types:span",
+        "@llvm-project//llvm:ExecutionEngine",
         "@llvm-project//llvm:OrcJIT",
+        "@llvm-project//llvm:OrcShared",
+        "@llvm-project//llvm:Support",
         "@llvm-project//mlir:FuncDialect",
         "@llvm-project//mlir:Parser",
         "@tsl//tsl/platform:env",
+        "@tsl//tsl/platform:logging",
+        "@tsl//tsl/platform:statusor",
+    ],
+)
+
+cc_library(
+    name = "elemental_math_emitter",
+    srcs = ["elemental_math_emitter.cc"],
+    hdrs = ["elemental_math_emitter.h"],
+    deps = [
+        "//xla:shape_util",
+        "//xla:xla_data_proto_cc",
+        "//xla/service/llvm_ir:ir_array",
+        "//xla/service/llvm_ir:llvm_util",
+        "//xla/service/llvm_ir:math_ops",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/types:span",
+        "@llvm-project//llvm:Core",
+        "@llvm-project//llvm:Support",
         "@tsl//tsl/platform:logging",
     ],
 )
 
 cc_library(
+    name = "ir_emitter2",
+    srcs = ["ir_emitter2.cc"],
+    hdrs = ["ir_emitter2.h"],
+    deps = [
+        ":elemental_math_emitter",
+        "//xla:shape_util",
+        "//xla/hlo/ir:hlo",
+        "//xla/service:elemental_ir_emitter",
+        "//xla/service/llvm_ir:fused_ir_emitter",
+        "//xla/service/llvm_ir:ir_array",
+        "//xla/service/llvm_ir:llvm_util",
+        "//xla/service/llvm_ir:loop_emitter",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@llvm-project//llvm:Core",
+        "@llvm-project//llvm:Support",
+        "@tsl//tsl/platform:errors",
+        "@tsl//tsl/platform:logging",
+        "@tsl//tsl/platform:statusor",
+    ],
+)
+
+xla_cc_test(
+    name = "ir_emitter2_test",
+    srcs = ["ir_emitter2_test.cc"],
+    deps = [
+        ":ir_emitter2",
+        "//xla:shape_util",
+        "//xla:xla_data_proto_cc",
+        "//xla/hlo/ir:hlo",
+        "//xla/service:hlo_module_config",
+        "//xla/service:hlo_parser",
+        "//xla/service/llvm_ir:llvm_util",
+        "//xla/tests:filecheck",
+        "//xla/tests:hlo_test_base",
+        "@com_google_absl//absl/algorithm:container",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@llvm-project//llvm:Core",
+        "@llvm-project//llvm:OrcJIT",
+        "@llvm-project//llvm:Support",
+        "@tsl//tsl/platform:statusor",
+        "@tsl//tsl/platform:test",
+        "@tsl//tsl/platform:test_main",
+    ],
+)
+
+cc_library(
     name = "ir_emitter",
-    srcs = [
-        "elemental_ir_emitter.cc",
-        "ir_emitter.cc",
-    ],
-    hdrs = [
-        "elemental_ir_emitter.h",
-        "ir_emitter.h",
-    ],
+    srcs = ["ir_emitter.cc"],
+    hdrs = ["ir_emitter.h"],
     copts = tsl_copts(),
     deps = [
         ":backend_config_proto_cc",
         ":cpu_options",
         ":cpu_runtime",
         ":dot_op_emitter",
+        ":elemental_math_emitter",
         ":ir_emission_utils",
         ":ir_function",
         ":onednn_memory_util",
@@ -712,6 +816,30 @@ cc_library(
         "//xla/service/llvm_ir:loop_emitter",
         "@com_google_absl//absl/strings:str_format",
         "@llvm-project//llvm:Core",
+    ],
+)
+
+cc_library(
+    name = "thunk_emitter",
+    srcs = ["thunk_emitter.cc"],
+    hdrs = ["thunk_emitter.h"],
+    deps = [
+        ":ir_emitter2",
+        "//xla:shape_util",
+        "//xla/hlo/ir:hlo",
+        "//xla/service:buffer_assignment",
+        "//xla/service/cpu/runtime:call_thunk",
+        "//xla/service/cpu/runtime:copy_thunk",
+        "//xla/service/cpu/runtime:kernel_thunk",
+        "//xla/service/cpu/runtime:thunk",
+        "//xla/stream_executor:launch_dim",
+        "@com_google_absl//absl/algorithm:container",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@tsl//tsl/platform:errors",
+        "@tsl//tsl/platform:logging",
+        "@tsl//tsl/platform:statusor",
     ],
 )
 
@@ -1182,6 +1310,7 @@ cc_library(
     copts = runtime_copts(),
     visibility = ["//visibility:public"],
     deps = [
+        "//xla:executable_run_options",
         "//xla:shape_util",
         "//xla:xla_data_proto_cc",
         "//xla/ffi:attribute_map",
@@ -1191,7 +1320,6 @@ cc_library(
         "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/base:dynamic_annotations",
-        "@com_google_absl//absl/log",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:span",
@@ -1231,7 +1359,7 @@ xla_cc_test(
 xla_cc_test(
     name = "cpu_instruction_fusion_test",
     srcs = ["cpu_instruction_fusion_test.cc"],
-    tags = ["no_aarch64"],
+    tags = ["not_run:arm"],
     deps = [
         ":cpu_instruction_fusion",
         "//xla:shape_util",
@@ -1494,7 +1622,7 @@ xla_cc_test(
     name = "vectorized_reduce_with_no_vector_registers_test",
     size = "small",
     srcs = ["vectorized_reduce_with_no_vector_registers_test.cc"],
-    tags = ["no_aarch64"],
+    tags = ["not_run:arm"],
     deps = [
         ":cpu_compiler",
         ":cpu_transfer_manager",
@@ -1650,11 +1778,19 @@ cc_library(
         "//xla:executable_run_options",
         "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/base:dynamic_annotations",
-        "@com_google_absl//absl/log:check",
         "@eigen_archive//:eigen3",
         "@tsl//tsl/platform:blocking_counter",
         "@tsl//tsl/platform:env",
         "@tsl//tsl/platform:platform_port",
+    ] + mkl_deps(),
+)
+
+cc_library(
+    name = "onednn_pattern_utils",
+    hdrs = ["onednn_pattern_utils.h"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":onednn_util",
     ] + mkl_deps(),
 )
 
@@ -1671,6 +1807,7 @@ cc_library(
         ":backend_config_proto_cc",
         ":onednn_matmul",
         ":onednn_memory_util",
+        ":onednn_pattern_utils",
         ":onednn_util",
         "//xla:executable_run_options",
         "//xla:shape_util",
@@ -1699,6 +1836,7 @@ cc_library(
     deps = [
         ":backend_config_proto_cc",
         ":onednn_memory_util",
+        ":onednn_pattern_utils",
         ":onednn_util",
         "//xla:status_macros",
         "//xla:xla_data_proto_cc",

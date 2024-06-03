@@ -38,10 +38,10 @@ limitations under the License.
 #include "xla/stream_executor/memory_allocation.h"
 #include "xla/stream_executor/module_spec.h"
 #include "xla/stream_executor/platform.h"
-#include "xla/stream_executor/stream_interface.h"
 
 namespace stream_executor {
 
+class Event;
 class Stream;
 
 // Interface which defines the method for interacting with an accelerator device
@@ -64,6 +64,9 @@ class StreamExecutorInterface {
   virtual absl::StatusOr<std::unique_ptr<Stream>> CreateStream(
       std::optional<std::variant<StreamPriority, int>> priority =
           std::nullopt) = 0;
+
+  // Creates and initializes an Event.
+  virtual absl::StatusOr<std::unique_ptr<Event>> CreateEvent() = 0;
 
   // Obtains metadata about the underlying device.
   // The value is cached on first use.
@@ -100,8 +103,8 @@ class StreamExecutorInterface {
   // Loads a module for the platform this StreamExecutor is acting upon.
   //
   // `spec` describes the module to be loaded.  On success writes the handle for
-  // the loaded module to `module_handle` and returns OkStatus().  Otherwise,
-  // returns the error which has occurred.
+  // the loaded module to `module_handle` and returns absl::OkStatus().
+  // Otherwise, returns the error which has occurred.
   virtual absl::Status LoadModule(const MultiModuleLoaderSpec& spec,
                                   ModuleHandle* module_handle) {
     return absl::UnimplementedError("Not Implemented");
@@ -259,28 +262,11 @@ class StreamExecutorInterface {
   virtual bool HostCallback(Stream* stream,
                             absl::AnyInvocable<absl::Status() &&> callback) = 0;
 
-  // Performs platform-specific allocation and initialization of an event.
-  virtual absl::Status AllocateEvent(Event* event) = 0;
-
-  // Performs platform-specific deallocation and cleanup of an event.
-  virtual absl::Status DeallocateEvent(Event* event) = 0;
-
   // Inserts the specified event at the end of the specified stream.
   virtual absl::Status RecordEvent(Stream* stream, Event* event) = 0;
 
   // Waits for the specified event at the end of the specified stream.
   virtual absl::Status WaitForEvent(Stream* stream, Event* event) = 0;
-
-  // Waits for the specified event at the end of the raw platform-specific
-  // stream.
-  virtual absl::Status WaitForEventOnExternalStream(std::intptr_t stream,
-                                                    Event* event) {
-    return absl::UnimplementedError(
-        "WaitForEventOnExternalStream not supported on this executor.");
-  }
-
-  // Requests the current status of the event from the underlying platform.
-  virtual Event::Status PollForEventStatus(Event* event) = 0;
 
   // Deallocates stream resources on the underlying platform.
   virtual void DeallocateStream(Stream* stream) = 0;
@@ -353,10 +339,6 @@ class StreamExecutorInterface {
   // underlying platform.
   virtual dnn::DnnSupport* AsDnn() { return nullptr; }
 
-  // Each call creates a new instance of the platform-specific implementation of
-  // the corresponding interface type.
-  virtual std::unique_ptr<EventInterface> CreateEventImplementation() = 0;
-
   // Creates a new Kernel object.
   // TODO(klucke) Combine with GetKernel.
   virtual absl::StatusOr<std::unique_ptr<Kernel>> CreateKernel() {
@@ -389,6 +371,38 @@ class StreamExecutorInterface {
 
   // Returns the memory limit in bytes supported by this executor.
   virtual int64_t GetMemoryLimitBytes() const = 0;
+
+  // The following methods access an internal log of some subset
+  // of arguments passed to other class methods.
+  // Used for testing/debugging purposes.
+
+  struct GemmCallTrace {
+    enum class GemmType {
+      kPlain = 0,
+      kStridedBatched = 1,
+      kBatched = 2,
+      kBlasLt = 3
+    };
+    GemmType op;
+    int flags;
+    uint64_t size1, size2;
+  };
+  // This may be expanded as necessary to trace other calls
+  using ApiTrace = std::variant<GemmCallTrace>;
+
+  // Retrieves and clears internal argument logs.
+  virtual absl::StatusOr<std::vector<ApiTrace>> ExtractApiTrace() {
+    return absl::UnimplementedError("Not implemented");
+  }
+  virtual absl::Status RecordApiTrace(ApiTrace call) {
+    return absl::UnimplementedError("Not implemented");
+  }
+
+  static constexpr uint64_t kLogGemm = 1 << 0;
+
+  // Sets the argument logging mode. Returns true if 'mode' is valid.
+  // The mode is a bitmask of the kLog* constants.
+  virtual bool SetArgumentLoggingMode(uint64_t mode) { return false; }
 
  private:
   StreamExecutorInterface(const StreamExecutorInterface&) = delete;

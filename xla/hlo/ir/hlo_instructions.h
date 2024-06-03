@@ -28,6 +28,7 @@ limitations under the License.
 
 #include "absl/container/inlined_vector.h"
 #include "absl/functional/function_ref.h"
+#include "absl/status/status.h"
 #include "absl/strings/string_view.h"
 #include "absl/types/span.h"
 #include "xla/comparison_util.h"
@@ -44,7 +45,6 @@ limitations under the License.
 #include "xla/service/hlo.pb.h"
 #include "xla/shape.h"
 #include "xla/shape_util.h"
-#include "xla/status.h"
 #include "xla/xla_data.pb.h"
 #include "tsl/lib/gtl/iterator_range.h"
 #include "tsl/platform/logging.h"  // IWYU pragma: keep
@@ -1516,7 +1516,7 @@ class HloFusionInstruction : public HloCallableInstruction {
   void set_fusion_kind(FusionKind kind) { fusion_kind_ = kind; }
 
   // If multiple operands are the same instruction, keeps only one of them.
-  Status DeduplicateFusionOperands();
+  absl::Status DeduplicateFusionOperands();
 
   static bool ClassOf(const HloInstruction* hlo) {
     return hlo->opcode() == HloOpcode::kFusion;

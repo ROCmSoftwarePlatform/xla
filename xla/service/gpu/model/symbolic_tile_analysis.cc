@@ -41,6 +41,7 @@ limitations under the License.
 #include "xla/service/gpu/model/indexing_map.h"
 #include "xla/service/gpu/model/symbolic_tile.h"
 #include "xla/service/gpu/model/symbolic_tiled_hlo_instruction.h"
+#include "xla/service/gpu/model/tiled_hlo_computation.h"
 #include "xla/service/gpu/model/tiled_hlo_instruction.h"
 #include "xla/service/instruction_fusion.h"
 #include "xla/status.h"
@@ -126,7 +127,7 @@ absl::StatusOr<IndexingMap> ComputeBlockIdToTileOffsetIndexing(
       block_id_to_tile_offset_indexing.GetRangeVars(),
       block_id_to_tile_offset_indexing.GetRTVars()};
 
-  simplified_indexing_map.Simplify(GetIndexingMapForInstruction);
+  simplified_indexing_map.Simplify();
   simplified_indexing_map.RescaleSymbols();
   simplified_indexing_map.RemoveUnusedSymbols();
 
@@ -240,7 +241,7 @@ absl::StatusOr<IndexingMap> ComputeBlockIdToTileOffsetIndexing(
   return SymbolicTileAnalysis(std::move(tiled_hlo_instructions), ctx);
 }
 
-absl::StatusOr<std::vector<std::unique_ptr<TiledHloInstruction>>>
+absl::StatusOr<TiledHloComputation>
 SymbolicTileAnalysis::ComputeTiledHloInstructions(
     const std::vector<int64_t>& tile_parameters) const {
   IndexingMap block_id_to_root_tile_offset = ComputeBlockIdToOutputTileIndexing(
@@ -311,7 +312,8 @@ SymbolicTileAnalysis::ComputeTiledHloInstructions(
     return topological_order.at(i1.get()) < topological_order.at(i2.get());
   });
 
-  return tiled_hlo_instructions;
+  return TiledHloComputation::FromSortedTiledHloInstructions(
+      std::move(tiled_hlo_instructions));
 }
 
 }  // namespace gpu

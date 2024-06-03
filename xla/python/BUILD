@@ -1,7 +1,7 @@
 load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
 load("@local_config_cuda//cuda:build_defs.bzl", "if_cuda")
 load("@local_config_rocm//rocm:build_defs.bzl", "if_rocm")
-load("@tsl//tsl/platform:build_config.bzl", "pyx_library", "tf_proto_library")
+load("@tsl//tsl/platform:build_config.bzl", "tf_proto_library")
 load("@tsl//tsl/platform:rules_cc.bzl", "cc_library")
 load(
     "@tsl//tsl/platform/default:cuda_build_defs.bzl",
@@ -20,7 +20,7 @@ load(
     "if_google",
     "internal_visibility",
 )
-load("//xla/tsl:tsl.default.bzl", "tsl_pybind_extension")
+load("//xla/tsl:tsl.default.bzl", "get_compatible_with_portable", "tsl_pybind_extension")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["//tensorflow:license"],
@@ -55,18 +55,13 @@ exports_files([
     "xla_client.pyi",
 ])
 
-pyx_library(
-    name = "custom_call_for_test",
-    testonly = True,
-    srcs = ["custom_call_for_test.pyx"],
-)
-
 tsl_pybind_extension(
-    name = "typed_ffi_custom_calls",
-    srcs = ["typed_ffi_custom_call_for_test.cc"],
+    name = "custom_calls_testlib",
+    srcs = ["custom_calls_testlib.cc"],
     visibility = ["//visibility:private"],
     deps = [
-        "//xla/ffi",
+        "//xla/ffi/api:c_api",
+        "//xla/ffi/api:ffi",
         "@com_google_absl//absl/status",
         "@nanobind",
     ],
@@ -111,8 +106,7 @@ py_strict_test(
         "not_run:arm",
     ],  # TODO(phawkins): This test passes, but requires --config=monolithic.
     deps = [
-        ":custom_call_for_test",
-        ":typed_ffi_custom_calls",
+        ":custom_calls_testlib",
         ":xla_client",
         ":xla_extension",
         "@absl_py//absl/flags",
@@ -203,7 +197,6 @@ cc_library(
         ":nb_numpy",
         "//xla:literal",
         "//xla:shape_util",
-        "//xla:status",
         "//xla:status_macros",
         "//xla:util",
         "//xla:xla_data_proto_cc",
@@ -213,6 +206,7 @@ cc_library(
         "//xla/tsl/python/lib/core:numpy",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:inlined_vector",
+        "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:span",
@@ -331,6 +325,7 @@ cc_library(
     ]),
     features = ["-use_header_modules"],
     deps = [
+        ":aggregate_profile",
         ":callback",
         ":nb_absl_span",
         ":nb_class_ptr",
@@ -343,6 +338,7 @@ cc_library(
         ":transfer_guard_lib",
         ":types",
         ":util",
+        ":xplane_to_profile_instructions",
         # placeholder for index annotation deps
         "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/base",
@@ -351,25 +347,28 @@ cc_library(
         "@com_google_absl//absl/container:inlined_vector",
         "@com_google_absl//absl/functional:any_invocable",
         "@com_google_absl//absl/hash",
+        "@com_google_absl//absl/log",
         "@com_google_absl//absl/log:check",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/synchronization",
+        "@com_google_absl//absl/time",
         "@com_google_absl//absl/types:span",
         "@com_google_absl//absl/types:variant",
         "@local_config_python//:python_headers",  # buildcleaner: keep
         "//xla:comparison_util",
         "//xla:literal",
         "//xla:shape_util",
-        "//xla:status",
         "//xla:status_macros",
         "//xla:statusor",
         "//xla:types",
         "//xla:util",
         "//xla:xla_data_proto_cc",
         "//xla/client:xla_builder",
+        "//xla/client:xla_computation",
+        "//xla/client/lib:arithmetic",
         "//xla/hlo/ir:hlo",
         "//xla/pjrt:exceptions",
         "//xla/pjrt:host_callback",
@@ -385,6 +384,8 @@ cc_library(
         "//xla/pjrt:pjrt_stream_executor_client",
         "//xla/pjrt:status_casters",
         "//xla/pjrt:transpose",
+        "//xla/pjrt/distributed",
+        "//xla/pjrt/distributed:client",
         "//xla/python/ifrt",
         "//xla/python/ifrt:plugin_program",
         "//xla/python/ifrt:plugin_program_serdes",
@@ -406,7 +407,9 @@ cc_library(
         "@tsl//tsl/platform:ml_dtypes",
         "@tsl//tsl/platform:status",
         "@tsl//tsl/platform:statusor",
+        "@tsl//tsl/profiler/lib:profiler_session",
         "@tsl//tsl/profiler/lib:traceme",
+        "@tsl//tsl/profiler/protobuf:profiled_instructions_proto_cc",
         "@com_google_protobuf//:protobuf",
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:IR",
@@ -573,6 +576,7 @@ cc_library(
         "//xla/hlo/ir:hlo",
         "//xla/service:custom_call_sharding_helper",
         "//xla/service/spmd:spmd_partitioner",
+        "@com_google_absl//absl/status",
     ],
     # Always register 'InspectSharding' custom partitioning handler.
     alwayslink = 1,
@@ -621,7 +625,6 @@ cc_library(
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "//xla:shape_util",
-        "//xla:status",
         "//xla:util",
         "//xla/hlo/ir:hlo",
         "//xla/hlo/utils:hlo_sharding_util",
@@ -737,6 +740,7 @@ cc_library(
         "//xla/pjrt:lru_cache",
         "//xla/pjrt:pjrt_client",
         "//xla/pjrt:pjrt_future",
+        "//xla/pjrt:status_casters",
         "//xla/python/ifrt",
         "//xla/tsl/concurrency:ref_count",
         "@tsl//tsl/platform:errors",
@@ -809,6 +813,7 @@ xla_cc_test(
         "//xla/pjrt:pjrt_stream_executor_client",
         "//xla/pjrt/cpu:cpu_client",
         "//xla/service:platform_util",
+        "@com_google_absl//absl/status",
         "@com_google_absl//absl/synchronization",
         "@tsl//tsl/platform:test_main",
     ],
@@ -913,7 +918,6 @@ cc_library(
         # placeholder for index annotation deps
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
-        "//xla:status",
         "//xla/client:xla_computation",
         "//xla/mlir/utils:error_util",
         "//xla/mlir_hlo",
@@ -969,6 +973,23 @@ cc_library(
 )
 
 cc_library(
+    name = "profiler_utils",
+    srcs = ["profiler_utils.cc"],
+    hdrs = ["profiler_utils.h"],
+    compatible_with = get_compatible_with_portable(),
+    deps = [
+        "//xla/backends/profiler:profiler_backends",
+        "//xla/backends/profiler/plugin:plugin_tracer",
+        "//xla/backends/profiler/plugin:profiler_c_api_hdrs",
+        "//xla/pjrt/c:pjrt_c_api_hdrs",
+        "//xla/pjrt/c:pjrt_c_api_helpers",
+        "//xla/pjrt/c:pjrt_c_api_profiler_extension_hdrs",
+        "@tsl//tsl/profiler/lib:profiler_factory",
+        "@tsl//tsl/profiler/lib:profiler_interface",
+    ],
+)
+
+cc_library(
     name = "profiler",
     srcs = ["profiler.cc"],
     hdrs = ["profiler.h"],
@@ -980,11 +1001,15 @@ cc_library(
     ],
     features = ["-use_header_modules"],
     deps = [
+        ":aggregate_profile",
+        ":profiler_utils",
+        ":py_client",
         ":types",
         ":xplane_to_profile_instructions",
         # placeholder for index annotation deps
+        "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
-        "//xla:status",
+        "@com_google_absl//absl/types:span",
         "//xla/backends/profiler:profiler_backends",
         "//xla/backends/profiler/cpu:python_tracer",
         "//xla/backends/profiler/plugin:plugin_tracer",
@@ -1042,12 +1067,11 @@ cc_library(
     ],
     features = ["-use_header_modules"],
     deps = [
-        "//xla:status",
         "//xla:util",
         "//xla/pjrt:pjrt_client",
         "//xla/pjrt:pjrt_future",
         "//xla/python/ifrt",
-        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/status",
         "@com_google_absl//absl/types:span",
     ],
 )
@@ -1093,6 +1117,8 @@ cc_library(
         ":py_client",
         ":types",
         # placeholder for index annotation deps
+        "@com_google_absl//absl/base:core_headers",
+        "@com_google_absl//absl/container:inlined_vector",
         "@com_google_absl//absl/hash",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
@@ -1131,7 +1157,10 @@ cc_library(
         "//xla/service:name_uniquer",
         "//xla/service:tuple_simplifier",
         "@tsl//tsl/lib/strings:proto_serialization",
+        "@tsl//tsl/platform:env",
+        "@tsl//tsl/platform:errors",
         "@tsl//tsl/platform:logging",
+        "@tsl//tsl/platform:statusor",
         "@nanobind",
     ],
 )
@@ -1314,7 +1343,6 @@ tsl_pybind_extension(
         "@local_config_python//:python_headers",  # buildcleaner: keep
         "//xla:literal",
         "//xla:shape_util",
-        "//xla:status",
         "//xla:statusor",
         "//xla:types",
         "//xla:util",
@@ -1389,7 +1417,6 @@ cc_library(
     srcs = ["xplane_to_profile_instructions.cc"],
     hdrs = ["xplane_to_profile_instructions.h"],
     deps = [
-        "//xla:status",
         "//xla:xla_proto_cc",
         "//xla/hlo/ir:hlo",
         "//xla/service:hlo_proto_cc",
@@ -1499,5 +1526,30 @@ cc_library(
     deps = [
         "@com_google_absl//absl/container:flat_hash_set",
         "@nanobind",
+    ],
+)
+
+cc_library(
+    name = "aggregate_profile",
+    srcs = ["aggregate_profile.cc"],
+    hdrs = ["aggregate_profile.h"],
+    deps = [
+        ":xplane_to_profile_instructions",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/types:span",
+        "@tsl//tsl/profiler/protobuf:profiled_instructions_proto_cc",
+    ],
+)
+
+xla_cc_test(
+    name = "aggregate_profile_test",
+    srcs = ["aggregate_profile_test.cc"],
+    deps = [
+        ":aggregate_profile",
+        "@com_google_absl//absl/types:span",
+        "@tsl//tsl/platform:test",
+        "@tsl//tsl/platform:test_main",
+        "@tsl//tsl/profiler/protobuf:profiled_instructions_proto_cc",
+        "@tsl//tsl/profiler/protobuf:profiled_instructions_proto_cc_impl",
     ],
 )

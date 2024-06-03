@@ -70,7 +70,6 @@ cc_library(
         "//xla:protobuf_util",
         "//xla:shape_tree",
         "//xla:shape_util",
-        "//xla:status",
         "//xla:status_macros",
         "//xla:statusor",
         "//xla:types",
@@ -157,6 +156,16 @@ cc_library(
 )
 
 cc_library(
+    name = "hlo_instruction_utils",
+    srcs = ["hlo_instruction_utils.cc"],
+    hdrs = ["hlo_instruction_utils.h"],
+    deps = [
+        ":hlo",
+        "@com_google_absl//absl/algorithm:container",
+    ],
+)
+
+cc_library(
     name = "hlo_reachability",
     srcs = ["hlo_reachability.cc"],
     hdrs = ["hlo_reachability.h"],
@@ -212,6 +221,8 @@ cc_library(
         "//xla:printer",
         "//xla:util",
         "@com_google_absl//absl/algorithm:container",
+        "@com_google_absl//absl/container:inlined_vector",
+        "@com_google_absl//absl/log:check",
         "@com_google_absl//absl/types:span",
     ],
 )

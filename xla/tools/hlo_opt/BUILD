@@ -57,6 +57,7 @@ cc_library(
     name = "gpu_opt",
     testonly = True,
     srcs = if_gpu_is_configured(["gpu_opt.cc"]),
+    tags = ["gpu"],
     deps = [
         ":opt_lib",
         "//xla:debug_options_flags",
@@ -122,7 +123,6 @@ cc_library(
         "cpu_opt",
         ":opt_lib",
         "//xla:debug_options_flags",
-        "//xla:status",
         "//xla:statusor",
         "//xla/hlo/ir:hlo",
         "//xla/service:hlo_runner",
@@ -176,7 +176,7 @@ lit_test_suite(
     ]),
     cfg = "//xla:lit.cfg.py",
     data = [":test_utilities"],
-    default_tags = tf_cuda_tests_tags() + ["gpu_any"],
+    default_tags = tf_cuda_tests_tags(),
     tags_override = {
         "gpu_hlo_ptx.hlo": ["no_rocm"],
     },

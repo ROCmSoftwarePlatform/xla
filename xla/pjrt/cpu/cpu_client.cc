@@ -15,6 +15,8 @@ limitations under the License.
 
 #include "xla/pjrt/cpu/cpu_client.h"
 
+#define EIGEN_USE_THREADS
+
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
@@ -28,12 +30,6 @@ limitations under the License.
 #include <vector>
 
 #include "absl/algorithm/container.h"
-#include "xla/pjrt/cpu/cpu_topology.h"
-#include "xla/pjrt/host_memory_spaces.h"
-#include "xla/pjrt/pjrt_compiler.h"
-
-#define EIGEN_USE_THREADS
-
 #include "absl/base/dynamic_annotations.h"
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/inlined_vector.h"
@@ -64,11 +60,14 @@ limitations under the License.
 #include "xla/literal_util.h"
 #include "xla/pjrt/compile_options.pb.h"
 #include "xla/pjrt/cpu/abstract_tfrt_cpu_buffer.h"
+#include "xla/pjrt/cpu/cpu_topology.h"
 #include "xla/pjrt/cpu/tracked_tfrt_cpu_device_buffer.h"
 #include "xla/pjrt/distributed/topology_util.h"
+#include "xla/pjrt/host_memory_spaces.h"
 #include "xla/pjrt/mlir_to_hlo.h"
 #include "xla/pjrt/pjrt_client.h"
 #include "xla/pjrt/pjrt_common.h"
+#include "xla/pjrt/pjrt_compiler.h"
 #include "xla/pjrt/pjrt_executable.h"
 #include "xla/pjrt/pjrt_future.h"
 #include "xla/pjrt/semaphore.h"
@@ -83,8 +82,11 @@ limitations under the License.
 #include "xla/service/cpu/cpu_executable.h"
 #include "xla/service/cpu/cpu_executable_run_options.h"
 #include "xla/service/cpu/cpu_xfeed.h"
+#include "xla/service/cpu/runtime/buffer_allocations.h"
+#include "xla/service/cpu/runtime/thunk.h"
 #include "xla/service/cpu/simple_orc_jit.h"
 #include "xla/service/custom_call_status.h"
+#include "xla/service/custom_call_status_internal.h"
 #include "xla/service/dump.h"
 #include "xla/service/executable.h"
 #include "xla/service/hlo.pb.h"
@@ -92,6 +94,7 @@ limitations under the License.
 #include "xla/service/hlo_module_config.h"
 #include "xla/service/hlo_module_util.h"
 #include "xla/service/hlo_value.h"
+#include "xla/service/maybe_owning_device_memory.h"
 #include "xla/shape.h"
 #include "xla/shape_util.h"
 #include "xla/status.h"
@@ -304,11 +307,12 @@ TfrtCpuDevice::TfrtCpuDevice(int id, int process_index, int local_hardware_id,
       max_inflight_computations_semaphore_(
           /*capacity=*/max_inflight_computations) {}
 
-Status TfrtCpuDevice::TransferToInfeed(const LiteralSlice& literal) {
+absl::Status TfrtCpuDevice::TransferToInfeed(const LiteralSlice& literal) {
   return TransferLiteralToInfeedOnCpu(local_hardware_id(), literal);
 }
 
-Status TfrtCpuDevice::TransferFromOutfeed(MutableBorrowingLiteral literal) {
+absl::Status TfrtCpuDevice::TransferFromOutfeed(
+    MutableBorrowingLiteral literal) {
   return TransferLiteralFromOutfeedOnCpu(local_hardware_id(), literal);
 }
 
@@ -410,7 +414,9 @@ static tsl::ThreadOptions GetThreadOptions() {
   tsl::ThreadOptions thread_options;
   // On Mac OS the default stack size is 512KiB, which is too small for some
   // BLAS and LAPACK functions (https://github.com/google/jax/issues/20428).
-  thread_options.stack_size = 2 * 1024 * 1024;
+  // On Linux we also observed that 2MB wasn't enough to run some OpenBLAS
+  // functions.
+  thread_options.stack_size = 8 * 1024 * 1024;
   return thread_options;
 }
 
@@ -826,6 +832,9 @@ absl::StatusOr<std::unique_ptr<PjRtLoadedExecutable>> TfrtCpuClient::Compile(
   xla::Compiler::CompileOptions compile_options{
       build_options.device_allocator(), build_options.compile_thread_pool(),
       build_options.layout_canonicalization_callback()};
+  if (!compile_options.thread_pool) {
+    compile_options.thread_pool = pjrt_client_thread_pool();
+  }
   TF_ASSIGN_OR_RETURN(
       std::unique_ptr<Executable> cpu_executable,
       JitCompile(computation, argument_layout_pointers, build_options,
@@ -898,7 +907,7 @@ TfrtCpuClient::CreateViewOfDeviceBuffer(
 }
 
 absl::StatusOr<std::unique_ptr<PjRtBuffer>> TfrtCpuClient::CreateErrorBuffer(
-    Status error, const Shape& shape, PjRtDevice* device) {
+    absl::Status error, const Shape& shape, PjRtDevice* device) {
   if (device->client() != this) {
     return absl::InvalidArgumentError("Device is not attached to this client");
   }
@@ -915,7 +924,7 @@ absl::StatusOr<std::unique_ptr<PjRtBuffer>> TfrtCpuClient::CreateErrorBuffer(
 }
 
 absl::StatusOr<std::unique_ptr<PjRtBuffer>> TfrtCpuClient::CreateErrorBuffer(
-    Status error, const Shape& shape, PjRtMemorySpace* memory) {
+    absl::Status error, const Shape& shape, PjRtMemorySpace* memory) {
   return CreateErrorBuffer(std::move(error), shape, memory->devices()[0]);
 }
 
@@ -1166,11 +1175,11 @@ absl::StatusOr<std::optional<std::string>> TfrtCpuExecutable::Fingerprint()
   return std::optional<std::string>();
 }
 
-Status TfrtCpuExecutable::SetUpDonation(bool tuple_inputs) {
+absl::Status TfrtCpuExecutable::SetUpDonation(bool tuple_inputs) {
   TF_ASSIGN_OR_RETURN(parameters_that_must_be_donated_,
                       ComputeParametersThatMustBeDonated(
                           *cpu_executable_->shared_module(), tuple_inputs));
-  return OkStatus();
+  return absl::OkStatus();
 }
 
 namespace {
@@ -1306,7 +1315,7 @@ static absl::InlinedVector<BufferInfo, 4> CreateResultBufferInfo(
   return output_buffer_info;
 }
 
-Status TfrtCpuExecutable::CheckBufferCompatibilities(
+absl::Status TfrtCpuExecutable::CheckBufferCompatibilities(
     absl::Span<std::pair<bool, TrackedTfrtCpuDeviceBuffer*> const>
         input_buffers) const {
   if (input_buffers.size() != input_buffer_sizes_in_bytes_.size()) {
@@ -1324,7 +1333,7 @@ Status TfrtCpuExecutable::CheckBufferCompatibilities(
           i, input_buffer_sizes_in_bytes_[i], buffer->BufferSizes()[0]);
     }
   }
-  return OkStatus();
+  return absl::OkStatus();
 }
 
 absl::StatusOr<PjRtLoadedExecutable::Result> TfrtCpuExecutable::ExecuteHelper(
@@ -1404,7 +1413,7 @@ absl::StatusOr<PjRtLoadedExecutable::Result> TfrtCpuExecutable::ExecuteHelper(
     }
 
     TrackedTfrtCpuDeviceBuffer* tracked_buffer;
-    auto get_buffer = [&](int i) -> Status {
+    auto get_buffer = [&](int i) -> absl::Status {
       bool must_donate = donate_it != parameters_that_must_be_donated_.end() &&
                          *donate_it == i;
       TF_RETURN_IF_ERROR(TestBufferDonationClashes(
@@ -1431,7 +1440,7 @@ absl::StatusOr<PjRtLoadedExecutable::Result> TfrtCpuExecutable::ExecuteHelper(
           tracked_buffer = donation_transaction->device_buffer();
           tracked_buffers.emplace_back(/*can_donate=*/true, tracked_buffer);
           donation_transactions.push_back(std::move(*donation_transaction));
-          return OkStatus();
+          return absl::OkStatus();
         }
       }
       tracked_buffer = tfrt_buffer->AcquireUsage(execute_event);
@@ -1439,7 +1448,7 @@ absl::StatusOr<PjRtLoadedExecutable::Result> TfrtCpuExecutable::ExecuteHelper(
         return InvalidArgument(
             "Invalid buffer passed: buffer has been deleted or donated.");
       tracked_buffers.emplace_back(/*can_donate=*/false, tracked_buffer);
-      return OkStatus();
+      return absl::OkStatus();
     };
     TF_RETURN_IF_ERROR(get_buffer(i));
 
@@ -1526,6 +1535,9 @@ absl::StatusOr<PjRtLoadedExecutable::Result> TfrtCpuExecutable::ExecuteHelper(
       input_deps.push_back(std::move(last_enqueue_event));
     }
   }
+  if (options.context != nullptr) {
+    run_options.set_ffi_execution_context(&options.context->ffi_context());
+  }
 
   bool execute_inline = cheap_computation_ || !client_->asynchronous_;
 
@@ -1538,7 +1550,7 @@ absl::StatusOr<PjRtLoadedExecutable::Result> TfrtCpuExecutable::ExecuteHelper(
   }
 
   if (input_deps.empty() && execute_inline) {
-    // Synchronously call generated function.
+    // Synchronously call generated function or thunk sequence.
 
     // Set denormal and rounding behavior to match the default TF
     // ThreadPool behavior.
@@ -1561,10 +1573,29 @@ absl::StatusOr<PjRtLoadedExecutable::Result> TfrtCpuExecutable::ExecuteHelper(
     }
     void* result_buffer = buffer_pointers[result_buffer_index_];
 
-    // Call generated function.
-    cpu_executable->compute_function()(result_buffer, &run_options, nullptr,
-                                       buffer_pointers.data(), &status,
-                                       nullptr);
+    if (cpu_executable->has_compute_function()) {
+      // Call jit-compiled function implementing XLA executable.
+      cpu_executable->compute_function()(result_buffer, &run_options, nullptr,
+                                         buffer_pointers.data(), &status,
+                                         nullptr);
+
+    } else if (cpu_executable->has_thunks()) {
+      // Call interpreted thunk sequence implementing XLA executable.
+      absl::InlinedVector<MaybeOwningDeviceMemory, 8> buffer_device_mem;
+      buffer_device_mem.reserve(buffer_table.size());
+      for (const auto& buffer_info : buffer_table) {
+        buffer_device_mem.emplace_back(se::DeviceMemoryBase(
+            buffer_info.buffer->data(), buffer_info.buffer->size()));
+      }
+
+      cpu::BufferAllocations allocations(buffer_device_mem);
+      cpu::Thunk::ExecuteParams execute_params = {
+          &cpu_executable->host_kernels(), &allocations};
+      TF_RETURN_IF_ERROR(cpu_executable->thunks().Execute(execute_params));
+
+    } else {
+      return Internal("CpuExecutable has no compute function or thunks.");
+    }
 
     for (auto& donation_transaction : donation_transactions) {
       std::move(donation_transaction).Commit();
@@ -1641,22 +1672,47 @@ absl::StatusOr<PjRtLoadedExecutable::Result> TfrtCpuExecutable::ExecuteHelper(
           }
           void* result_buffer = buffer_pointers[result_buffer_index];
 
-          // Call generated function.
-          std::optional<absl::string_view> error_message;
-          XlaCustomCallStatus status;
-          cpu_executable->compute_function()(result_buffer, &run_options,
-                                             nullptr, buffer_pointers.data(),
-                                             &status, nullptr);
-          error_message = xla::CustomCallStatusGetMessage(&status);
+          absl::Status status;
+
+          if (cpu_executable->has_compute_function()) {
+            // Call jit-compiled function implementing XLA executable.
+            XlaCustomCallStatus compute_function_status;
+
+            cpu_executable->compute_function()(
+                result_buffer, &run_options, nullptr, buffer_pointers.data(),
+                &compute_function_status, nullptr);
+            if (auto error_message =
+                    xla::CustomCallStatusGetMessage(&compute_function_status)) {
+              status =
+                  Internal("Generated function failed: %s", *error_message);
+            }
+
+          } else if (cpu_executable->has_thunks()) {
+            // Call interpreted thunk sequence implementing XLA executable.
+            absl::InlinedVector<MaybeOwningDeviceMemory, 8> buffer_device_mem;
+            buffer_device_mem.reserve(buffer_table.size());
+            for (const auto& buffer_info : buffer_table) {
+              buffer_device_mem.emplace_back(se::DeviceMemoryBase(
+                  buffer_info.buffer->data(), buffer_info.buffer->size()));
+            }
+
+            cpu::BufferAllocations allocations(buffer_device_mem);
+            cpu::Thunk::ExecuteParams execute_params = {
+                &cpu_executable->host_kernels(), &allocations};
+            status = cpu_executable->thunks().Execute(execute_params);
+
+          } else {
+            status =
+                Internal("CpuExecutable has no compute function or thunks.");
+          }
 
           for (auto& donation_transaction : donation_transactions) {
             std::move(donation_transaction).Commit();
           }
 
-          if (error_message) {
+          if (!status.ok()) {
             // CPU computation fails with an error.
-            execute_event.SetError(absl::StrFormat(
-                "Generated function failed: %s", *error_message));
+            execute_event.SetError(std::move(status));
             return;
           }
 
@@ -1830,7 +1886,7 @@ TfrtCpuExecutable::Execute(
     absl::Mutex mu;
     int running = num_addressable_devices;
     int failed = 0;
-    Status first_failure_status;
+    absl::Status first_failure_status;
 
     for (int i = 0; i < num_addressable_devices; ++i) {
       const int replica = addressable_device_logical_ids_[i].replica;

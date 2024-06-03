@@ -19,6 +19,7 @@ limitations under the License.
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <limits>  // IWYU pragma: keep
 #include <numeric>
 #include <optional>
 #include <ostream>
@@ -44,6 +45,17 @@ limitations under the License.
 #include "xla/service/gpu/model/affine_map_printer.h"
 #include "tsl/platform/logging.h"  // IWYU pragma: keep
 
+#ifdef __has_builtin
+#define XLA_GPU_MODEL_HAS_BUILTIN(x) __has_builtin(x)
+#else
+#define XLA_GPU_MODEL_HAS_BUILTIN(x) 0
+#endif
+
+#if !XLA_GPU_MODEL_HAS_BUILTIN(__builtin_add_overflow) || \
+    !XLA_GPU_MODEL_HAS_BUILTIN(__builtin_mul_overflow)
+#include "absl/numeric/int128.h"
+#endif
+
 namespace xla {
 namespace gpu {
 namespace {
@@ -63,6 +75,13 @@ using mlir::getAffineConstantExpr;
 using mlir::getAffineDimExpr;
 using mlir::MLIRContext;
 
+AffineExpr GetLhs(AffineExpr e) {
+  return mlir::cast<AffineBinaryOpExpr>(e).getLHS();
+};
+AffineExpr GetRhs(AffineExpr e) {
+  return mlir::cast<AffineBinaryOpExpr>(e).getRHS();
+};
+
 class AffineExprSimplifier {
  public:
   explicit AffineExprSimplifier(RangeEvaluator* range_evaluator)
@@ -76,6 +95,13 @@ class AffineExprSimplifier {
  private:
   std::optional<int64_t> GetConstantRhs(mlir::AffineExpr expr,
                                         AffineExprKind kind);
+  std::pair<mlir::AffineExpr, int64_t> ExtractMultiplier(
+      mlir::AffineExpr expr) {
+    if (auto mul = GetConstantRhs(expr, AffineExprKind::Mul)) {
+      return {GetLhs(expr), *mul};
+    }
+    return {expr, 1};
+  }
 
   // Simplifier for mod.
   // - Rewrites (a * 100 + ...) % 100 to (...) % 100
@@ -87,12 +113,13 @@ class AffineExprSimplifier {
   // - Rewrites a / 100 to 0 when a is known to be less than 100.
   mlir::AffineExpr RewriteFloorDiv(mlir::AffineBinaryOpExpr div);
 
-  mlir::AffineExpr RewriteSum(
-      mlir::AffineExpr expr,
-      const std::function<mlir::AffineExpr(mlir::AffineExpr)>& map);
-
-  mlir::AffineExpr RewriteSumIf(
+  // Removes summands from arbitrarily nested sums (e.g, ((a+b)+c)) if `pred`
+  // returns true. In this example, `pred` is evaluated on `a`, `b` and `c`, not
+  // on `a+b`.
+  mlir::AffineExpr RemoveSummands(
       mlir::AffineExpr expr, const std::function<bool(mlir::AffineExpr)>& pred);
+  void VisitSummands(mlir::AffineExpr expr,
+                     const std::function<void(mlir::AffineExpr)>& visit);
 
   // Attempts to simplify the expression, but doesn't attempt to simplify the
   // result further.
@@ -143,50 +170,51 @@ AffineExpr AffineExprSimplifier::RewriteMod(AffineBinaryOpExpr mod) {
   // = (c % b) * a
   if (auto mul = GetConstantRhs(lhs_simplified, AffineExprKind::Mul);
       mul && (m % *mul == 0)) {
-    return (mlir::cast<AffineBinaryOpExpr>(lhs_simplified).getLHS() %
-            (m / *mul)) *
-           *mul;
+    return (GetLhs(lhs_simplified) % (m / *mul)) * *mul;
   }
 
-  Interval no_multiplier_range{0, 0};
-  int64_t multiplier_gcd = -1;
-
   int64_t extracted_constant = 0;
-  auto new_lhs = RewriteSumIf(lhs_simplified, [&](AffineExpr expr) {
+  auto new_lhs = RemoveSummands(lhs_simplified, [&](AffineExpr expr) {
     if (auto cst = mlir::dyn_cast<AffineConstantExpr>(expr);
         cst && cst.getValue() >= m) {
       extracted_constant += cst.getValue();
-      return false;
+      return true;
     }
     if (auto multiplier = GetConstantRhs(expr, AffineExprKind::Mul)) {
       if (*multiplier % m == 0) {
-        return false;
+        return true;
       }
+    }
+    return false;
+  });
+  new_lhs = new_lhs + (extracted_constant % m);
 
+  Interval no_multiplier_range{0, 0};
+  int64_t multiplier_gcd = -1;
+  VisitSummands(new_lhs, [&](AffineExpr expr) {
+    if (auto multiplier = GetConstantRhs(expr, AffineExprKind::Mul)) {
       if (multiplier_gcd == -1) {
         multiplier_gcd = *multiplier;
       } else {
         multiplier_gcd = std::gcd(multiplier_gcd, *multiplier);
       }
-      return true;
+    } else {
+      auto range = range_evaluator_->ComputeExpressionRange(expr);
+      no_multiplier_range.lower += range.lower;
+      no_multiplier_range.upper += range.upper;
     }
-    auto range = range_evaluator_->ComputeExpressionRange(expr);
-    no_multiplier_range.lower += range.lower;
-    no_multiplier_range.upper += range.upper;
-    return true;
   });
-  new_lhs = new_lhs + (extracted_constant % m);
 
   mlir::AffineExpr extracted = getAffineConstantExpr(0, mod.getContext());
   if (m % multiplier_gcd == 0 && no_multiplier_range.lower >= 0 &&
       no_multiplier_range.upper < multiplier_gcd) {
     // Remove everything that doesn't have a multiplier.
-    new_lhs = RewriteSumIf(new_lhs, [&](AffineExpr expr) {
+    new_lhs = RemoveSummands(new_lhs, [&](AffineExpr expr) {
       if (GetConstantRhs(expr, AffineExprKind::Mul)) {
-        return true;
+        return false;
       }
       extracted = extracted + expr;
-      return false;
+      return true;
     });
   }
   return new_lhs % mod.getRHS() + extracted;
@@ -216,8 +244,7 @@ AffineExpr AffineExprSimplifier::RewriteFloorDiv(AffineBinaryOpExpr div) {
   // = (c // a) % b                          contract mod
   if (auto mod = GetConstantRhs(lhs_simplified, AffineExprKind::Mod);
       mod && (*mod % d == 0)) {
-    return mlir::cast<AffineBinaryOpExpr>(lhs_simplified).getLHS().floorDiv(d) %
-           (*mod / d);
+    return GetLhs(lhs_simplified).floorDiv(d) % (*mod / d);
   }
 
   // If the dividend's range has a single element, return its value.
@@ -241,40 +268,21 @@ AffineExpr AffineExprSimplifier::RewriteFloorDiv(AffineBinaryOpExpr div) {
   }
 
   Interval no_multiplier_range{0, 0};
-  int64_t multiplier_gcd = -1;
-  // The maximum GCD of any remaining multiplier inside the div and the divisor.
-  int64_t max_remaining_multiplier_gcd = -1;
   AffineExpr zero = getAffineConstantExpr(0, mlir_context);
   AffineExpr extracted = zero;
-  auto new_dividend = RewriteSumIf(lhs_simplified, [&](AffineExpr expr) {
+  auto new_dividend = RemoveSummands(lhs_simplified, [&](AffineExpr expr) {
     if (auto multiplier = GetConstantRhs(expr, AffineExprKind::Mul)) {
       // (x * 7 + ...) / 3 -> can't extract. We could extract x * 2 and keep
       // one x, but we currently have no reason to do that.
-
       if (*multiplier % d == 0) {
         int64_t factor = *multiplier / d;
-        extracted =
-            extracted + mlir::cast<AffineBinaryOpExpr>(expr).getLHS() * factor;
+        extracted = extracted + GetLhs(expr) * factor;
         // Remove from dividend.
-        return false;
-      }
-
-      if (*multiplier > 0) {
-        if (multiplier_gcd == -1) {
-          multiplier_gcd = *multiplier;
-        } else {
-          multiplier_gcd = std::gcd(multiplier_gcd, *multiplier);
-        }
-        max_remaining_multiplier_gcd =
-            std::max(max_remaining_multiplier_gcd, std::gcd(*multiplier, d));
         return true;
       }
     }
-    auto range = range_evaluator_->ComputeExpressionRange(expr);
-    no_multiplier_range.lower += range.lower;
-    no_multiplier_range.upper += range.upper;
     // Not a constant multiplier, keep in dividend.
-    return true;
+    return false;
   });
 
   // If we removed everything, skip the div.
@@ -282,13 +290,32 @@ AffineExpr AffineExprSimplifier::RewriteFloorDiv(AffineBinaryOpExpr div) {
     return extracted;
   }
 
+  int64_t multiplier_gcd = -1;
+  // The maximum GCD of any remaining multiplier inside the div and the divisor.
+  int64_t max_remaining_multiplier_gcd = -1;
+  VisitSummands(new_dividend, [&](AffineExpr summand) {
+    if (auto multiplier = GetConstantRhs(summand, AffineExprKind::Mul)) {
+      if (multiplier_gcd == -1) {
+        multiplier_gcd = *multiplier;
+      } else {
+        multiplier_gcd = std::gcd(multiplier_gcd, *multiplier);
+      }
+      max_remaining_multiplier_gcd =
+          std::max(max_remaining_multiplier_gcd, std::gcd(*multiplier, d));
+    } else {
+      auto range = range_evaluator_->ComputeExpressionRange(summand);
+      no_multiplier_range.lower += range.lower;
+      no_multiplier_range.upper += range.upper;
+    }
+  });
+
   if ((d % multiplier_gcd) == 0) {
     if (no_multiplier_range.lower >= 0 &&
         no_multiplier_range.upper < multiplier_gcd) {
       // Remove everything that doesn't have a multiplier.
-      new_dividend = RewriteSumIf(new_dividend, [&](AffineExpr expr) {
+      new_dividend = RemoveSummands(new_dividend, [&](AffineExpr expr) {
         auto mult = GetConstantRhs(expr, AffineExprKind::Mul);
-        return mult.has_value();
+        return !mult.has_value();
       });
     }
   }
@@ -297,18 +324,17 @@ AffineExpr AffineExprSimplifier::RewriteFloorDiv(AffineBinaryOpExpr div) {
   // (x * 128 + y) // 192 -> (x * 2 + y // 64) // 3
   if (max_remaining_multiplier_gcd > 1) {
     AffineExpr partially_extracted = getAffineConstantExpr(0, mlir_context);
-    new_dividend = RewriteSumIf(new_dividend, [&](AffineExpr expr) {
+    new_dividend = RemoveSummands(new_dividend, [&](AffineExpr expr) {
       if (auto multiplier = GetConstantRhs(expr, AffineExprKind::Mul);
           multiplier && (*multiplier > 0) &&
           ((*multiplier % max_remaining_multiplier_gcd) == 0)) {
-        auto expr_lhs = mlir::cast<AffineBinaryOpExpr>(expr).getLHS();
         partially_extracted =
             partially_extracted +
-            expr_lhs * (*multiplier / max_remaining_multiplier_gcd);
+            GetLhs(expr) * (*multiplier / max_remaining_multiplier_gcd);
         // Remove from dividend.
-        return false;
+        return true;
       }
-      return true;
+      return false;
     });
     return extracted + (partially_extracted +
                         new_dividend.floorDiv(max_remaining_multiplier_gcd))
@@ -337,27 +363,28 @@ std::optional<int64_t> AffineExprSimplifier::GetConstantRhs(
   return bound.lower;
 }
 
-AffineExpr AffineExprSimplifier::RewriteSum(
-    AffineExpr expr, const std::function<AffineExpr(AffineExpr)>& map) {
-  if (expr.getKind() == AffineExprKind::Add) {
-    auto add = mlir::dyn_cast<AffineBinaryOpExpr>(expr);
-    return RewriteSum(add.getLHS(), map) + RewriteSum(add.getRHS(), map);
-  }
-  return map(expr);
-}
-
-AffineExpr AffineExprSimplifier::RewriteSumIf(
+AffineExpr AffineExprSimplifier::RemoveSummands(
     AffineExpr expr, const std::function<bool(AffineExpr)>& pred) {
   if (expr.getKind() == AffineExprKind::Add) {
     auto add = mlir::dyn_cast<AffineBinaryOpExpr>(expr);
-    auto lhs = RewriteSumIf(add.getLHS(), pred);
-    auto rhs = RewriteSumIf(add.getRHS(), pred);
+    auto lhs = RemoveSummands(add.getLHS(), pred);
+    auto rhs = RemoveSummands(add.getRHS(), pred);
     if (lhs == add.getLHS() && rhs == add.getRHS()) {
       return add;
     }
     return lhs + rhs;
   }
-  return pred(expr) ? expr : mlir::getAffineConstantExpr(0, expr.getContext());
+  return pred(expr) ? mlir::getAffineConstantExpr(0, expr.getContext()) : expr;
+}
+
+void AffineExprSimplifier::VisitSummands(
+    mlir::AffineExpr expr, const std::function<void(mlir::AffineExpr)>& visit) {
+  if (expr.getKind() == AffineExprKind::Add) {
+    VisitSummands(GetLhs(expr), visit);
+    VisitSummands(GetRhs(expr), visit);
+  } else {
+    visit(expr);
+  }
 }
 
 // Compares the two expression by their AST. The ordering is arbitrary but
@@ -382,13 +409,11 @@ int CompareExprs(AffineExpr a, AffineExpr b) {
     case AffineExprKind::CeilDiv:
     case AffineExprKind::Mul:
     case AffineExprKind::Mod: {
-      auto a_bin = mlir::cast<AffineBinaryOpExpr>(a);
-      auto b_bin = mlir::cast<AffineBinaryOpExpr>(b);
-      auto lhs = CompareExprs(a_bin.getLHS(), b_bin.getLHS());
+      auto lhs = CompareExprs(GetLhs(a), GetLhs(b));
       if (lhs != 0) {
         return lhs;
       }
-      return CompareExprs(a_bin.getRHS(), b_bin.getRHS());
+      return CompareExprs(GetRhs(a), GetRhs(b));
     }
     case AffineExprKind::Constant: {
       a_value = mlir::cast<AffineConstantExpr>(a).getValue();
@@ -426,42 +451,83 @@ AffineExpr CanonicalizeOrder(AffineExpr in) {
 AffineExpr AffineExprSimplifier::SimplifyOnce(AffineExpr expr) {
   switch (expr.getKind()) {
     case AffineExprKind::Mul: {
-      auto binop = mlir::cast<AffineBinaryOpExpr>(expr);
-      auto lhs = SimplifyOnce(binop.getLHS());
-      auto rhs = SimplifyOnce(binop.getRHS());
+      auto lhs = SimplifyOnce(GetLhs(expr));
+      auto rhs = SimplifyOnce(GetRhs(expr));
       return getAffineBinaryOpExpr(expr.getKind(), lhs, rhs);
     }
     case AffineExprKind::Add: {
-      auto binop = mlir::cast<AffineBinaryOpExpr>(expr);
-      auto lhs = SimplifyOnce(binop.getLHS());
-      auto rhs = SimplifyOnce(binop.getRHS());
-
-      // Rewrite `(x // c) * c + (x % c)` to `x`.
-      // This should also work with (a+b)+c.
-      auto rewrite_add = [&](AffineExpr a, AffineExpr b) -> AffineExpr {
-        if (auto mod = GetConstantRhs(a, AffineExprKind::Mod)) {
-          if (auto mul = GetConstantRhs(b, AffineExprKind::Mul); mod == mul) {
-            auto b_lhs = mlir::cast<AffineBinaryOpExpr>(b).getLHS();
-            if (auto div = GetConstantRhs(b_lhs, AffineExprKind::FloorDiv);
-                div == mul) {
-              auto x = mlir::cast<AffineBinaryOpExpr>(b_lhs).getLHS();
-              if (x == mlir::cast<AffineBinaryOpExpr>(a).getLHS()) {
-                return x;
-              }
-            }
-          }
+      // Rewrite `(x % c) * d + (x // c) * (c * d)` to `x * d`. We have to do it
+      // in this rather convoluted way because the MLIR simplifier sinks
+      // multiplications into summands.
+      SmallVector<std::pair<AffineExpr, int64_t /*multiplier*/>> mods;
+      SmallVector<std::pair<AffineExpr, int64_t /*multiplier*/>> divs;
+      SmallVector<AffineExpr> others;
+      bool changed = false;
+      VisitSummands(expr, [&](AffineExpr expr) {
+        AffineExpr simplified = SimplifyOnce(expr);
+        changed |= simplified != expr;
+        auto [lhs, multiplier] = ExtractMultiplier(simplified);
+        if (lhs.getKind() == AffineExprKind::Mod) {
+          mods.push_back({lhs, multiplier});
+        } else if (lhs.getKind() == AffineExprKind::FloorDiv) {
+          divs.push_back({lhs, multiplier});
+        } else {
+          others.push_back(simplified);
         }
-        return nullptr;
-      };
+      });
 
-      if (auto rewritten = rewrite_add(lhs, rhs)) {
-        return rewritten;
-      }
-      if (auto rewritten = rewrite_add(rhs, lhs)) {
-        return rewritten;
+      // We never see large sums in practice, so there's no point building a
+      // hash map.
+      if (mods.size() * divs.size() >= 100) {
+        std::string s;
+        llvm::raw_string_ostream ss(s);
+        ss << expr;
+        LOG(WARNING) << "Unexpectedly large number of mods and divs in " << s
+                     << ". Please open an issue on GitHub at "
+                     << "https://github.com/openxla/xla.";
       }
 
-      return getAffineBinaryOpExpr(expr.getKind(), lhs, rhs);
+      for (int mod_i = 0; mod_i < mods.size(); ++mod_i) {
+        auto [mod, mod_mul] = mods[mod_i];
+        auto mod_c = GetConstantRhs(mod, AffineExprKind::Mod);
+        if (!mod_c) continue;
+
+        for (int div_i = 0; div_i < divs.size(); ++div_i) {
+          auto [div, div_mul] = divs[div_i];
+          if (!div) continue;  // Already erased.
+          if (GetLhs(mod) != GetLhs(div)) continue;
+
+          auto div_c = GetConstantRhs(div, AffineExprKind::FloorDiv);
+          if (div_mul % mod_mul) continue;
+          if (mod_c != div_c || (div_mul / mod_mul) != mod_c) continue;
+
+          others.push_back(GetLhs(mod) * mod_mul);
+          divs[div_i].first = nullptr;
+          mods[mod_i].first = nullptr;
+          changed = true;
+          break;
+        }
+      }
+
+      if (!changed) {
+        return expr;
+      }
+
+      AffineExpr result = mlir::getAffineConstantExpr(0, expr.getContext());
+      for (auto expr : others) {
+        result = result + expr;
+      }
+      for (auto [expr, mul] : mods) {
+        if (expr) {
+          result = result + (expr * mul);
+        }
+      }
+      for (auto [expr, mul] : divs) {
+        if (expr) {
+          result = result + (expr * mul);
+        }
+      }
+      return result;
     }
     case AffineExprKind::Mod:
       return RewriteMod(mlir::cast<AffineBinaryOpExpr>(expr));
@@ -684,6 +750,11 @@ SmallVector<AffineExpr, 4> MapSymbolsToComposedSymbolsList(
 
 }  // namespace
 
+// Returns the output-to-input indexing map of the first output of `instr`
+IndexingMap GetIndexingMapForInstruction(const HloInstruction* instr,
+                                         int64_t operand_idx,
+                                         mlir::MLIRContext* mlir_context);
+
 int64_t FloorDiv(int64_t dividend, int64_t divisor) {
   return dividend / divisor -
          (((dividend >= 0) != (divisor >= 0) && dividend % divisor) ? 1 : 0);
@@ -704,26 +775,124 @@ void Interval::Print(std::ostream& out) const {
   out << '[' << lower << ", " << upper << "]";
 }
 
+Interval::ComparisonResult Interval::operator>(const Interval& b) const {
+  if (NumElements() == 0 || b.NumElements() == 0) {
+    return {std::nullopt};
+  }
+  if (lower > b.upper) {
+    return {true};
+  }
+  if (upper <= b.lower) {
+    return {false};
+  }
+  return {std::nullopt};
+}
+
+Interval::ComparisonResult Interval::operator==(const Interval& b) const {
+  Interval intersection = Intersect(b);
+  if (intersection.NumElements() == 0) return {false};
+  if (intersection.IsPoint() && IsPoint() && b.IsPoint()) {
+    return {true};
+  }
+  return {std::nullopt};
+}
+
+Interval Interval::operator+(const Interval& rhs) const {
+  int64_t out_lower;
+  int64_t out_upper;
+
+  constexpr int64_t kMin = std::numeric_limits<int64_t>::min();
+  constexpr int64_t kMax = std::numeric_limits<int64_t>::max();
+
+  auto add_overflow = [](int64_t a, int64_t b, int64_t* out) {
+#if XLA_GPU_MODEL_HAS_BUILTIN(__builtin_add_overflow)
+    return __builtin_add_overflow(a, b, out);
+#else
+    auto sum = static_cast<absl::int128>(a) + static_cast<absl::int128>(b);
+    bool overflow = sum < kMin || sum > kMax;
+    *out = static_cast<int64_t>(sum);
+    return overflow;
+#endif
+  };
+
+  bool lower_overflow = add_overflow(lower, rhs.lower, &out_lower);
+  bool upper_overflow = add_overflow(upper, rhs.upper, &out_upper);
+
+  if (lower_overflow || lower == kMin || rhs.lower == kMin) {
+    if (lower < 0 || rhs.lower < 0) {
+      out_lower = kMin;
+    } else {
+      out_lower = kMax;
+      out_upper = kMax;
+    }
+  }
+
+  if (upper_overflow || upper == kMax || rhs.upper == kMax) {
+    if (upper > 0 || rhs.upper > 0) {
+      out_upper = kMax;
+    } else {
+      out_upper = kMin;
+      out_lower = kMin;
+    }
+  }
+
+  return {out_lower, out_upper};
+}
+
+Interval Interval::operator*(const Interval& rhs) const {
+  constexpr int64_t kMin = std::numeric_limits<int64_t>::min();
+  constexpr int64_t kMax = std::numeric_limits<int64_t>::max();
+
+  auto mul_overflow = [](int64_t a, int64_t b, int64_t* out) {
+#if XLA_GPU_MODEL_HAS_BUILTIN(__builtin_mul_overflow)
+    return __builtin_mul_overflow(a, b, out);
+#else
+    auto sum = static_cast<absl::int128>(a) * static_cast<absl::int128>(b);
+    auto overflow = sum < kMin || sum > kMax;
+    *out = static_cast<int64_t>(sum);
+    return overflow;
+#endif
+  };
+
+  auto mul = [&](int64_t p) {
+    int64_t l = lower;
+    int64_t u = upper;
+    if (p < 0) {
+      std::swap(l, u);
+    }
+    int64_t out_lower;
+    int64_t out_upper;
+    if (mul_overflow(l, p, &out_lower) ||
+        // -1 * max is min + 1, and doesn't overflow. We consider max a
+        // special sentinel value, so the result should be min (= saturated).
+        (p == -1 && l == kMax)) {
+      out_lower = kMin;
+    }
+    if (mul_overflow(u, p, &out_upper)) {
+      out_upper = kMax;
+    }
+    return Interval{out_lower, out_upper};
+  };
+
+  return mul(rhs.lower).Union(mul(rhs.upper));
+}
+
 std::ostream& operator<<(std::ostream& out, const Interval& range) {
   range.Print(out);
   return out;
 }
 
-bool operator==(const Interval& lhs, const Interval& rhs) {
-  return lhs.lower == rhs.lower && lhs.upper == rhs.upper;
-}
-
 bool operator==(const DimVar& lhs, const DimVar& rhs) {
-  return lhs.bounds == rhs.bounds;
+  return lhs.bounds.Equals(rhs.bounds);
 }
 
 bool operator==(const RangeVar& lhs, const RangeVar& rhs) {
-  return lhs.range == rhs.range;
+  return lhs.range.Equals(rhs.range);
 }
 
 bool operator==(const RTVar& lhs, const RTVar& rhs) {
-  return lhs.feasible_values == rhs.feasible_values && lhs.hlo == rhs.hlo &&
-         lhs.map == rhs.map;
+  return lhs.feasible_values.Equals(rhs.feasible_values) &&
+         lhs.hlo == rhs.hlo && lhs.map == rhs.map;
 }
 
 std::vector<DimVar> DimVarsFromTensorSizes(
@@ -744,6 +913,38 @@ std::vector<RangeVar> RangeVarsFromTensorSizes(
     ranges.push_back({Interval{0, size - 1}});
   }
   return ranges;
+}
+
+IndexingMap::IndexingMap(
+    AffineMap affine_map, std::vector<DimVar> dimensions,
+    std::vector<RangeVar> range_vars, std::vector<RTVar> rt_vars,
+    absl::Span<std::pair<AffineExpr, Interval>> constraints)
+    : affine_map_(affine_map),
+      dim_vars_(std::move(dimensions)),
+      range_vars_(std::move(range_vars)),
+      rt_vars_(std::move(rt_vars)) {
+  if (!VerifyVariableIntervals()) {
+    ResetToKnownEmpty();
+    return;
+  }
+  for (const auto& [expr, range] : constraints) {
+    AddConstraint(expr, range);
+  }
+}
+
+IndexingMap::IndexingMap(
+    AffineMap affine_map, std::vector<DimVar> dimensions,
+    std::vector<RangeVar> range_vars, std::vector<RTVar> rt_vars,
+    const llvm::DenseMap<AffineExpr, Interval>& constraints)
+    : affine_map_(affine_map),
+      dim_vars_(std::move(dimensions)),
+      range_vars_(std::move(range_vars)),
+      rt_vars_(std::move(rt_vars)),
+      constraints_(constraints) {
+  if (!VerifyVariableIntervals() || !VerifyConstraintIntervals()) {
+    ResetToKnownEmpty();
+    return;
+  }
 }
 
 IndexingMap IndexingMap::FromTensorSizes(
@@ -807,21 +1008,32 @@ std::vector<Interval> IndexingMap::GetSymbolBounds() const {
 }
 
 void IndexingMap::AddConstraint(mlir::AffineExpr expr, Interval range) {
+  // Do not add the constraint if the domain is already empty.
+  if (IsKnownEmpty()) {
+    return;
+  }
+  // If the range is empty, reset the indexing map to the canonical empty form.
+  if (!range.IsFeasible()) {
+    ResetToKnownEmpty();
+    return;
+  }
   if (auto dim_expr = mlir::dyn_cast<AffineDimExpr>(expr)) {
     Interval& current_range = GetMutableDimensionBound(dim_expr.getPosition());
-    current_range = Intersect(current_range, range);
+    current_range = current_range.Intersect(range);
+    if (!current_range.IsFeasible()) ResetToKnownEmpty();
     return;
   }
   if (auto symbol_expr = mlir::dyn_cast<AffineSymbolExpr>(expr)) {
     Interval& current_range = GetMutableSymbolBound(symbol_expr.getPosition());
-    current_range = Intersect(current_range, range);
+    current_range = current_range.Intersect(range);
+    if (!current_range.IsFeasible()) ResetToKnownEmpty();
     return;
   }
   if (auto constant_expr = mlir::dyn_cast<AffineConstantExpr>(expr)) {
-    if (constant_expr.getValue() >= range.lower &&
-        constant_expr.getValue() <= range.upper) {
-      return;
+    if (!range.Contains(constant_expr.getValue())) {
+      ResetToKnownEmpty();
     }
+    return;
   }
   if (SimplifyConstraintRange(&expr, &range)) {
     AddConstraint(expr, range);
@@ -829,7 +1041,10 @@ void IndexingMap::AddConstraint(mlir::AffineExpr expr, Interval range) {
   }
   auto [it, inserted] = constraints_.insert({expr, range});
   if (!inserted) {
-    it->second = Intersect(it->second, range);
+    it->second = it->second.Intersect(range);
+    if (!it->second.IsFeasible()) {
+      ResetToKnownEmpty();
+    }
   }
 }
 
@@ -862,21 +1077,6 @@ SmallVector<int64_t, 4> IndexingMap::Evaluate(
       dim_const_exprs, symbol_const_exprs, dim_const_exprs.size(),
       symbol_const_exprs.size());
   return eval.getConstantResults();
-}
-
-bool IndexingMap::IsKnownEmpty() const {
-  return llvm::any_of(dim_vars_,
-                      [](const DimVar& dim_var) {
-                        return dim_var.bounds.lower > dim_var.bounds.upper;
-                      }) ||
-         llvm::any_of(range_vars_,
-                      [](const RangeVar& range_var) {
-                        return range_var.range.lower > range_var.range.upper;
-                      }) ||
-         llvm::any_of(constraints_,
-                      [&](const std::pair<AffineExpr, Interval>& item) {
-                        return item.second.lower > item.second.upper;
-                      });
 }
 
 RangeEvaluator::RangeEvaluator(absl::Span<const Interval> dim_ranges,
@@ -924,12 +1124,9 @@ Interval RangeEvaluator::ComputeExpressionRange(AffineExpr expr) {
       auto& result = expression_ranges_cache_[expr];
       switch (expr.getKind()) {
         case AffineExprKind::Add:
-          return result = {lhs.lower + rhs.lower, lhs.upper + rhs.upper};
-        case AffineExprKind::Mul: {
-          int64_t a = lhs.lower * rhs.lower;
-          int64_t b = lhs.upper * rhs.upper;
-          return result = {std::min(a, b), std::max(a, b)};
-        }
+          return result = lhs + rhs;
+        case AffineExprKind::Mul:
+          return result = lhs * rhs;
         case AffineExprKind::Mod: {
           CHECK(rhs.IsPoint()) << "RHS of mod must be a constant";
           int64_t m = rhs.lower;
@@ -975,6 +1172,10 @@ void PrintRTVars(const std::vector<RTVar>& rt_vars,
 
 void IndexingMap::Print(std::ostream& out,
                         const AffineMapPrinter& printer) const {
+  if (IsKnownEmpty()) {
+    out << "KNOWN EMPTY\n";
+    return;
+  }
   printer.Print(out, affine_map_);
   out << "\ndomain:\n";
   for (const auto& [index, dim_var] : llvm::enumerate(dim_vars_)) {
@@ -1039,10 +1240,10 @@ IndexingMap operator*(const IndexingMap& lhs, const IndexingMap& rhs) {
 // RangeEvaluator for every constraint. Note that we start with "expr"
 // simplification, because the ranges of constraints were already optimized once
 // when IndexingMap was constructed.
-bool IndexingMap::Simplify(IndexingMapProvider indexing_map_provider) {
-  if (IsUndefined()) return false;
+bool IndexingMap::Simplify() {
+  if (IsUndefined() || IsKnownEmpty()) return false;
 
-  bool rtvars_were_eliminated = ReplaceConstantRTVars(indexing_map_provider);
+  bool rtvars_were_eliminated = ReplaceConstantRTVars();
 
   // Simplify constraints to shrink the lower/upper bounds of dims and symbols.
   bool constraints_were_simplified = false;
@@ -1322,6 +1523,35 @@ SmallBitVector IndexingMap::RemoveUnusedDimensions() {
   return std::move(unused_vars.unused_dims);
 }
 
+void IndexingMap::ResetToKnownEmpty() {
+  affine_map_ = AffineMap::get(GetMLIRContext());
+  dim_vars_.clear();
+  range_vars_.clear();
+  rt_vars_.clear();
+  constraints_.clear();
+  is_known_empty_ = true;
+}
+
+bool IndexingMap::VerifyVariableIntervals() {
+  return llvm::all_of(dim_vars_,
+                      [](const DimVar& dim_var) {
+                        return dim_var.bounds.IsFeasible();
+                      }) &&
+         llvm::all_of(range_vars_,
+                      [](const RangeVar& range_var) {
+                        return range_var.range.IsFeasible();
+                      }) &&
+         llvm::all_of(rt_vars_, [](const RTVar& rt_var) {
+           return rt_var.feasible_values.IsFeasible();
+         });
+}
+
+bool IndexingMap::VerifyConstraintIntervals() {
+  return llvm::all_of(constraints_, [](const auto& constraint) {
+    return constraint.second.IsFeasible();
+  });
+}
+
 SmallBitVector IndexingMap::RemoveUnusedVars() {
   if (IsUndefined()) return {};
 
@@ -1402,6 +1632,10 @@ IndexingMap ComposeIndexingMaps(const IndexingMap& first,
   if (second.IsUndefined() || first.IsUndefined()) {
     return IndexingMap::GetUndefined();
   }
+  MLIRContext* mlir_context = first.GetMLIRContext();
+  if (first.IsKnownEmpty() || second.IsKnownEmpty()) {
+    return IndexingMap::GetKnownEmpty(mlir_context);
+  }
   AffineMap producer_affine_map = second.GetAffineMap();
   AffineMap composed_map = producer_affine_map.compose(first.GetAffineMap());
 
@@ -1441,9 +1675,9 @@ IndexingMap ComposeIndexingMaps(const IndexingMap& first,
     constraints.push_back(expr);
     constraints_ranges.push_back(range);
   }
-  auto constraints_map = AffineMap::get(
-      producer_affine_map.getNumDims(), producer_affine_map.getNumSymbols(),
-      constraints, producer_affine_map.getContext());
+  auto constraints_map = AffineMap::get(producer_affine_map.getNumDims(),
+                                        producer_affine_map.getNumSymbols(),
+                                        constraints, mlir_context);
   auto remapped_constraints =
       constraints_map.compose(first.GetAffineMap())
           .replaceDimsAndSymbols(/*dimReplacements=*/{}, symbol_replacements,
@@ -1548,9 +1782,8 @@ namespace {
 // `{()[sk] -> f(sk), rt_var_new }` - an affine expression that maps from the
 // old RTVar to the new RTVar, and the new RTVar itself. The new RTVar now
 // references some HLO subgraph of the old RTVar's HLO.
-RTVarOptimizationResult OptimizeRTVar(
-    RTVar rt_var, int64_t symbol_index, MLIRContext* mlir_context,
-    IndexingMap::IndexingMapProvider indexing_map_provider) {
+RTVarOptimizationResult OptimizeRTVar(RTVar rt_var, int64_t symbol_index,
+                                      MLIRContext* mlir_context) {
   const auto symbol = getAffineSymbolExpr(symbol_index, mlir_context);
   auto result_expr = symbol;
 
@@ -1585,7 +1818,7 @@ RTVarOptimizationResult OptimizeRTVar(
 
     if (is_indexing_transformation(rt_var.hlo)) {
       auto instr_indexing_map =
-          indexing_map_provider(rt_var.hlo, 0, mlir_context);
+          GetIndexingMapForInstruction(rt_var.hlo, 0, mlir_context);
 
       rt_var.hlo = rt_var.hlo->operand(0);
       rt_var.map = instr_indexing_map.GetAffineMap().compose(rt_var.map);
@@ -1620,7 +1853,7 @@ RTVarOptimizationResult OptimizeRTVar(
 
       auto lhs = OptimizeRTVar(
           RTVar{rt_var.feasible_values, rt_var.hlo->operand(0), rt_var.map},
-          symbol_index, mlir_context, indexing_map_provider);
+          symbol_index, mlir_context);
 
       if (!lhs.remapped_symbol.isFunctionOfSymbol(symbol_index)) {
         // This means that lhs is constant-like and we can eliminate the
@@ -1635,7 +1868,7 @@ RTVarOptimizationResult OptimizeRTVar(
 
       auto rhs = OptimizeRTVar(
           RTVar{rt_var.feasible_values, rt_var.hlo->operand(1), rt_var.map},
-          symbol_index, mlir_context, indexing_map_provider);
+          symbol_index, mlir_context);
 
       if (!rhs.remapped_symbol.isFunctionOfSymbol(symbol_index)) {
         // This means that rhs is constant-like and we can eliminate the
@@ -1655,8 +1888,7 @@ RTVarOptimizationResult OptimizeRTVar(
 }
 }  // namespace
 
-bool IndexingMap::ReplaceConstantRTVars(
-    IndexingMap::IndexingMapProvider indexing_map_provider) {
+bool IndexingMap::ReplaceConstantRTVars() {
   if (rt_vars_.empty()) return false;
 
   std::vector<size_t> to_delete;
@@ -1669,8 +1901,8 @@ bool IndexingMap::ReplaceConstantRTVars(
     auto symbol_index = range_vars_.size() + index;
     auto rt_var_symbol = getAffineSymbolExpr(symbol_index, GetMLIRContext());
 
-    RTVarOptimizationResult result = OptimizeRTVar(
-        rt_var, symbol_index, GetMLIRContext(), indexing_map_provider);
+    RTVarOptimizationResult result =
+        OptimizeRTVar(rt_var, symbol_index, GetMLIRContext());
 
     if (result.remapped_symbol != rt_var_symbol) {
       affine_map_ =

@@ -309,8 +309,20 @@ TEST_F(ReductionTest, NonPowerOfTwoRowReduction) {
       c = f64[] constant(0)
       ROOT fusion = f64[100] fusion(a, c), kind=kInput, calls=fused_computation
     })";
-  TF_ASSERT_OK(EmitAndCheckIR(kHloString, R"(
-    // CHECK: allocate_shared
+  TF_EXPECT_OK(EmitAndCheckIR(kHloString, R"(
+    // CHECK-DAG: #[[MAP1:.*]] = affine_map<(d0, d1)[s0] -> (d0 + s0 * 128 + (d1 mod 64) * 2)>
+    // CHECK-DAG: #[[MAP2:.*]] = affine_map<(d0, d1) -> ((d1 mod 64) * 2 + d0 + 512)>
+    // CHECK-DAG: %[[C0:.*]] = arith.constant 0 : index
+    // CHECK-DAG: %[[C1:.*]] = arith.constant 1 : index
+    // CHECK-DAG: %[[C2:.*]] = arith.constant 2 : index
+    // CHECK-DAG: %[[C4:.*]] = arith.constant 4 : index
+    // CHECK: %[[FULL_TILES:.*]] = scf.for %[[I:.*]] = %[[C0]] to %[[C4]] step %[[C1]]
+    // CHECK-NEXT: scf.for %[[J:.*]] = %[[C0]] to %[[C2]] step %[[C1]]
+    // CHECK-NOT: scf.if
+    // CHECK: xla_gpu.apply_indexing #[[MAP1]](%[[J]] in [0, 1], %thread_id_x in [0, 255])[%[[I]] in [0, 4]]
+    // CHECK: scf.for %[[J:.*]] = %[[C0]] to %[[C2]] step %[[C1]] iter_args(%{{.*}} = %[[FULL_TILES]])
+    // CHECK: scf.if
+    // CHECK: xla_gpu.apply_indexing #[[MAP2]](%[[J]] in [0, 1], %thread_id_x in [0, 255])
   )"));
   EXPECT_TRUE(RunAndCompareNoHloPasses(kHloString, ErrorSpec{1e-3}));
 }
@@ -403,6 +415,31 @@ TEST_F(ReductionTest, SideOutput) {
   EXPECT_TRUE(RunAndCompareNoHloPasses(kHloString, ErrorSpec{1e-3}));
 }
 
+TEST_F(ReductionTest, UnsignedSideOutput) {
+  constexpr auto kHloString = R"(
+    HloModule Test, is_scheduled=true
+
+    Add {
+      lhs = u32[] parameter(0)
+      rhs = u32[] parameter(1)
+      ROOT add = u32[] add(lhs, rhs)
+    }
+    fused_computation {
+      param_0 = u32[8,2048] parameter(0)
+      param_1 = u32[] parameter(1)
+      add = u32[8,2048] add(param_0, param_0)
+      reduce = u32[8] reduce(param_0, param_1), dimensions={1}, to_apply=Add
+      ROOT t = (u32[8], u32[8,2048]) tuple(reduce, add)
+    }
+    ENTRY main {
+      a = u32[8,2048] parameter(0)
+      c = u32[] constant(0)
+      ROOT fusion = (u32[8], u32[8,2048]) fusion(a, c), kind=kInput,
+          calls=fused_computation
+    })";
+  EXPECT_TRUE(RunAndCompareNoHloPasses(kHloString, ErrorSpec{1e-3}));
+}
+
 TEST_F(ReductionTest, BroadcastSideOutput) {
   constexpr auto kHloString = R"(
     %add {
@@ -459,6 +496,30 @@ TEST_F(ReductionTest, VariadicMOF) {
 
   TF_ASSERT_OK(EmitAndCheckIR(kHloString, R"(
     // CHECK: @fused_computation
+  )"));
+  EXPECT_TRUE(RunAndCompareNoHloPasses(kHloString, ErrorSpec{1e-3}));
+}
+
+TEST_F(ReductionTest, ColumnReductionVectorization) {
+  constexpr auto kHloString = R"(
+    HloModule Test, is_scheduled=true
+    Add {
+      lhs = f32[] parameter(0)
+      rhs = f32[] parameter(1)
+      ROOT add = f32[] add(lhs, rhs)
+    }
+    fused_computation {
+      param_0 = f32[2048,16384] parameter(0)
+      param_1 = f32[] parameter(1)
+      ROOT reduce = f32[16384] reduce(param_0, param_1), dimensions={0}, to_apply=Add
+    }
+    ENTRY main {
+      a = f32[2048,16384] parameter(0)
+      c = f32[] constant(0)
+      ROOT fusion = f32[16384] fusion(a, c), kind=kInput, calls=fused_computation
+    })";
+  TF_ASSERT_OK(EmitAndCheckIR(kHloString, R"(
+    // CHECK: vector<4xf32>
   )"));
   EXPECT_TRUE(RunAndCompareNoHloPasses(kHloString, ErrorSpec{1e-3}));
 }

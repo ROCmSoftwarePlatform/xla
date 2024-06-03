@@ -115,6 +115,7 @@ message DebugOptions {
   bool xla_cpu_use_mkl_dnn = 97;
 
   reserved 177;  // Was xla_cpu_use_xla_runtime
+  bool xla_cpu_use_thunk_runtime = 298;
 
   reserved 98;  // Was xla_gpu_max_kernel_unroll_factor
 
@@ -363,9 +364,9 @@ message DebugOptions {
   int32 xla_gpu_force_compilation_parallelism = 147;
   bool xla_gpu_enable_llvm_module_compilation_parallelism = 268;
 
-  // Guarantees run-to-run determinism. At present, the HLO ops Scatter and
-  // SelectAndScatter do not have deterministic XLA:GPU implementations.
-  // Compilation errors out if these ops are encountered.
+  // Guarantees run-to-run determinism.
+  // This flag implies --xla_gpu_exclude_nondeterministic_ops and in addition
+  // disables autotuning.
   bool xla_gpu_deterministic_ops = 148;
 
   // Paths to files with LLVM code.
@@ -424,6 +425,10 @@ message DebugOptions {
   // Inflate collective cost by running each collective multiple times.
   int32 xla_gpu_collective_inflation_factor = 205;
 
+  // Whether to force inline before llvm module split to get a more balanced
+  // splits for parallel compilation.
+  bool xla_llvm_force_inline_before_split = 300;
+
   // Whether to use the cuDNN frontend API for convolutions when possible.
   bool xla_gpu_enable_cudnn_frontend = 160;
 
@@ -479,7 +484,7 @@ message DebugOptions {
 
   // Commands are categorized into 5 types:
   // FUSION represents regular fusion kernels.
-  // CUBLAS, CUDNN, and COLLECTIVES represent library calls.
+  // CUBLAS/CUBLASLT, CUDNN, and COLLECTIVES represent library calls.
   // CONDITIONALS represents control flow.
   enum CommandBufferCmdType {
     INVALID = 0;
@@ -489,6 +494,7 @@ message DebugOptions {
     COLLECTIVES = 4;
     CONDITIONALS = 5;
     CUSTOM_CALL = 6;
+    CUBLASLT = 7;
   }
 
   // Determine the types of commands that are recorded into command buffers.
@@ -521,11 +527,7 @@ message DebugOptions {
 
   reserved 168;  // Was xla_gpu_simplify_all_fp_conversions.
 
-  // An experimental option to force all layouts present in the
-  // after-optimizations HLO to be descending, e.g.
-  // ShapeUtil::MakeShapeWithDescendingLayout is an identity on all
-  // instructions.
-  bool xla_gpu_normalize_layouts = 172;
+  reserved 172;  // Was xla_gpu_normalize_layouts.
 
   // Generate calls to Arm Compute Library in the CPU backend.
   bool xla_cpu_use_acl = 174;
@@ -768,7 +770,20 @@ message DebugOptions {
   // Base length to rewrite the reduce window to, no rewrite if set to 0.
   int64 xla_reduce_window_rewrite_base_length = 293;
 
-  // Next id: 296
+  // If true, will enable host memory offloading on a device.
+  bool xla_gpu_enable_host_memory_offloading = 296;
+
+  // Excludes non-deterministic ops from compiled executables.
+  // Unlike --xla_gpu_deterministic_ops does not disable autotuning - the
+  // compilation itself can be non-deterministic.
+  // At present, the HLO op SelectAndScatter does not have a
+  // deterministic XLA:GPU implementation.
+  // Compilation errors out if SelectAndScatter is encountered.
+  // Scatter ops can non-deterministic by default; these get converted to
+  // a deterministic implementation.
+  bool xla_gpu_exclude_nondeterministic_ops = 297;
+
+  // Next id: 299
 
   // Extra options to pass to the compilation backend (e.g. LLVM); specific
   // interpretation of these values is left to the backend.

@@ -19,16 +19,17 @@ limitations under the License.
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <variant>
 #include <vector>
 
 #include "absl/base/thread_annotations.h"
 #include "absl/container/flat_hash_map.h"
 #include "absl/status/status.h"
 #include "absl/synchronization/mutex.h"
-#include "absl/types/span.h"
 #include "xla/service/buffer_assignment.h"
 #include "xla/service/gpu/runtime/sequential_thunk.h"
 #include "xla/service/gpu/runtime/thunk.h"
+#include "xla/shape.h"
 #include "xla/status.h"
 #include "xla/stream_executor/memory_allocation.h"
 #include "xla/stream_executor/stream_executor.h"
@@ -43,18 +44,26 @@ namespace gpu {
 // AddressComputationThunk assumes that the slices are contiguous.
 class AddressComputationThunk : public Thunk {
  public:
+  struct LoopIter {};
+
+  // Dynamic slice offset can be either: (1) a statically known constant value,
+  // (2) a loop iteration number, or (3) a truly dynamic offset that is
+  // computed on device and have to be transferred to host.
+  using Offset = std::variant<uint64_t, LoopIter, BufferAllocation::Slice>;
+
   AddressComputationThunk(
       ThunkInfo thunk_info, std::unique_ptr<ThunkSequence> embedded_thunk,
-      std::vector<std::optional<const BufferAllocation::Slice>> arguments,
+      std::vector<std::optional<BufferAllocation::Slice>> arguments,
       std::vector<std::unique_ptr<BufferAllocation>> fake_allocations_,
-      std::vector<std::optional<std::vector<BufferAllocation::Slice>>>
-          offset_buffer_indices,
+      std::vector<std::optional<std::vector<Offset>>> offsets,
       std::vector<std::optional<Shape>> orig_shapes,
       std::vector<std::optional<Shape>> sliced_shapes,
       std::vector<std::optional<uint64_t>> offset_byte_sizes);
 
   AddressComputationThunk(const AddressComputationThunk&) = delete;
   AddressComputationThunk& operator=(const AddressComputationThunk&) = delete;
+
+  const Thunk* embedded_thunk() const { return embedded_thunk_.get(); }
 
   absl::Status Prepare(const PrepareParams& params,
                        ResourceRequests& resource_requests) override;
@@ -63,20 +72,31 @@ class AddressComputationThunk : public Thunk {
 
  private:
   std::unique_ptr<SequentialThunk> embedded_thunk_;
-  std::vector<std::optional<const BufferAllocation::Slice>>
-      embedded_thunk_arguments_;
   std::vector<std::unique_ptr<BufferAllocation>> fake_allocations_;
-  std::vector<std::optional<std::vector<BufferAllocation::Slice>>>
-      offset_buffer_indices_;
-  std::vector<std::optional<Shape>> orig_shapes_;
-  std::vector<std::optional<Shape>> sliced_shapes_;
-  std::vector<std::optional<uint64_t>> offset_byte_sizes_;
+
+  // Definition of a dynamic slice that extract a slice from the original buffer
+  // defined by `embedded_thunk_argument` at given `offsets`.
+  struct SliceDef {
+    std::optional<BufferAllocation::Slice> embedded_thunk_argument;
+    std::optional<std::vector<Offset>> offsets;
+    std::optional<Shape> orig_shape;
+    std::optional<Shape> sliced_shape;
+    std::optional<uint64_t> offset_byte_size;
+  };
+
+  std::vector<SliceDef> slices_;
 
   // Pinned host memory for transferring offset values from device to host.
   absl::Mutex mutex_;
   absl::flat_hash_map<se::StreamExecutor*,
                       std::unique_ptr<se::MemoryAllocation>>
-      offsets_ ABSL_GUARDED_BY(mutex_);
+      offsets_allocs_ ABSL_GUARDED_BY(mutex_);
+
+  // Pre-computed size requirement for `offsets_allocs_`.
+  int64_t offsets_allocs_size_ = 0;
+
+  // A mapping from argument index to the base offset in the `offsets_allocs_`.
+  std::vector<int64_t> offsets_allocs_base_;
 };
 
 }  // namespace gpu

@@ -26,7 +26,6 @@ limitations under the License.
 #include "mlir/IR/BuiltinAttributes.h"  // from @llvm-project
 #include "mlir/Support/LLVM.h"  // from @llvm-project
 #include "xla/ffi/call_frame.h"
-#include "xla/xla_data.pb.h"
 #include "tsl/platform/errors.h"
 
 using FlatAttribute = xla::ffi::CallFrameBuilder::FlatAttribute;
@@ -46,25 +45,44 @@ absl::StatusOr<FlatAttributesMap> BuildAttributesMap(
     };
 
     auto integer = [&](mlir::IntegerAttr integer) {
-      switch (integer.getType().getIntOrFloatBitWidth()) {
-        case 1:
-          attributes[name] = static_cast<bool>(integer.getInt());
-          return absl::OkStatus();
-        case 8:
-          attributes[name] = static_cast<int8_t>(integer.getInt());
-          return absl::OkStatus();
-        case 16:
-          attributes[name] = static_cast<int16_t>(integer.getInt());
-          return absl::OkStatus();
-        case 32:
-          attributes[name] = static_cast<int32_t>(integer.getInt());
-          return absl::OkStatus();
-        case 64:
-          attributes[name] = static_cast<int64_t>(integer.getInt());
-          return absl::OkStatus();
-        default:
-          return absl::InvalidArgumentError(absl::StrCat(
-              "Unsupported integer attribute bit width for attribute: ", name));
+      if (integer.getType().isUnsignedInteger()) {
+        switch (integer.getType().getIntOrFloatBitWidth()) {
+          case 8:
+            attributes[name] = static_cast<uint8_t>(integer.getUInt());
+            return absl::OkStatus();
+          case 16:
+            attributes[name] = static_cast<uint16_t>(integer.getUInt());
+            return absl::OkStatus();
+          case 32:
+            attributes[name] = static_cast<uint32_t>(integer.getUInt());
+            return absl::OkStatus();
+          case 64:
+            attributes[name] = static_cast<uint64_t>(integer.getUInt());
+            return absl::OkStatus();
+          default:
+            return absl::InvalidArgumentError(absl::StrCat(
+                "Unsupported integer attribute bit width for attribute: ",
+                name));
+        }
+      } else {
+        switch (integer.getType().getIntOrFloatBitWidth()) {
+          case 8:
+            attributes[name] = static_cast<int8_t>(integer.getInt());
+            return absl::OkStatus();
+          case 16:
+            attributes[name] = static_cast<int16_t>(integer.getInt());
+            return absl::OkStatus();
+          case 32:
+            attributes[name] = static_cast<int32_t>(integer.getInt());
+            return absl::OkStatus();
+          case 64:
+            attributes[name] = static_cast<int64_t>(integer.getInt());
+            return absl::OkStatus();
+          default:
+            return absl::InvalidArgumentError(absl::StrCat(
+                "Unsupported integer attribute bit width for attribute: ",
+                name));
+        }
       }
     };
 

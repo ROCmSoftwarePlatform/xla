@@ -142,11 +142,11 @@ cc_library(
     deps = [
         ":auto_sharding_proto_cc",
         "//xla:shape_util",
-        "//xla:status",
         "//xla/hlo/ir:hlo",
         "//xla/service:hlo_value",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/log:check",
+        "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
         "@com_google_ortools//ortools/linear_solver",
@@ -307,6 +307,7 @@ xla_cc_binary(
         "//xla/hlo/ir:hlo",
         "//xla/service:hlo_parser",
         "//xla/tools:hlo_module_loader",
+        "@com_google_absl//absl/status",
         "@tsl//tsl/platform:platform_port",
     ],
 )

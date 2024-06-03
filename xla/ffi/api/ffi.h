@@ -63,42 +63,7 @@ enum class DataType : uint8_t {
 };
 
 inline std::ostream& operator<<(std::ostream& os, const DataType dtype) {
-  switch (dtype) {
-    case DataType::INVALID:
-      return os << "INVALID";
-    case DataType::PRED:
-      return os << "PRED";
-    case DataType::S8:
-      return os << "S8";
-    case DataType::S16:
-      return os << "S16";
-    case DataType::S32:
-      return os << "S32";
-    case DataType::S64:
-      return os << "S64";
-    case DataType::U8:
-      return os << "U8";
-    case DataType::U16:
-      return os << "U16";
-    case DataType::U32:
-      return os << "U32";
-    case DataType::U64:
-      return os << "U64";
-    case DataType::F16:
-      return os << "F16";
-    case DataType::F32:
-      return os << "F32";
-    case DataType::F64:
-      return os << "F64";
-    case DataType::BF16:
-      return os << "BF16";
-    case DataType::C64:
-      return os << "C64";
-    case DataType::C128:
-      return os << "C128";
-    case DataType::TOKEN:
-      return os << "TOKEN";
-  }
+  return os << static_cast<XLA_FFI_DataType>(dtype);
 }
 
 //===----------------------------------------------------------------------===//
@@ -162,11 +127,18 @@ class Error {
 // Arguments
 //===----------------------------------------------------------------------===//
 
-struct BufferBase {
+// Dynamically-typed buffer.
+//
+// No checks are done at decoding time. Any dtype and rank combination is
+// accepted.
+struct AnyBuffer {
   DataType dtype;
   void* data;
   Span<const int64_t> dimensions;
 };
+
+// Deprecated. Use `AnyBuffer` instead.
+using BufferBase = AnyBuffer;
 
 namespace internal {
 
@@ -263,6 +235,10 @@ static_assert(IsComplexType<DataType::C64>());
 static_assert(IsComplexType<DataType::C128>());
 static_assert(!IsComplexType<DataType::F32>());
 
+// Buffer with a statically-known dtype and rank.
+//
+// The dtype and rank are checked at decoding time. If rank is not specified,
+// any rank is accepted.
 template <DataType dtype, size_t rank = internal::kDynamicRank>
 struct Buffer {
   NativeType<dtype>* data;
@@ -281,9 +257,9 @@ using Token = BufferR0<DataType::TOKEN>;
 
 namespace internal {
 
-inline BufferBase DecodeBuffer(XLA_FFI_Buffer* buf) {
-  return BufferBase{static_cast<DataType>(buf->dtype), buf->data,
-                    Span<const int64_t>(buf->dims, buf->rank)};
+inline AnyBuffer DecodeBuffer(XLA_FFI_Buffer* buf) {
+  return AnyBuffer{static_cast<DataType>(buf->dtype), buf->data,
+                   Span<const int64_t>(buf->dims, buf->rank)};
 }
 
 template <DataType dtype, size_t rank>
@@ -310,7 +286,7 @@ std::optional<Buffer<dtype, rank>> DecodeBuffer(XLA_FFI_Buffer* buf,
 
 }  // namespace internal
 
-using ResultBufferBase = Result<BufferBase>;
+using ResultBufferBase = Result<AnyBuffer>;
 template <DataType dtype, size_t rank = internal::kDynamicRank>
 using ResultBuffer = Result<Buffer<dtype, rank>>;
 
@@ -327,8 +303,8 @@ template <DataType dtype> using ResultBufferR4 = ResultBuffer<dtype, 4>;
 //===----------------------------------------------------------------------===//
 
 template <>
-struct ArgBinding<BufferBase> {
-  using Arg = BufferBase;
+struct ArgBinding<AnyBuffer> {
+  using Arg = AnyBuffer;
 };
 
 template <DataType dtype, size_t rank>
@@ -341,8 +317,8 @@ struct ArgBinding<Buffer<dtype, rank>> {
 //===----------------------------------------------------------------------===//
 
 template <>
-struct RetBinding<Result<BufferBase>> {
-  using Ret = BufferBase;
+struct RetBinding<Result<AnyBuffer>> {
+  using Ret = AnyBuffer;
 };
 
 template <DataType dtype, size_t rank>
@@ -362,10 +338,10 @@ inline std::ostream& operator<<(std::ostream& os, const XLA_FFI_ArgType type) {
 }
 
 template <>
-struct ArgDecoding<BufferBase> {
+struct ArgDecoding<AnyBuffer> {
   XLA_FFI_ATTRIBUTE_ALWAYS_INLINE
-  static std::optional<BufferBase> Decode(XLA_FFI_ArgType type, void* arg,
-                                          DiagnosticEngine& diagnostic) {
+  static std::optional<AnyBuffer> Decode(XLA_FFI_ArgType type, void* arg,
+                                         DiagnosticEngine& diagnostic) {
     if (XLA_FFI_PREDICT_FALSE(type != XLA_FFI_ArgType_BUFFER)) {
       return diagnostic.Emit("Wrong argument type: expected ")
              << XLA_FFI_ArgType_BUFFER << " but got " << type;
@@ -401,10 +377,11 @@ inline std::ostream& operator<<(std::ostream& os, const XLA_FFI_RetType type) {
 }
 
 template <>
-struct RetDecoding<BufferBase> {
+struct RetDecoding<AnyBuffer> {
   XLA_FFI_ATTRIBUTE_ALWAYS_INLINE
-  static std::optional<Result<BufferBase>> Decode(
-      XLA_FFI_RetType type, void* ret, DiagnosticEngine& diagnostic) {
+  static std::optional<Result<AnyBuffer>> Decode(XLA_FFI_RetType type,
+                                                 void* ret,
+                                                 DiagnosticEngine& diagnostic) {
     if (XLA_FFI_PREDICT_FALSE(type != XLA_FFI_RetType_BUFFER)) {
       return diagnostic.Emit("Wrong result type: expected ")
              << XLA_FFI_RetType_BUFFER << " but got " << type;
