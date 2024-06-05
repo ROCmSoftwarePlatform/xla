@@ -40,8 +40,6 @@ limitations under the License.
 namespace xla {
 namespace gpu {
 
-static constexpr double kTolerance = 0.1f;
-
 template <typename ElementT>
 using ComparisonKernelT =
     se::TypedKernel<se::DeviceMemory<ElementT>, se::DeviceMemory<ElementT>,
@@ -72,6 +70,7 @@ static absl::StatusOr<bool> DeviceCompare(se::Stream* stream,
   se::DeviceMemory<ElementT> current_typed(current);
   se::DeviceMemory<ElementT> expected_typed(expected);
   uint64_t buffer_size = current_typed.ElementCount();
+  float tolerance = config.debug_options().xla_gpu_autotune_gemm_rtol();
 
   TF_ASSIGN_OR_RETURN(
       ComparisonKernelT<ElementT> comparison_kernel,
@@ -90,7 +89,7 @@ static absl::StatusOr<bool> DeviceCompare(se::Stream* stream,
   se::DeviceMemory<uint64_t> as_uint64(out_param.memory());
   TF_RETURN_IF_ERROR(stream->ThenLaunch(
       dim.thread_counts_per_block(), dim.block_counts(), comparison_kernel,
-      current_typed, expected_typed, static_cast<float>(kTolerance),
+      current_typed, expected_typed, tolerance,
       buffer_size, as_uint64));
 
   uint64_t result = -1;
@@ -108,7 +107,8 @@ static absl::StatusOr<bool> DeviceCompare(se::Stream* stream,
 template <typename ElementType, typename ComparisonType>
 absl::StatusOr<bool> HostCompare(se::Stream* stream,
                                  se::DeviceMemoryBase current,
-                                 se::DeviceMemoryBase expected) {
+                                 se::DeviceMemoryBase expected,
+                                 const HloModuleConfig& config) {
   int64_t n = current.size() / sizeof(ElementType);
   std::vector<ElementType> host_current(n), host_expected(n);
   TF_RETURN_IF_ERROR(
@@ -128,6 +128,9 @@ absl::StatusOr<bool> HostCompare(se::Stream* stream,
     return a;
   };
   int differences_seen = 0;
+
+  const double tolerance = config.debug_options().xla_gpu_autotune_gemm_rtol();
+
   for (int64_t i = 0; i < n && differences_seen < 10; ++i) {
     auto current_value = static_cast<ComparisonType>(host_current[i]);
     auto expected_value = static_cast<ComparisonType>(host_expected[i]);
@@ -148,7 +151,7 @@ absl::StatusOr<bool> HostCompare(se::Stream* stream,
               (std::max(std::abs(current_value_canonical),
                         std::abs(expected_value_canonical)) +
                1) <
-          kTolerance)) {
+          tolerance)) {
       ++differences_seen;
       LOG(ERROR) << "Difference at " << i << ": " << current_value
                  << ", expected " << expected_value;
@@ -173,7 +176,7 @@ static absl::StatusOr<bool> CompareEqualParameterized(
   }
 
   TF_ASSIGN_OR_RETURN(bool host_return, (HostCompare<ElementT, ComparisonT>(
-                                            stream, current, expected)));
+                                          stream, current, expected, config)));
   CHECK_EQ(host_return, result)
       << "Host comparison succeeded even though GPU comparison failed.";
   return false;

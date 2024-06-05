@@ -346,7 +346,14 @@ class GemmAutotuner {
                      << "This is likely a bug/unexpected loss of precision.";
           CHECK(!autotune_config_.should_crash_on_check_failure());
 
-          result.mutable_failure()->set_kind(AutotuneResult::WRONG_RESULT);
+          // By default, autotuner does NOT really skip wrong results, but 
+          // merely prints out the above error message: this may lead to a 
+          // great confusion. When should_skip_wrong_results() is set to true,
+          // solutions with accuracy problems will be disqualified.
+          result.mutable_failure()->set_kind(
+            autotune_config_.should_skip_wrong_results() ?
+                AutotuneResult::DISQUALIFIED :
+                AutotuneResult::WRONG_RESULT);
           result.mutable_failure()->mutable_reference_gemm()->set_algorithm(
               *reference_algorithm);
         }

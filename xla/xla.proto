@@ -764,7 +764,8 @@ message DebugOptions {
   // File to write autotune logs to. It will stored in txt format.
   string xla_gpu_dump_autotune_logs_to = 292;
 
-  // Next id: 293
+  // Relative precision for comparing different GEMM solutions 
+  float xla_gpu_autotune_gemm_rtol = 293;
 
   // Extra options to pass to the compilation backend (e.g. LLVM); specific
   // interpretation of these values is left to the backend.
