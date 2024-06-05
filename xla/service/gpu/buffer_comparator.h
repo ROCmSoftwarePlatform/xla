@@ -34,7 +34,7 @@ class BufferComparator {
   BufferComparator(const BufferComparator&) = delete;
   BufferComparator(BufferComparator&&) = default;
 
-  BufferComparator(const Shape& shape, const HloModuleConfig& config,
+  explicit BufferComparator(const Shape& shape, double tolerance = 0.1,
                    bool verbose = true);
 
   // Returns true if the two buffers compare equal. The definition of "equal"
@@ -48,32 +48,11 @@ class BufferComparator {
   // See the implementation for the tolerance value.
   absl::StatusOr<bool> CompareEqual(se::Stream* stream,
                                     se::DeviceMemoryBase current,
-                                    se::DeviceMemoryBase expected);
-
- private:
-  // Returns `true` if two buffers are equal, `false` otherwise.
-  template <typename ElementT>
-  absl::StatusOr<bool> DeviceCompare(std::string_view kernel_name,
-                                     void* kernel_symbol);
-
-  // Host side comparison code that does the same thing, but reports some of the
-  // differences as well. It only print logs for debugging.
-  //
-  // Returns true if no differences were seen, false otherwise.
-  template <typename ElementType, typename ComparisonType>
-  absl::StatusOr<bool> HostCompare();
-
-  template <typename ElementT, typename ComparisonT>
-  absl::StatusOr<bool> CompareEqualParameterized(std::string_view kernel_name,
-                                                 void* kernel_symbol);
-
+                                    se::DeviceMemoryBase expected) const;
  private:
   Shape shape_;
-  float rtol_tolerance_;  // relative tolerance for comparison
+  float relative_tol_;  // relative tolerance for comparison
   bool verbose_;          // whether to print out error message on mismatch
-  se::Stream* stream_ = nullptr;
-  se::DeviceMemoryBase current_;
-  se::DeviceMemoryBase expected_;
 };
 
 namespace buffer_comparator {
