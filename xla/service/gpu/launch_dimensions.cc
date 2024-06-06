@@ -186,10 +186,17 @@ LaunchDimensions CalculateLaunchDimensions(
   BlockSizes sizes =
       GetBlockSizes(dim_config, gpu_device_info, shape, num_elements);
 
+  // Assume typical max grid dimensions if not directly accessible
+  int64_t max_blocks_per_dim = 8388608;  // Assumed max grid dimension size
+  sizes.block_count = std::min(sizes.block_count, max_blocks_per_dim);
+  sizes.threads_per_block_x = std::min(sizes.threads_per_block_x, gpu_device_info.threads_per_block_limit());
+
   return LaunchDimensions(
       se::BlockDim(sizes.block_count, 1, 1),
       se::ThreadDim(sizes.threads_per_block_x, sizes.threads_per_block_y, 1));
 }
+
+
 
 }  // namespace gpu
 }  // namespace xla

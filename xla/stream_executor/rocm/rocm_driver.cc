@@ -1113,7 +1113,7 @@ struct BitPatternToValue {
   }
   RETURN_IF_ROCM_ERROR(res, "Failed to launch ROCm kernel: ", kernel_name,
                        " with block dimensions: ", block_dim_x, "x",
-                       block_dim_y, "x", block_dim_z);
+                       block_dim_y, "x", block_dim_z, " and grid dimensions=", grid_dim_x,"x", grid_dim_y, "x", grid_dim_z);
 
   VLOG(2) << "successfully launched kernel";
   return absl::OkStatus();
