@@ -47,8 +47,7 @@ struct RocmTracerOptions {
 
   // map of domain --> ops for which we need to enable the Activity records
   // If the ops vector is empty, then enable Activity records for entire domain
-  absl::flat_hash_map<activity_domain_t, std::vector<uint32_t> >
-      activity_tracing;
+  absl::flat_hash_map<activity_domain_t, std::vector<uint32_t> > activity_tracing;
 };
 
 class RocmTracer;
@@ -80,6 +79,9 @@ class RocmApiCallbackImpl {
                                             uint64_t exit_time);
   void AddSynchronizeEventUponApiExit(uint32_t cbid, const hip_api_data_t* data,
                                       uint64_t enter_time, uint64_t exit_time);
+  bool IsHipApiTracked(uint32_t cbid){
+     return options_.api_tracking_set.count(cbid) ? true : false;
+  }
 
   RocmTracerOptions options_;
   RocmTracer* tracer_ = nullptr;
@@ -95,7 +97,22 @@ class RocmActivityCallbackImpl {
  public:
   RocmActivityCallbackImpl(const RocmTracerOptions& options, RocmTracer* tracer,
                            RocmTraceCollector* collector)
-      : options_(options), tracer_(tracer), collector_(collector) {}
+      : options_(options), tracer_(tracer), collector_(collector) {
+
+      excluded_activities_.insert(HIP_API_ID_hipGetDevice);
+      excluded_activities_.insert(HIP_API_ID_hipSetDevice);
+      excluded_activities_.insert(HIP_API_ID___hipPushCallConfiguration);
+      excluded_activities_.insert(HIP_API_ID___hipPopCallConfiguration);
+      excluded_activities_.insert(HIP_API_ID_hipEventQuery);
+      excluded_activities_.insert(HIP_API_ID_hipCtxSetCurrent);
+      excluded_activities_.insert(HIP_API_ID_hipEventRecord);
+      excluded_activities_.insert(HIP_API_ID_hipEventQuery);
+      excluded_activities_.insert(HIP_API_ID_hipGetDeviceProperties);
+      excluded_activities_.insert(HIP_API_ID_hipPeekAtLastError);
+      excluded_activities_.insert(HIP_API_ID_hipModuleGetFunction);
+      excluded_activities_.insert(HIP_API_ID_hipEventCreateWithFlags);
+
+      }
 
   absl::Status operator()(const char* begin, const char* end);
 
@@ -111,6 +128,7 @@ class RocmActivityCallbackImpl {
   RocmTracerOptions options_;
   RocmTracer* tracer_ = nullptr;
   RocmTraceCollector* collector_ = nullptr;
+  std::set<activity_op_t> excluded_activities_;
 };
 
 // The class uses roctracer callback/activity API and forward the collected
