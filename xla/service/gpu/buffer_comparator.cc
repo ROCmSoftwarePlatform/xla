@@ -119,7 +119,7 @@ absl::StatusOr<bool> HostCompare(se::Stream* stream,
 
   const auto canonicalize = [](ComparisonType a) -> ComparisonType {
     if (std::is_same<ElementType, Eigen::half>::value && a) {
-      constexpr ComparisonType kMaxFp16Value = 65505;
+      constexpr ComparisonType kMaxFp16Value = 65536;
       if (std::isnan(a)) {
         return a;
       }
