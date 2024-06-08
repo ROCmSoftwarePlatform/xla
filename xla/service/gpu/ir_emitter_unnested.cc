@@ -2875,7 +2875,7 @@ absl::Status IrEmitterUnnested::EmitHloInstruction(
       if (IsCustomCallToDnnConvolution(*instr)) {
         return EmitConvolutionThunk(custom_call);
       }
-#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+#if GOOGLE_CUDA
       if (IsCustomCallToCusolver(*instr)) {
         return EmitCholeskyThunk(instr);
       }
@@ -2885,7 +2885,7 @@ absl::Status IrEmitterUnnested::EmitHloInstruction(
       if (IsCubDeviceRadixSort(*instr)) {
         return EmitCubDeviceRadixSort(custom_call);
       }
-#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+#endif  // GOOGLE_CUDA
       if (custom_call->custom_call_target() == "PadToStatic") {
         return EmitPadToStatic(custom_call);
       }
