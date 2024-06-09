@@ -106,11 +106,12 @@ DebugOptions DefaultDebugOptionsIgnoringFlags() {
   // flag.
   opts.set_xla_gpu_enable_cublaslt(false);
 
-  opts.add_xla_gpu_enable_command_buffer(DebugOptions::FUSION);
-  opts.add_xla_gpu_enable_command_buffer(DebugOptions::CUBLAS);
-  opts.add_xla_gpu_enable_command_buffer(DebugOptions::CUSTOM_CALL);
-  opts.add_xla_gpu_enable_command_buffer(DebugOptions::CUDNN);
-  opts.set_xla_gpu_graph_min_graph_size(5);
+  //opts.set_xla_gpu_graph_level(0);
+//   opts.add_xla_gpu_enable_command_buffer(DebugOptions::FUSION);
+//   opts.add_xla_gpu_enable_command_buffer(DebugOptions::CUBLAS);
+//   opts.add_xla_gpu_enable_command_buffer(DebugOptions::CUSTOM_CALL);
+//   opts.add_xla_gpu_enable_command_buffer(DebugOptions::CUDNN);
+  opts.set_xla_gpu_graph_min_graph_size(100);
   opts.set_xla_gpu_graph_enable_concurrent_region(false);
 
   // Despite the name, fast min/max on GPUs does not seem to be any faster, and
@@ -301,6 +302,10 @@ static void WarnIfFuelWasNeverConsumed() {
 
 void MakeDebugOptionsFlags(std::vector<tsl::Flag>* flag_list,
                            DebugOptions* debug_options) {
+
+
+  debug_options->clear_xla_gpu_enable_command_buffer();
+
   // Returns a lambda that calls "member_setter" on "debug_options" with the
   // argument passed in to the lambda.
   auto bool_setter_for =
