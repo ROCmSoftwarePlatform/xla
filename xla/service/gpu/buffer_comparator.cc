@@ -140,7 +140,7 @@ absl::StatusOr<bool> BufferComparator::HostCompare() {
                         std::abs(expected_value_canonical)) +
                1) <
           (double)rtol_tolerance_)) {
-      if(!verbose) return false; // Return immediately if not verbose.
+      if(!verbose_) return false; // Return immediately if not verbose.
       ++differences_seen;
       LOG(ERROR) << "Difference at " << i << ": " << current_value
                    << ", expected " << expected_value;
