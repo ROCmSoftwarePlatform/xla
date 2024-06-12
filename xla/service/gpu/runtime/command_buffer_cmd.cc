@@ -406,7 +406,7 @@ absl::StatusOr<se::CommandBuffer*> TracedCommandBuffer::GetOrTraceCommandBuffer(
       TF_ASSIGN_OR_RETURN(entries_[i].command_buffer,
                           se::CommandBuffer::Trace(executor, stream, trace));
       entries_[i].recorded_allocs.assign(allocs.begin(), allocs.end());
-      // VLOG(0) << i << ": added new entry: " << entries_[i].command_buffer.get();
+      //VLOG(0) << i << ": added new entry: " << entries_[i].command_buffer.get();
       return shift_right(i).command_buffer.get();
     }
   }
@@ -416,6 +416,7 @@ absl::StatusOr<se::CommandBuffer*> TracedCommandBuffer::GetOrTraceCommandBuffer(
   TF_ASSIGN_OR_RETURN(entries_[capacity_ - 1].command_buffer,
                       se::CommandBuffer::Trace(executor, stream, trace));
   entries_[capacity_ - 1].recorded_allocs.assign(allocs.begin(), allocs.end());
+  //VLOG(0) << (capacity_ - 1) << ": added last entry: " << entries_[capacity_ - 1].command_buffer.get();
   return shift_right(capacity_ - 1).command_buffer.get();
 }
 
@@ -438,26 +439,16 @@ absl::Status TracedCommandBufferCmd::AddTracedCommandBuffer(
   auto traced_cmd = record_params.state.GetOrCreate<TracedCommandBuffer>(
       this, [&] { return std::make_unique<TracedCommandBuffer>(buffers()); });
 
-  bool need_update = false;
-
+  bool update_needed = false;
   TF_ASSIGN_OR_RETURN(
       auto nested_cmd,
       traced_cmd->GetOrTraceCommandBuffer(
           execute_params.buffer_allocations, execute_params.stream->parent(),
-          execute_params.command_buffer_trace_stream, trace, &need_update));
+          execute_params.command_buffer_trace_stream, trace, &update_needed));
 
   ExecutionScopeId execution_scope_id = GetExecutionScope(record_params);
-
-  // TODO: check why this crashes ??
-  if(true || need_update || command_buffer->state() == se::CommandBuffer::State::kCreate) { 
-   // otherwise crashes at 
-   // #3  0x00007fff4512502b in stream_executor::gpu::GpuDriver::GraphExecKernelNodeSetParams(hipGraphExec*, hipGraphNode*, std::basic_string_view<char, std::char_traits<char> >, hipKernelNodeParams const&) ()
-   //from /usr/local/lib/python3.9/dist-packages/jaxlib/xla_extension.so
-   //  #4  0x00007fff4511b6a0 in stream_executor::gpu::GpuCommandBuffer::LaunchWithPackedArgs(tsl::gtl::IntType<stream_executor::CommandBuffer::ExecutionScopeId_tag_, long>, stream_executor::ThreadDim const&, stream_executor::BlockDim const&, stream_executor::Kernel const&, stream_executor::KernelArgsPackedArrayBase const&) () from /usr/local/lib/python3.9/dist-packages/jaxlib/xla_extension.so
-    return command_buffer->AddNestedCommandBuffer(execution_scope_id,
-                                                *nested_cmd);
-  } 
-  return absl::OkStatus();
+  return command_buffer->AddNestedCommandBuffer(execution_scope_id,
+                          *nested_cmd, update_needed);
 
 #else // TRACE_TO_EXISTING_BUF
 
@@ -674,24 +665,9 @@ absl::Status LaunchCmd::Record(const Thunk::ExecuteParams& execute_params,
   TF_ASSIGN_OR_RETURN(auto kernel_args,
                       se::PackKernelArgs(buffers, shmem_bytes_));
 
-  // static std::atomic_int zz = 0;
-  // bool OK = false;
-  // if(command_buffer->state() == se::CommandBuffer::State::kUpdate) {
-  //   OK = (zz++ == 50);
-  // }
-  // if(OK) {
-  //   TF_RETURN_IF_ERROR(CommandBufferCmdSequence::DebugBlockHostUntilDone(execute_params));
-  //   VLOG(1) << "========================= BEGIN LaunchCmd LOGGING ======================== ";
-  // }
-
-  auto res = command_buffer->Launch(execution_scope_id,
+  return command_buffer->Launch(execution_scope_id,
                                 dims_.thread_counts_per_block(),
                                 dims_.block_counts(), *kernel, *kernel_args);
-  // if(OK) {
-  //   TF_RETURN_IF_ERROR(CommandBufferCmdSequence::DebugBlockHostUntilDone(execute_params));
-  //   VLOG(1) << "========================= END LaunchCmd LOGGING ======================== ";
-  // }
-  return res;
 }
 
 CommandBufferCmd::BufferUsageVector LaunchCmd::buffers() {
@@ -1217,6 +1193,12 @@ absl::Status GemmCmd::Record(const Thunk::ExecuteParams& execute_params,
   // set stream before tracing!
   // VLOG(0) << "Setting stream to: " << execute_params.command_buffer_trace_stream
   //     << " for device: " << execute_params.stream->parent()->device_ordinal();
+  if(command_buffer->state() == se::CommandBuffer::State::kCreate) {
+    // possibly this is needed in order to preload gemm kernels ?..
+    // (void)RunGemm(config_, lhs, rhs, out, se::DeviceMemoryBase{}, deterministic_,
+    //                    execute_params.command_buffer_trace_stream);
+  }
+  
   blas->SetStream(execute_params.command_buffer_trace_stream);
 
   // static std::atomic_int zz = 0;

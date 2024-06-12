@@ -597,47 +597,41 @@ absl::Status GpuCommandBuffer::Launch(ExecutionScopeId execution_scope_id,
   return absl::InternalError("Unsupported kernel arguments type");
 }
 
+absl::StatusOr<std::vector< GpuGraphNodeHandle >> 
+        GpuCommandBuffer::GetChildNodes() const
+{
+  if(child_nodes_.empty()) {
+    TF_ASSIGN_OR_RETURN(auto count, GpuDriver::GraphGetNodes(graph_, nullptr));
+    child_nodes_.resize(count);
+    TF_ASSIGN_OR_RETURN(count, GpuDriver::GraphGetNodes(graph_, &child_nodes_));
+  }
+  return child_nodes_;
+}
+
 absl::Status GpuCommandBuffer::AddNestedCommandBuffer(
-    ExecutionScopeId execution_scope_id, const CommandBuffer& nested) {
+    ExecutionScopeId execution_scope_id, const CommandBuffer& nested, 
+    bool update_needed) {
   ExecutionScope& execution_scope = execution_scopes_[execution_scope_id];
-
   TF_RETURN_IF_ERROR(CheckNotFinalized());
-
-  auto child_graph = GpuCommandBuffer::Cast(&nested)->graph();
-
-  // if (state_ == State::kUpdate) {
-  //   auto node = execution_scope.
-  //                       nodes[execution_scope.update_state.node_idx].handle;
-  //   auto& xnested = traced_cache_[node];
-  //   if(xnested == &nested) {
-  //     //VLOG(0) << &nested << " child graph unchanged!";
-  //     if(this->NeedUpdate) {
-  //      VLOG(0) << &nested << " child graph unchanged but need update: " << xnested;
-  //     }
-  //     return absl::OkStatus();
-  //   } else {
-  //     if(!this->NeedUpdate) {
-  //       VLOG(0) << node << " node == " << &nested << " != " << xnested << ": child graph needs to be updated but NeedUpdate off";
-  //     }
-  //     //VLOG(0) << &nested << " child graph needs to be updated cached " << xnested;
-  //   }
-  //   xnested = &nested;
-  // }
+  auto gpu_cmd = GpuCommandBuffer::Cast(&nested);
 
 #if 1
-  child_nodes_.resize(2);
-  TF_ASSIGN_OR_RETURN(size_t count, GpuDriver::GraphGetNodes(child_graph, 
-                                                              &child_nodes_));
-
-  bool isKernel = true, done = false;
+  TF_ASSIGN_OR_RETURN(auto child_nodes, gpu_cmd->GetChildNodes());
+  if(!update_needed) { // only increment the node index!
+    //VLOG(0) << "No update needed for node: " << &nested;
+    execution_scope.update_state.node_idx += child_nodes.size();
+    return absl::OkStatus();
+  }
+  
+  bool isKernel = true;
   GpuGraphKernelNodeParams kparams;
   GpuGraphMemsetNodeParams mparams;
 
-  for(size_t i = 0; i < count; i++) {
-    isKernel = GpuDriver::GraphGetKernelNodeParams(child_nodes_[i], &kparams).ok();
+  for(size_t i = 0; i < child_nodes.size(); i++) {
+    isKernel = GpuDriver::GraphGetKernelNodeParams(child_nodes[i], &kparams).ok();
     
     if(!isKernel) {
-      TF_RETURN_IF_ERROR(GpuDriver::GraphGetMemsetNodeParams(child_nodes_[i], 
+      TF_RETURN_IF_ERROR(GpuDriver::GraphGetMemsetNodeParams(child_nodes[i], 
                 &mparams));
     }
 
@@ -678,10 +672,12 @@ absl::Status GpuCommandBuffer::AddNestedCommandBuffer(
   
   return absl::OkStatus();
 #else // embedd subgraphs
+  auto child_graph = gpu_cmd->graph();
   // Updates child graph node in the executable graph.
   if (state_ == State::kUpdate) {
     auto node = execution_scope.
                         nodes[execution_scope.update_state.node_idx++].handle;
+    // child_node_updates_[node]++;
     return GpuDriver::GraphExecChildNodeSetParams(exec_, node, child_graph);
   }
 

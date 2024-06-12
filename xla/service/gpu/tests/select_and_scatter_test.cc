@@ -121,7 +121,7 @@ XLA_REGISTER_CUSTOM_CALL_TARGET_WITH_SYM(
 
 TEST_F(SelectAndScatterTest, SelectAndScatterPerformance) {
 
-  std::ifstream ifs("/src/xla_dump/fused_transpose_256.hlo");
+  std::ifstream ifs("/tf/xla/input.hlo");
   if(!ifs)
     throw "Unable to open file";
 
@@ -129,7 +129,7 @@ TEST_F(SelectAndScatterTest, SelectAndScatterPerformance) {
   buffer << ifs.rdbuf();
 
   HloModuleConfig config = GetModuleConfigForTest();
-#if 1
+#if 0
   //config.set_num_partitions(8);
 
 TF_ASSERT_OK_AND_ASSIGN(auto module, ParseAndReturnVerifiedModule(buffer.str(), 
@@ -164,34 +164,42 @@ TF_ASSERT_OK_AND_ASSIGN(auto module, ParseAndReturnVerifiedModule(buffer.str(),
       // EXPECT_TRUE(LiteralTestUtil::Near(truth, test_res, error_spec));
     }
   }
+  
+
   // EXPECT_TRUE(RunAndCompare(std::move(module), 
   //     absl::Span< xla::Literal * const>(arg_ptrs.data(), arg_ptrs.size()), error_spec));
 #else
-  int kNumReplicas = 1;
-  config.set_replica_count(kNumReplicas);
-  config.set_num_partitions(4);
+  int NumReplicas = 8, NumParts = 1;
+  config.set_replica_count(NumReplicas);
+  config.set_num_partitions(NumParts);
 
   TF_ASSERT_OK_AND_ASSIGN(
       auto module, ParseAndReturnVerifiedModule(buffer.str(), config));
-  DeviceAssignment assn(/*replica_count=*/kNumReplicas,
-                        /*computation_count=*/8);
-  for (int64_t i = 0; i < 8; ++i) {
-    assn(0, i) = i;
+  DeviceAssignment assn(/*replica_count=*/NumReplicas,
+                        /*computation_count=*/NumParts);
+  for (int64_t i = 0, k = 0; i < NumReplicas; i++)
+  for (int64_t j = 0; j < NumParts; j++) {
+    assn(i, j) = k++;
   }
 
   auto fake_arguments = xla::MakeFakeArguments(
       module.get(),
-      false, /*pseudo-random*/
+      true, /*pseudo-random*/
       false /* use large range*/).value();
-  std::vector<Literal*> fake_ptrs(fake_arguments.size());
-  for (int i = 0; i < fake_arguments.size(); i++) {
-    fake_ptrs[i] = &fake_arguments[i];
-  }
-  TF_ASSERT_OK_AND_ASSIGN(std::vector<Literal> results,
-                          HloTestBase::ExecuteReplicated(
-                              std::move(module), fake_ptrs, kNumReplicas, &assn,
-                              true /*run_hlo_passes*/, true /*use-threads*/));
-  ASSERT_EQ(results.size(), kNumReplicas);
+  TF_ASSERT_OK_AND_ASSIGN(auto exec, CreateExecutable(std::move(module), true));
+
+ for(int i = 0; i < 10; i++) {
+   VLOG(0) << "Running iteration #" << i;
+   TF_ASSERT_OK_AND_ASSIGN(std::vector<Literal> results,
+         HloTestBase::ExecuteReplicated(
+          [&](int64_t){ return exec.get(); },
+          [&fake_arguments](int64_t replica_id)
+          { return fake_arguments.size(); },
+          [&fake_arguments](int64_t replica_id, int64_t idx)
+          { return &fake_arguments[idx]; },
+          NumReplicas, false /*run hlo*/, &assn));
+   ASSERT_EQ(results.size(), NumReplicas);
+ }
 #endif
 }
 
