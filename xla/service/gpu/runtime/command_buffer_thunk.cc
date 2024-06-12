@@ -31,6 +31,7 @@ limitations under the License.
 #include "xla/service/gpu/runtime/command_buffer_cmd.h"
 #include "xla/service/gpu/thunk.h"
 #include "xla/stream_executor/command_buffer.h"
+#include "xla/stream_executor/gpu/gpu_command_buffer.h"
 #include "xla/stream_executor/device_memory.h"
 #include "xla/stream_executor/stream_executor.h"
 #include "tsl/platform/env.h"
@@ -212,9 +213,17 @@ absl::Status CommandBufferThunk::ExecuteOnStream(const ExecuteParams& params) {
 
   absl::MutexLock lock(&cmd_buffer->mutex);
 
+  // static std::atomic_int zz = 0;
+  // static void *pptr = nullptr;
+  // bool go = false;
+  // if(commands_.size() == 3089) go = (zz++ == 20);
+  // if(go) {
+  //   pptr = cmd_buffer->command_buffer.get();
+  // }
+  //TF_RETURN_IF_ERROR(CommandBufferCmdSequence::DebugBlockHostUntilDone(params));
+
   if (cmd_buffer->ShouldUpdateCommandBuffer(commands_, params)) {
 
-    //TF_RETURN_IF_ERROR(CommandBufferCmdSequence::DebugBlockHostUntilDone(params));
     VLOG(1) << "Update command buffer on device #" << executor->device_ordinal()
             << " by recoding command buffer cmd sequence" << " after "
             << cmd_buffer->num_executions << " executions since last update"
@@ -234,16 +243,15 @@ absl::Status CommandBufferThunk::ExecuteOnStream(const ExecuteParams& params) {
     TF_RETURN_IF_ERROR(commands_.Record(params, record_params,
                                         cmd_buffer->command_buffer.get()));
 
+    //TF_RETURN_IF_ERROR(CommandBufferCmdSequence::DebugBlockHostUntilDone(params));
     uint64_t end_micros = tsl::Env::Default()->NowMicros();
 
-    //TF_RETURN_IF_ERROR(CommandBufferCmdSequence::DebugBlockHostUntilDone(params));
-    
     VLOG(1) << "Updated command buffer on device #" << executor->device_ordinal() 
             << " in " << (end_micros - start_micros)
             << " μs; num_commands=" << commands_.size();
+    
     cmd_buffer->num_executions = 0;
   }
-
   ++cmd_buffer->num_executions;
 
   VLOG(3) << "Execute command buffer on device #" << executor->device_ordinal()
@@ -256,6 +264,15 @@ absl::Status CommandBufferThunk::ExecuteOnStream(const ExecuteParams& params) {
                           {"num_commands", commands_.size()},
                           {"num_executions", cmd_buffer->num_executions}});
   });
+  // auto gpuc = se::gpu::GpuCommandBuffer::Cast(cmd_buffer->command_buffer.get());
+  // if(go) {
+  //   VLOG(0) << "====================== FIRST GRAPH LAUNCH of graph: " << 
+  //       gpuc->graph() << " exec: " << gpuc->executable();
+  // } else if(pptr == gpuc) {
+  //   VLOG(0) << "====================== NEXT GRAPH LAUNCH  of graph: " << 
+  //       gpuc->graph() << " exec: " << gpuc->executable();
+  //   pptr = nullptr;
+  // }
 
   return executor->Submit(params.stream, *cmd_buffer->command_buffer);
 }

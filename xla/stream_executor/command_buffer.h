@@ -251,7 +251,8 @@ class CommandBuffer {
 
   // Adds a nested command buffer.
   virtual absl::Status AddNestedCommandBuffer(
-      ExecutionScopeId execution_scope_id, const CommandBuffer& nested) = 0;
+      ExecutionScopeId execution_scope_id, const CommandBuffer& nested,
+      bool update_needed = true) = 0;
 
   // Adds a nested command buffer to the default execution scope.
   absl::Status AddNestedCommandBuffer(const CommandBuffer& nested) {

@@ -93,7 +93,8 @@ class GpuCommandBuffer : public CommandBuffer {
                       const Kernel& kernel, const KernelArgs& args) override;
 
   absl::Status AddNestedCommandBuffer(ExecutionScopeId execution_scope_id,
-                                      const CommandBuffer& nested) override;
+                                      const CommandBuffer& nested,
+                                      bool update_needed) override;
 
   absl::Status MemcpyDeviceToDevice(ExecutionScopeId execution_scope_id,
                                     DeviceMemoryBase* dst,
@@ -301,6 +302,8 @@ class GpuCommandBuffer : public CommandBuffer {
   // Collects a set of dependencies for a new barrier.
   Dependencies GetBarrierDependencies(ExecutionScopeId execution_scope_id);
 
+  absl::StatusOr<std::vector< GpuGraphNodeHandle >> GetChildNodes() const;
+
   static_assert(std::is_pointer_v<GpuGraphHandle>,
                 "GpuGraphHandle must be a pointer");
   static_assert(std::is_pointer_v<GpuGraphExecHandle>,
@@ -320,12 +323,9 @@ class GpuCommandBuffer : public CommandBuffer {
   bool is_owned_graph_exec_ = true;    // ownership of `is_owned_graph_exec_`
 
   absl::flat_hash_map< GpuGraphNodeHandle, 
-            const CommandBuffer *> traced_cache_;
-
-  absl::flat_hash_map< GpuGraphNodeHandle, 
             GpuGraphKernelNodeParams > launch_cache_;
 
-  std::vector< GpuGraphNodeHandle > child_nodes_;
+  mutable std::vector< GpuGraphNodeHandle > child_nodes_;
 
   // ExecutionScope holds the state of an underlying CUDA graph (nodes an
   // barriers added to a graph) for a single execution scope.
