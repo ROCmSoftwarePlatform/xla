@@ -65,6 +65,10 @@ using ::testing::TempDir;
 using ::tsl::testing::StatusIs;
 
 class GpuCompilerTest : public HloTestBase {
+  const auto& device_desc() {
+    return backend().default_stream_executor()->GetDeviceDescription();
+  }
+
  public:
   absl::Status Schedule(HloModule* module) {
     auto compiler = backend().compiler();
@@ -73,6 +77,10 @@ class GpuCompilerTest : public HloTestBase {
     TF_RETURN_IF_ERROR(ScheduleGpuModule(module, 4, gpu_device_info).status());
     return tensorflow::down_cast<GpuCompiler*>(compiler)
         ->RunPostSchedulingPipelines(module, 4 * 1024 * 1024, gpu_device_info);
+  }
+
+  const se::GpuComputeCapability& GpuComputeComp() {
+    return device_desc().gpu_compute_capability();
   }
 };
 
@@ -359,16 +367,10 @@ ENTRY main {
 
 TEST_F(GpuCompilerTest,
        GemmFusionIsNoOpWhenGemmFusionAutotunerFallsBackToCublas) {
-  GTEST_SKIP() << "TODO(b/344573710): this test is flaky, disable it "
-               << " until flakiness is fixed.";
-  auto cc = backend()
-                .default_stream_executor()
-                ->GetDeviceDescription()
-                .cuda_compute_capability();
-  if (!cc.IsAtLeastAmpere()) {
-    GTEST_SKIP() << "Autotuning results have only been generated for Ampere "
-                 << "and Hopper GPUs";
+  if (std::holds_alternative<se::RocmComputeCapability>(GpuComputeComp())) {
+    GTEST_SKIP() << "Not using autotuner on ROCM yet.";
   }
+
   const absl::string_view hlo_string = R"(
 HloModule test
 
