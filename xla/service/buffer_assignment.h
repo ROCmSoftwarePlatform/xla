@@ -212,6 +212,7 @@ class BufferAllocation {
   // REQUIRES: 'buffer' must be assigned to this allocation.
   Slice GetSlice(const HloValue& buffer) const;
 
+  std::string ToShortString() const;
   std::string ToString() const;
   BufferAllocationProto ToProto() const;
 
