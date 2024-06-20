@@ -43,7 +43,7 @@ config.substitutions.extend([
     ("%PYTHON", os.getenv("PYTHON", sys.executable)),
 ])
 
-if lit_config.params.get('PTX', 'GCN'):
+if lit_config.params.get('PTX') == 'GCN':
     config.available_features.add("IS_ROCM")
 
 
