@@ -3990,6 +3990,7 @@ cc_library(
         ":conv_algorithm_picker",
         ":cublas_pad_for_gemms",
         ":cublas_padding_requirements",
+        ":cudnn_fused_conv_rewriter",
         ":cusolver_rewriter",
         ":gemm_algorithm_picker",
         ":gemm_rewriter",
@@ -4598,7 +4599,6 @@ cc_library(
     name = "cudnn_fused_conv_rewriter",
     srcs = ["cudnn_fused_conv_rewriter.cc"],
     hdrs = ["cudnn_fused_conv_rewriter.h"],
-    local_defines = if_cuda_is_configured(["GOOGLE_CUDA=1"]),
     deps = [
         ":backend_configs_cc",
         ":cublas_cudnn",
@@ -4627,10 +4627,7 @@ cc_library(
         "@tsl//tsl/platform:errors",
         "@tsl//tsl/platform:ml_dtypes",
         "@tsl//tsl/platform:statusor",
-    ] + if_cuda_is_configured([
-        "@local_config_cuda//cuda:cuda_headers",
-        "@local_config_cuda//cuda:cudnn_header",
-    ]),
+    ],
 )
 
 xla_test(
@@ -4646,13 +4643,15 @@ xla_test(
     backends = [
         "gpu_a100",
     ] + if_oss(["gpu"]),
-    local_defines = if_cuda_is_configured(["GOOGLE_CUDA=1"]),
+    local_defines = if_cuda_is_configured(["GOOGLE_CUDA=1"]) +
+                    if_rocm_is_configured(["TENSORFLOW_USE_ROCM=1"]),
     shard_count = 10,
     deps = [
         ":backend_configs_cc",
         ":cublas_cudnn",
         ":cudnn_fused_conv_rewriter",
         ":gpu_conv_rewriter",
+        ":stream_executor_util",
         "//xla:comparison_util",
         "//xla:error_spec",
         "//xla/hlo/ir:hlo",
@@ -4667,6 +4666,7 @@ xla_test(
         "//xla/service:reshape_mover",
         "//xla/service/gpu/tests:gpu_codegen_test",
         "//xla/stream_executor:device_description",
+        "//xla/stream_executor:stream_executor_headers",
         "//xla/tests:filecheck",
         "//xla/tests:hlo_test_base",
         "//xla/tests:verified_hlo_module",
@@ -4681,6 +4681,8 @@ xla_test(
     ] + if_cuda_is_configured([
         "@local_config_cuda//cuda:cuda_headers",
         "@local_config_cuda//cuda:cudnn_header",
+    ]) + if_rocm_is_configured([
+        "@local_config_rocm//rocm:rocm_headers"
     ]),
 )
 
