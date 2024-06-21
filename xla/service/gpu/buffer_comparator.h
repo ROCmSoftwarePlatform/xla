@@ -22,6 +22,10 @@ limitations under the License.
 #include "xla/stream_executor/device_memory.h"
 #include "xla/stream_executor/stream_executor.h"
 
+#if TENSORFLOW_USE_ROCM
+#include "rocm/rocm_config.h"
+#endif
+
 namespace xla::gpu {
 
 // A device-side comparator that compares buffers.
@@ -30,7 +34,7 @@ class BufferComparator {
   BufferComparator(const BufferComparator&) = delete;
   BufferComparator(BufferComparator&&) = default;
 
-  BufferComparator(const Shape& shape, const HloModuleConfig& config, 
+  BufferComparator(const Shape& shape, const HloModuleConfig& config,
                    bool verbose = true);
 
   // Returns true if the two buffers compare equal. The definition of "equal"
@@ -45,11 +49,12 @@ class BufferComparator {
   absl::StatusOr<bool> CompareEqual(se::Stream* stream,
                                     se::DeviceMemoryBase current,
                                     se::DeviceMemoryBase expected);
+
  private:
   // Returns `true` if two buffers are equal, `false` otherwise.
   template <typename ElementT>
   absl::StatusOr<bool> DeviceCompare(std::string_view kernel_name,
-                                        void* kernel_symbol);
+                                     void* kernel_symbol);
 
   // Host side comparison code that does the same thing, but reports some of the
   // differences as well. It only print logs for debugging.
@@ -59,8 +64,8 @@ class BufferComparator {
   absl::StatusOr<bool> HostCompare();
 
   template <typename ElementT, typename ComparisonT>
-  absl::StatusOr<bool> CompareEqualParameterized(
-    std::string_view kernel_name, void* kernel_symbol);
+  absl::StatusOr<bool> CompareEqualParameterized(std::string_view kernel_name,
+                                                 void* kernel_symbol);
 
  private:
   Shape shape_;
@@ -76,6 +81,10 @@ namespace buffer_comparator {
 // Returns a pointer to CUDA C++ device function implementing comparison.
 void* fp8_e4m3fn_comparison();
 void* fp8_e5m2_comparison();
+#if TENSORFLOW_USE_ROCM && TF_ROCM_VERSION >= 60200
+void* fp8_e4m3fnuz_comparison();
+void* fp8_e5m2fnuz_comparison();
+#endif  // TENSORFLOW_USE_ROCM && TF_ROCM_VERSION >= 60200
 void* fp16_comparison();
 void* bf16_comparison();
 void* fp32_comparison();

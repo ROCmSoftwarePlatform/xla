@@ -179,7 +179,7 @@ absl::Status BlasLt::Init() {
 
   // Wrap hipblas handle immediately, so it is cleaned up if an error occurs.
   BlasLt::MatmulDesc desc(hip_desc, hip_compute_type, hip_scale_type,
-        int32_t(epilogue) & int32_t(Epilogue::kBias));
+                          int32_t(epilogue) & int32_t(Epilogue::kBias));
   if (pointer_mode != PointerMode::kHost) {
     return absl::InternalError("hipblaslt does not support device pointers");
   }
@@ -219,8 +219,8 @@ auto BlasLt::MatmulPlan::GetAlgorithms(size_t max_algorithm_count,
 
     if (op_desc_.has_bias_epilogue()) {
       static int64_t dummyPointer = 0xACEBALL;
-      TF_RETURN_IF_ERROR(SetAttr(op_desc_.get(), 
-            HIPBLASLT_MATMUL_DESC_BIAS_POINTER, &dummyPointer));
+      TF_RETURN_IF_ERROR(SetAttr(
+          op_desc_.get(), HIPBLASLT_MATMUL_DESC_BIAS_POINTER, &dummyPointer));
     }
 
     int found_algorithm_count = 0;
@@ -467,9 +467,11 @@ absl::Status BlasLt::MatmulPlan::DoMatmul(
     }
 #endif
 
+    /*
     if (d_amax != nullptr) {
       return absl::InternalError("hipblaslt does not support amax");
     }
+    */
 
     if (aux != nullptr) {
       return absl::InternalError(
@@ -587,6 +589,8 @@ absl::Status BlasLt::MatmulPlan::ExecuteOnStream(
   }
 
   if (workspace.has_value()) {
+// FP8 compatible types combinations (Full table in
+// https://github.com/ROCm/hipBLASLt/blob/develop/docs/api-reference.rst?plain=1)
 #if TF_ROCM_VERSION >= 60000
     TYPED_MATMUL_WITH_PREALLOCATE_WORKSPACE(
         float, HIP_R_8F_E4M3_FNUZ, HIP_R_8F_E4M3_FNUZ, HIP_R_16F, HIP_R_16F)
@@ -604,6 +608,23 @@ absl::Status BlasLt::MatmulPlan::ExecuteOnStream(
         float, HIP_R_8F_E5M2_FNUZ, HIP_R_8F_E4M3_FNUZ, HIP_R_32F, HIP_R_32F)
 #endif
 
+#if TF_ROCM_VERSION >= 60200
+    TYPED_MATMUL_WITH_PREALLOCATE_WORKSPACE(
+        float, HIP_R_8F_E4M3_FNUZ, HIP_R_8F_E4M3_FNUZ, HIP_R_16BF, HIP_R_16BF)
+    TYPED_MATMUL_WITH_PREALLOCATE_WORKSPACE(
+        float, HIP_R_8F_E4M3_FNUZ, HIP_R_8F_E5M2_FNUZ, HIP_R_16BF, HIP_R_16BF)
+    TYPED_MATMUL_WITH_PREALLOCATE_WORKSPACE(
+        float, HIP_R_8F_E5M2_FNUZ, HIP_R_8F_E4M3_FNUZ, HIP_R_16BF, HIP_R_16BF)
+    TYPED_MATMUL_WITH_PREALLOCATE_WORKSPACE(
+        float, HIP_R_8F_E4M3_FNUZ, HIP_R_8F_E4M3_FNUZ, HIP_R_8F_E4M3_FNUZ,
+        HIP_R_8F_E4M3_FNUZ)
+    TYPED_MATMUL_WITH_PREALLOCATE_WORKSPACE(
+        float, HIP_R_8F_E4M3_FNUZ, HIP_R_8F_E5M2_FNUZ, HIP_R_8F_E5M2_FNUZ,
+        HIP_R_8F_E5M2_FNUZ)
+    TYPED_MATMUL_WITH_PREALLOCATE_WORKSPACE(
+        float, HIP_R_8F_E5M2_FNUZ, HIP_R_8F_E4M3_FNUZ, HIP_R_8F_E5M2_FNUZ,
+        HIP_R_8F_E5M2_FNUZ)
+#endif
     // Other data types:
     TYPED_MATMUL_WITH_PREALLOCATE_WORKSPACE(float, HIP_R_16BF, HIP_R_16BF,
                                             HIP_R_16BF, HIP_R_16BF)
@@ -622,6 +643,7 @@ absl::Status BlasLt::MatmulPlan::ExecuteOnStream(
     TYPED_MATMUL_WITH_PREALLOCATE_WORKSPACE(complex128, HIP_C_64F, HIP_C_64F,
                                             HIP_C_64F, HIP_C_64F)
   } else if (scratch_allocator.has_value()) {
+#if TF_ROCM_VERSION >= 60000
     TYPED_MATMUL_WITH_SCRATCH_ALLOCATOR(
         float, HIP_R_8F_E4M3_FNUZ, HIP_R_8F_E4M3_FNUZ, HIP_R_16F, HIP_R_16F)
     TYPED_MATMUL_WITH_SCRATCH_ALLOCATOR(
@@ -636,7 +658,25 @@ absl::Status BlasLt::MatmulPlan::ExecuteOnStream(
         float, HIP_R_8F_E5M2_FNUZ, HIP_R_8F_E4M3_FNUZ, HIP_R_16F, HIP_R_16F)
     TYPED_MATMUL_WITH_SCRATCH_ALLOCATOR(
         float, HIP_R_8F_E5M2_FNUZ, HIP_R_8F_E4M3_FNUZ, HIP_R_32F, HIP_R_32F)
+#endif
 
+#if TF_ROCM_VERSION >= 60200
+    TYPED_MATMUL_WITH_SCRATCH_ALLOCATOR(
+        float, HIP_R_8F_E4M3_FNUZ, HIP_R_8F_E4M3_FNUZ, HIP_R_16BF, HIP_R_16BF)
+    TYPED_MATMUL_WITH_SCRATCH_ALLOCATOR(
+        float, HIP_R_8F_E4M3_FNUZ, HIP_R_8F_E5M2_FNUZ, HIP_R_16BF, HIP_R_16BF)
+    TYPED_MATMUL_WITH_SCRATCH_ALLOCATOR(
+        float, HIP_R_8F_E5M2_FNUZ, HIP_R_8F_E4M3_FNUZ, HIP_R_16BF, HIP_R_16BF)
+    TYPED_MATMUL_WITH_SCRATCH_ALLOCATOR(float, HIP_R_8F_E4M3_FNUZ,
+                                        HIP_R_8F_E4M3_FNUZ, HIP_R_8F_E4M3_FNUZ,
+                                        HIP_R_8F_E4M3_FNUZ)
+    TYPED_MATMUL_WITH_SCRATCH_ALLOCATOR(float, HIP_R_8F_E4M3_FNUZ,
+                                        HIP_R_8F_E5M2_FNUZ, HIP_R_8F_E5M2_FNUZ,
+                                        HIP_R_8F_E5M2_FNUZ)
+    TYPED_MATMUL_WITH_SCRATCH_ALLOCATOR(float, HIP_R_8F_E5M2_FNUZ,
+                                        HIP_R_8F_E4M3_FNUZ, HIP_R_8F_E5M2_FNUZ,
+                                        HIP_R_8F_E5M2_FNUZ)
+#endif
     // Other data types:
     TYPED_MATMUL_WITH_SCRATCH_ALLOCATOR(float, HIP_R_16BF, HIP_R_16BF,
                                         HIP_R_16BF, HIP_R_16BF)

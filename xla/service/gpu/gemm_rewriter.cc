@@ -72,6 +72,10 @@ limitations under the License.
 #include "third_party/gpus/cuda/include/cuda.h"
 #endif
 
+#if TENSORFLOW_USE_ROCM
+#include "rocm/rocm_config.h"
+#endif
+
 namespace xla {
 namespace gpu {
 namespace {
@@ -596,7 +600,7 @@ class GemmRewriterVisitor : public DfsHloRewriteVisitor {
                              const_cast<HloInstruction *>(instr), b, b_scale,
                              b_mult_scale, b_ops);
                        })))) {
-#if TENSORFLOW_USE_ROCM
+#if TENSORFLOW_USE_ROCM && TF_ROCM_VERSION < 60200
         if (instr->shape().element_type() != F16 &&
             instr->shape().element_type() != F32) {
           TF_ASSIGN_OR_RETURN(instr,
@@ -1046,16 +1050,26 @@ class GemmRewriterVisitor : public DfsHloRewriteVisitor {
     switch (instr->shape().element_type()) {
       case F8E4M3FN:
       case F8E5M2:
+#if TENSORFLOW_USE_ROCM && TF_ROCM_VERSION >= 60200
+      case F8E4M3FNUZ:
+      case F8E5M2FNUZ:
+#endif
       case BF16:
       case F16:
       case F32:
         break;
       default:
 
-        VLOG(1) << "Failed to rewrite " << instr->ToShortString()
-                << " into FP8 Custom Call. Output element type must be "
-                   "F8E4M3FN, F8E5M2, BF16, F16 or F32. Actual element type is "
-                << PrimitiveType_Name(instr->shape().element_type());
+        VLOG(1)
+            << "Failed to rewrite " << instr->ToShortString()
+            << " into FP8 Custom Call. Output element type must be "
+#if TENSORFLOW_USE_ROCM && TF_ROCM_VERSION >= 60200
+               "F8E4M3FN, F8E5M2, F8E4M3FNUZ, F8E5M2FNUZ, BF16, F16 or F32. "
+#else
+               "F8E4M3FN, F8E5M2, BF16, F16 or F32. "
+#endif
+               "Actual element type is "
+            << PrimitiveType_Name(instr->shape().element_type());
         return false;
     }
 
@@ -1694,7 +1708,7 @@ class GemmRewriterVisitor : public DfsHloRewriteVisitor {
       return absl::OkStatus();
     }
 
-#if CUDA_VERSION < 12040
+#if GOOGLE_CUDA && CUDA_VERSION < 12040
     // For CUDA versions less than 12.3.2, cuBLAS LT returns
     // CUBLAS_STATUS_NOT_SUPPORTED in some cases when fusing gelu into an FP8
     // matmul. We cannot check the patch version, so disable this fusion with
