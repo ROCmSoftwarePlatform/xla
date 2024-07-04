@@ -104,6 +104,10 @@ static absl::StatusOr<bool> DeviceCompare(
   return result == 0;
 }
 
+// Host side comparison code that does the same thing, but reports some of the
+// differences as well. It only print logs for debugging.
+//
+// Returns true if no differences were seen, false otherwise.
 template <typename ElementType, typename ComparisonType>
 static absl::StatusOr<bool> HostCompare(const ComparisonParams& params) {
   int64_t n = params.current.size() / sizeof(ElementType);

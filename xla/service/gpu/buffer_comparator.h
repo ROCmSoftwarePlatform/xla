@@ -47,7 +47,7 @@ class BufferComparator {
                                     se::DeviceMemoryBase expected) const;
  private:
   Shape shape_;
-  float relative_tol_;  // relative tolerance for comparison
+  double relative_tol_;  // relative tolerance for comparison
   bool verbose_;          // whether to print out error message on mismatch
 };
 
