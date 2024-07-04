@@ -347,7 +347,7 @@ class GemmAutotuner {
           comparator.CompareEqual(stream_, /*current=*/OutputBuffer(),
                                     /*expected=*/reference_buffer));
       if (!outputs_match) {
-        LOG(ERROR) << "Results mismatch between different GEMM algorithms. "
+        LOG(WARNING) << "Results mismatch between different GEMM algorithms. "
                    << "This is likely a bug/unexpected loss of precision.";
         CHECK(!autotune_config_.should_crash_on_check_failure());
 
