@@ -46,7 +46,7 @@ using ComparisonKernelT =
                     float, uint64_t, se::DeviceMemory<uint64_t>>;
 
 struct ComparisonParams {
-  float relative_tol = 0.1f;
+  double relative_tol = 0.1f;
   bool verbose = true;
   const Shape *shape = nullptr;
   se::Stream* stream = nullptr;
@@ -93,7 +93,8 @@ static absl::StatusOr<bool> DeviceCompare(
   se::DeviceMemory<uint64_t> as_uint64(out.memory());
   TF_RETURN_IF_ERROR(params.stream->ThenLaunch(
       dim.thread_counts_per_block(), dim.block_counts(), comparison_kernel,
-      current_typed, expected_typed, params.relative_tol, buffer_size, as_uint64));
+      current_typed, expected_typed, static_cast<float>(params.relative_tol), 
+      buffer_size, as_uint64));
 
   uint64_t result = -1;
   CHECK_EQ(out.memory().size(), sizeof(result));
@@ -150,9 +151,8 @@ static absl::StatusOr<bool> HostCompare(const ComparisonParams& params) {
         !(std::abs(current_value_canonical - expected_value_canonical) /
               (std::max(std::abs(current_value_canonical),
                         std::abs(expected_value_canonical)) +
-               1) <
-          static_cast<double>(params.relative_tol))) {
-      if(!params.verbose) return false; // Return immediately if not verbose.
+               1) < params.relative_tol)) {
+      if (!params.verbose) return false; // Return immediately if not verbose.
       ++differences_seen;
       LOG(ERROR) << "Difference at " << i << ": " << current_value
                    << ", expected " << expected_value;

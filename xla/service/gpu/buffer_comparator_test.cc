@@ -39,6 +39,9 @@ namespace xla {
 namespace gpu {
 namespace {
 
+constexpr double kDefaultTolerance = 0.1;
+
+
 class BufferComparatorTest : public testing::Test {
  protected:
   BufferComparatorTest()
@@ -53,7 +56,8 @@ class BufferComparatorTest : public testing::Test {
   // Take floats only for convenience. Still uses ElementType internally.
   template <typename ElementType>
   bool CompareEqualBuffers(const std::vector<ElementType>& current,
-                           const std::vector<ElementType>& expected) {
+                           const std::vector<ElementType>& expected,
+                           double tolerance) {
     auto stream = stream_exec_->CreateStream().value();
 
     se::DeviceMemoryHandle current_buffer(
@@ -82,16 +86,18 @@ class BufferComparatorTest : public testing::Test {
   // Take floats only for convenience. Still uses ElementType internally.
   template <typename ElementType>
   bool CompareEqualFloatBuffers(const std::vector<float>& lhs_float,
-                                const std::vector<float>& rhs_float) {
+                                const std::vector<float>& rhs_float,
+                                double tolerance = kDefaultTolerance) {
     std::vector<ElementType> lhs(lhs_float.begin(), lhs_float.end());
     std::vector<ElementType> rhs(rhs_float.begin(), rhs_float.end());
-    return CompareEqualBuffers(lhs, rhs);
+    return CompareEqualBuffers(lhs, rhs, tolerance);
   }
 
   template <typename ElementType>
   bool CompareEqualComplex(const std::vector<std::complex<ElementType>>& lhs,
                            const std::vector<std::complex<ElementType>>& rhs) {
-    return CompareEqualBuffers<std::complex<ElementType>>(lhs, rhs);
+    return CompareEqualBuffers<std::complex<ElementType>>(lhs, rhs, 
+                                                          kDefaultTolerance);
   }
 
   se::Platform* platform_;
