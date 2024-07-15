@@ -1694,6 +1694,7 @@ xla_test(
         ":backend_configs_cc",
         ":gemm_algorithm_picker",
         ":gemm_rewriter",
+        ":variant_visitor",
         "//xla/hlo/ir:hlo",
         "//xla/service:pattern_matcher",
         "//xla/service:pattern_matcher_gmock",

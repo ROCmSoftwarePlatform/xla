@@ -39,6 +39,9 @@ namespace xla {
 namespace gpu {
 namespace {
 
+constexpr double kDefaultTolerance = 0.1;
+
+
 class BufferComparatorTest : public testing::Test {
  protected:
   BufferComparatorTest()
@@ -53,7 +56,8 @@ class BufferComparatorTest : public testing::Test {
   // Take floats only for convenience. Still uses ElementType internally.
   template <typename ElementType>
   bool CompareEqualBuffers(const std::vector<ElementType>& current,
-                           const std::vector<ElementType>& expected) {
+                           const std::vector<ElementType>& expected,
+                           double tolerance) {
     auto stream = stream_exec_->CreateStream().value();
 
     se::DeviceMemoryHandle current_buffer(
@@ -72,7 +76,7 @@ class BufferComparatorTest : public testing::Test {
         ShapeUtil::MakeShape(
             primitive_util::NativeToPrimitiveType<ElementType>(),
             {static_cast<int64_t>(current.size())}),
-        HloModuleConfig());
+        tolerance);
     return comparator
         .CompareEqual(stream.get(), current_buffer.memory(),
                       expected_buffer.memory())
@@ -82,16 +86,18 @@ class BufferComparatorTest : public testing::Test {
   // Take floats only for convenience. Still uses ElementType internally.
   template <typename ElementType>
   bool CompareEqualFloatBuffers(const std::vector<float>& lhs_float,
-                                const std::vector<float>& rhs_float) {
+                                const std::vector<float>& rhs_float,
+                                double tolerance = kDefaultTolerance) {
     std::vector<ElementType> lhs(lhs_float.begin(), lhs_float.end());
     std::vector<ElementType> rhs(rhs_float.begin(), rhs_float.end());
-    return CompareEqualBuffers(lhs, rhs);
+    return CompareEqualBuffers(lhs, rhs, tolerance);
   }
 
   template <typename ElementType>
   bool CompareEqualComplex(const std::vector<std::complex<ElementType>>& lhs,
                            const std::vector<std::complex<ElementType>>& rhs) {
-    return CompareEqualBuffers<std::complex<ElementType>>(lhs, rhs);
+    return CompareEqualBuffers<std::complex<ElementType>>(lhs, rhs, 
+                                                          kDefaultTolerance);
   }
 
   se::Platform* platform_;
@@ -238,6 +244,16 @@ TEST_F(BufferComparatorTest, TestNumbers) {
   EXPECT_TRUE(CompareEqualFloatBuffers<tsl::float8_e5m2>({11}, {12}));
   EXPECT_TRUE(CompareEqualFloatBuffers<tsl::float8_e5m2>({12}, {11}));
 #endif  // GOOGLE_CUDA
+
+  // Rerunning tests with increased relative tolerance
+  const double tol = 0.001;
+  EXPECT_FALSE(CompareEqualFloatBuffers<Eigen::half>({0.9}, {1}, tol));
+  EXPECT_TRUE(CompareEqualFloatBuffers<Eigen::half>({0.9}, {0.901}, tol));
+  EXPECT_FALSE(CompareEqualFloatBuffers<float>({10}, {10.1}, tol));
+  EXPECT_TRUE(CompareEqualFloatBuffers<float>({10}, {10.01}, tol));
+  EXPECT_FALSE(CompareEqualFloatBuffers<int8_t>({100}, {101}, tol));
+  EXPECT_FALSE(CompareEqualFloatBuffers<double>({20}, {20.1}, tol));
+  EXPECT_TRUE(CompareEqualFloatBuffers<double>({20}, {20.01}, tol));
 }
 
 TEST_F(BufferComparatorTest, TestMultiple) {
@@ -361,8 +377,7 @@ TEST_F(BufferComparatorTest, BF16) {
       stream_exec_->AllocateArray<Eigen::bfloat16>(element_count));
   InitializeBuffer(stream.get(), BF16, &rng_state, rhs.memory());
 
-  BufferComparator comparator(ShapeUtil::MakeShape(BF16, {element_count}),
-                              HloModuleConfig());
+  BufferComparator comparator(ShapeUtil::MakeShape(BF16, {element_count}));
   EXPECT_FALSE(comparator.CompareEqual(stream.get(), lhs.memory(), rhs.memory())
                    .value());
 }
