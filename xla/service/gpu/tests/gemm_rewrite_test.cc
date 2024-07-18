@@ -4791,6 +4791,9 @@ TEST_P(ParameterizedFp8GemmRewriteTest, DoNotRewriteToF8OnPreAda) {
   if (HasFp8Support()) {
     GTEST_SKIP() << "Test requires a pre-Ada GPU or an AMD GPU prior to MI300.";
   }
+  if (!IsCuda()) {
+      GTEST_SKIP() << "Skip this rewrite pattern on ROCm";
+  }
   const char* hlo_text = R"(
     HloModule test
 
