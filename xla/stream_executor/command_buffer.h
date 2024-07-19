@@ -133,6 +133,8 @@ class CommandBuffer {
   using ExecutionScopeBuilder =
       std::function<absl::Status(ExecutionScopeId, CommandBuffer*)>;
 
+  using BufferVector = std::vector< DeviceMemoryBase >;
+
   CommandBuffer() = default;
   virtual ~CommandBuffer() = default;
 
@@ -252,12 +254,17 @@ class CommandBuffer {
   // Adds a nested command buffer.
   virtual absl::Status AddNestedCommandBuffer(
       ExecutionScopeId execution_scope_id, const CommandBuffer& nested,
-      bool update_needed = true) = 0;
+      bool update_needed) = 0;
 
   // Adds a nested command buffer to the default execution scope.
   absl::Status AddNestedCommandBuffer(const CommandBuffer& nested) {
-    return AddNestedCommandBuffer(kDefaulExecutionScope, nested);
+    return AddNestedCommandBuffer(kDefaulExecutionScope, nested,
+            /*update_needed*/true);
   }
+
+  virtual absl::Status UpdateGemmCommand(ExecutionScopeId execution_scope_id, 
+    const CommandBuffer& nested, const BufferVector& buffers, 
+    bool update_needed) = 0;
 
   // Adds a device-to-device memory copy.
   virtual absl::Status MemcpyDeviceToDevice(ExecutionScopeId execution_scope_id,

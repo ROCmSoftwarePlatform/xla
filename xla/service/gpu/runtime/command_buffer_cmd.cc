@@ -364,6 +364,29 @@ TracedCommandBuffer::TracedCommandBuffer(
   allocs_indices_.assign(allocs_indices.begin(), allocs_indices.end());
 }
 
+se::CommandBuffer *TracedCommandBuffer::GetLastCommandBuffer(
+    const BufferAllocations* buffer_allocation, bool *update_needed) 
+{
+  // Collect memory addresses for relevant allocations.
+  absl::InlinedVector<se::DeviceMemoryBase, 4> allocs;
+  allocs.reserve(allocs_indices_.size());
+  for (auto& index : allocs_indices_) {
+    allocs.emplace_back(buffer_allocation->GetDeviceAddress(index));
+  }
+
+  *update_needed = true;
+  for (size_t i = 0; i < capacity_; ++i) { // get any valid command_buffer stored
+    if (entries_[i].command_buffer) {
+      if (i == 0 && 
+        ABSL_PREDICT_TRUE(absl::c_equal(entries_[0].recorded_allocs, allocs))) {
+        *update_needed = false; // this allocation is already in the first place
+      }
+      return entries_[i].command_buffer.get();
+    }
+  }
+  return nullptr;
+}
+
 absl::StatusOr<se::CommandBuffer*> TracedCommandBuffer::GetOrTraceCommandBuffer(
     const BufferAllocations* buffer_allocation, se::StreamExecutor* executor,
     se::Stream* stream, absl::FunctionRef<absl::Status(se::Stream*)> trace,
@@ -439,14 +462,26 @@ absl::Status TracedCommandBufferCmd::AddTracedCommandBuffer(
   auto traced_cmd = record_params.state.GetOrCreate<TracedCommandBuffer>(
       this, [&] { return std::make_unique<TracedCommandBuffer>(buffers()); });
 
+  ExecutionScopeId execution_scope_id = GetExecutionScope(record_params);
+
+  // but we also need our buffers!!
+  // NOTE: possibly, we can trace GEMM calls directly to the main graph
   bool update_needed = false;
+  // if(this->GetType() == CommandBufferCmd::zGemm) {
+  //   if(auto nested_cmd = traced_cmd->GetLastCommandBuffer(
+  //                 execute_params.buffer_allocations, &update_needed)) {
+  //     const auto *bufs = raw_buffers();
+  //     // TF_RETURN_IF_ERROR(command_buffer->UpdateGemmCommand(execution_scope_id, *nested_cmd,
+  //     //       *bufs, update_needed));
+  //   }
+  // }
+  
   TF_ASSIGN_OR_RETURN(
       auto nested_cmd,
       traced_cmd->GetOrTraceCommandBuffer(
           execute_params.buffer_allocations, execute_params.stream->parent(),
           execute_params.command_buffer_trace_stream, trace, &update_needed));
 
-  ExecutionScopeId execution_scope_id = GetExecutionScope(record_params);
   return command_buffer->AddNestedCommandBuffer(execution_scope_id,
                           *nested_cmd, update_needed);
 
@@ -736,22 +771,9 @@ absl::Status CustomKernelLaunchCmd::Record(
   se::KernelArgsDeviceMemoryArray kernel_args(
       buffers, custom_kernel_.shared_memory_bytes());
 
-  // static std::atomic_int zz = 0;
-  // bool OK = false;
-  // if(command_buffer->state() == se::CommandBuffer::State::kUpdate) {
-  //   OK = (zz++ == 50);
-  // }
-  // if(OK) {
-  //   VLOG(1) << "========================= BEGIN CustomKernelLaunchCmd LOGGING ======================== ";
-  // }
-
   auto res = command_buffer->Launch(
       execution_scope_id, custom_kernel_.thread_dims(),
       custom_kernel_.block_dims(), *kernel, kernel_args);
-
-  // if(OK) {
-  //   VLOG(1) << "========================= END CustomKernelLaunchCmd LOGGING ======================== ";
-  // }
   return res;
 }
 
@@ -1174,20 +1196,24 @@ absl::Status GemmCmd::Initialize(const Thunk::InitializeParams& params,
 absl::Status GemmCmd::Record(const Thunk::ExecuteParams& execute_params,
                              const RecordParams& record_params,
                              se::CommandBuffer* command_buffer) {
-  se::DeviceMemoryBase lhs =
-      execute_params.buffer_allocations->GetDeviceAddress(lhs_buffer_);
-  se::DeviceMemoryBase rhs =
-      execute_params.buffer_allocations->GetDeviceAddress(rhs_buffer_);
-  se::DeviceMemoryBase out =
-      execute_params.buffer_allocations->GetDeviceAddress(output_buffer_);
+
+  se::CommandBuffer::BufferVector raw_buffers = {
+      execute_params.buffer_allocations->GetDeviceAddress(lhs_buffer_),
+      execute_params.buffer_allocations->GetDeviceAddress(rhs_buffer_),
+      execute_params.buffer_allocations->GetDeviceAddress(output_buffer_)
+  };
   
   ExecutionScopeId execution_scope_id = GetExecutionScope(record_params);
-  VLOG(5) << "GemmCmd: deterministic=" << deterministic_
-          << "; execution_scope_id=" << execution_scope_id.value()
-          << " buffer state: " << (int)command_buffer->state();
-  VLOG(5) << "  Lhs: " << lhs_buffer_ << " (" << lhs.opaque() << ")";
-  VLOG(5) << "  Rhs: " << rhs_buffer_ << " (" << rhs.opaque() << ")";
-  VLOG(5) << "  Out: " << output_buffer_ << " (" << out.opaque() << ")";
+
+  // if(command_buffer->state() == se::CommandBuffer::State::kCreate
+  //     && execute_params.stream->parent()->device_ordinal()==0) {
+  // VLOG(0) << "GemmCmd: deterministic=" << deterministic_
+  //         << "; execution_scope_id=" << execution_scope_id.value()
+  //         << " buffer state: " << (int)command_buffer->state();
+  // VLOG(0) << "  Lhs: " << lhs_buffer_ << " (" << raw_buffers_[0].opaque() << ")";
+  // VLOG(0) << "  Rhs: " << rhs_buffer_ << " (" << raw_buffers_[1].opaque() << ")";
+  // VLOG(0) << "  Out: " << output_buffer_ << " (" << raw_buffers_[2].opaque() << ")";
+  // }
   
   auto blas = execute_params.stream->parent()->AsBlas();
   // set stream before tracing!
@@ -1201,25 +1227,11 @@ absl::Status GemmCmd::Record(const Thunk::ExecuteParams& execute_params,
   
   blas->SetStream(execute_params.command_buffer_trace_stream);
 
-  // static std::atomic_int zz = 0;
-  // bool OK = false;
-  // if(command_buffer->state() == se::CommandBuffer::State::kUpdate) {
-  //   OK = (zz++ == 50);
-  // }
-  // if(OK) {
-  //   TF_RETURN_IF_ERROR(CommandBufferCmdSequence::DebugBlockHostUntilDone(execute_params));
-  //   VLOG(1) << "========================= BEGIN GemmCmd LOGGING ======================== ";
-  // }
-
   auto res = AddTracedCommandBuffer(
       execute_params, record_params, command_buffer, [&](se::Stream* stream) {
-        return RunGemm(config_, lhs, rhs, out, se::DeviceMemoryBase{}, deterministic_,
-                       stream);
-      });
-  // if(OK) {
-  //   TF_RETURN_IF_ERROR(CommandBufferCmdSequence::DebugBlockHostUntilDone(execute_params));
-  //   VLOG(1) << "========================= END GemmCmd LOGGING ======================== ";
-  // }
+        return RunGemm(config_, raw_buffers[0], raw_buffers[1], raw_buffers[2], 
+        se::DeviceMemoryBase{}, deterministic_, stream);
+  });
   return res;
 }
 
@@ -1294,7 +1306,7 @@ absl::Status CustomCallCmd::Record(const Thunk::ExecuteParams& execute_params,
             return absl::OkStatus();
           }));
   return command_buffer->AddNestedCommandBuffer(execution_scope_id,
-                                                *nested_cmd);
+       *nested_cmd, /*update_needed*/true);
 #else   //  GOOGLE_CUDA || TENSORFLOW_USE_ROCM
   return Unavailable(
       "Custom calls on GPU are not supported in this configuration. Please "
@@ -1625,6 +1637,7 @@ CollectivePermuteCmd::CollectivePermuteCmd(ExecutionStreamId execution_stream_id
     : CollectiveCmd(execution_stream_id, nccl_api, config.config),
       id_to_source_target_(config.id_to_source_target),
       buffers_(buffers.begin(), buffers.end()) { }
+
 absl::Status CollectivePermuteCmd::Record(const Thunk::ExecuteParams& execute_params,
                                   const RecordParams& record_params,
                                   se::CommandBuffer* command_buffer) {

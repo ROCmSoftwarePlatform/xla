@@ -93,8 +93,12 @@ class GpuCommandBuffer : public CommandBuffer {
                       const Kernel& kernel, const KernelArgs& args) override;
 
   absl::Status AddNestedCommandBuffer(ExecutionScopeId execution_scope_id,
-                                      const CommandBuffer& nested,
-                                      bool update_needed) override;
+                                 const CommandBuffer& nested,
+                                 bool update_needed) override;
+
+  absl::Status UpdateGemmCommand(ExecutionScopeId execution_scope_id, 
+    const CommandBuffer& nested, const BufferVector& buffers, 
+    bool update_needed) override;
 
   absl::Status MemcpyDeviceToDevice(ExecutionScopeId execution_scope_id,
                                     DeviceMemoryBase* dst,

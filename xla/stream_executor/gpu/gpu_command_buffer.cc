@@ -608,6 +608,45 @@ absl::StatusOr<std::vector< GpuGraphNodeHandle >>
   return child_nodes_;
 }
 
+absl::Status GpuCommandBuffer::UpdateGemmCommand(ExecutionScopeId execution_scope_id, 
+    const CommandBuffer& nested, const BufferVector& buffers, 
+    bool update_needed) {
+
+  ExecutionScope& execution_scope = execution_scopes_[execution_scope_id];
+  TF_RETURN_IF_ERROR(CheckNotFinalized());
+  auto gpu_cmd = GpuCommandBuffer::Cast(&nested);
+  TF_ASSIGN_OR_RETURN(auto child_nodes, gpu_cmd->GetChildNodes());
+
+  if(child_nodes.size() != 1) {
+    return absl::InternalError("Current impl only works for a single gemm node!");
+  }
+
+  // NOTE NOTE: this code shall be executed if update_needed is true!!
+  GpuGraphKernelNodeParams kparams;
+
+  TF_RETURN_IF_ERROR(GpuDriver::GraphGetKernelNodeParams(
+        child_nodes[0], &kparams));
+
+  if(parent_->device_ordinal() == 0) {
+  auto pparams = kparams.kernelParams ? kparams.kernelParams :
+                         kparams.extra;
+  void **kargs = (void **)pparams[1];
+  int64_t *knumbytes = (int64_t *)pparams[3];
+  VLOG(0) << "th kernel: kargs = " << kargs << " num: " << *knumbytes;
+  // in fact we need parameters: [2;5] -> these are the addresses
+  for(int t = 0; t < 7; t++) {
+    VLOG(0) << t << " param: " << kargs[t];
+  }
+  }
+  return absl::OkStatus();
+
+  // auto node = execution_scope.
+  //                       nodes[execution_scope.update_state.node_idx++].handle;
+
+  // TF_RETURN_IF_ERROR(GpuDriver::GraphExecKernelNodeSetParams(exec_, node, 
+  //           "traced kernel", kparams));
+}
+
 absl::Status GpuCommandBuffer::AddNestedCommandBuffer(
     ExecutionScopeId execution_scope_id, const CommandBuffer& nested, 
     bool update_needed) {
@@ -657,8 +696,22 @@ absl::Status GpuCommandBuffer::AddNestedCommandBuffer(
       Dependencies barrier = GetBarrier(execution_scope_id);
       GpuGraphNodeInfo& node_info = execution_scope.nodes.emplace_back();
       if(isKernel) {
+        // static int uuu = 0;
+        // if(can_mutate && child_nodes.size() == 2 && parent_->device_ordinal() == 0) 
+        // if(uuu++ < 10) {
+        //   auto pparams = kparams.kernelParams ? kparams.kernelParams :
+        //                  kparams.extra;
+        //   void **kargs = (void **)pparams[1];
+        //   int64_t *knumbytes = (int64_t *)pparams[3];
+        //   VLOG(0) << i << "th kernel: kargs = " << kargs << " num: " << *knumbytes;
+        //   // in fact we need parameters: [2;5] -> these are the addresses
+        //   for(int t = 0; t < 7; t++) {
+        //     VLOG(0) << t << " param: " << kargs[t];
+        //   }
+        // }
         res = GpuDriver::GraphAddKernelNode(&node_info.handle, graph_, barrier, 
             "traced kernel", kparams);
+
       } else {
         res = GpuDriver::GraphAddMemsetNode(parent_->gpu_context(), 
               &node_info.handle, graph_, barrier, mparams);

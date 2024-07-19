@@ -246,6 +246,7 @@ absl::Status CommandBufferThunk::ExecuteOnStream(const ExecuteParams& params) {
     //TF_RETURN_IF_ERROR(CommandBufferCmdSequence::DebugBlockHostUntilDone(params));
     uint64_t end_micros = tsl::Env::Default()->NowMicros();
 
+    //if(commands_.size() == 3845)
     VLOG(1) << "Updated command buffer on device #" << executor->device_ordinal() 
             << " in " << (end_micros - start_micros)
             << " μs; num_commands=" << commands_.size();

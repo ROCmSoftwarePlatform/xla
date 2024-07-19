@@ -77,6 +77,31 @@ class CommandBufferCmd {
 
   enum class MemoryAccess { kRead, kWrite };
 
+  enum Type { 
+    zComputationID,
+    zLaunch,
+    zCustomKernel,
+    zMemcpyDeviceToDevice,
+    zMemzero,
+    zMemset32,
+    zIf,
+    zIfElse,
+    zCase,
+    zFor,
+    zWhile,
+    zAllocate,
+    zFree,
+    zGemm,
+    zCustomCall,
+    zAllReduce,
+    zReduceScatter,
+    zAllGather,
+    zAllToAll,
+    zCollectivePermute,
+  };
+
+  virtual Type GetType() const = 0;
+
   // BufferUsage tracks memory access type for a buffer slice, so that we can
   // correctly insert command buffer barriers to avoid read/write conflicts.
   struct BufferUsage {
@@ -355,6 +380,9 @@ class TracedCommandBuffer : public CommandBufferCmd::State {
   explicit TracedCommandBuffer(CommandBufferCmd::BufferUsageVector buffers,
                                int64_t capacity = 16);
 
+  se::CommandBuffer *GetLastCommandBuffer(
+    const BufferAllocations* buffer_allocation, bool *update_needed);
+
   // Returns cached command buffer traced using the same buffer addresses or
   // traces and caches a new command buffer using user provided callback.
   absl::StatusOr<se::CommandBuffer*> GetOrTraceCommandBuffer(
@@ -411,6 +439,7 @@ class ComputationIdCmd : public CommandBufferCmd {
                       se::CommandBuffer* command_buffer) override;
 
   BufferUsageVector buffers() override;
+  Type GetType() const override { return zComputationID; }
 
  private:
   BufferAllocation::Slice dest_;
@@ -450,6 +479,7 @@ class LaunchCmd : public CommandBufferCmd {
                       se::CommandBuffer* command_buffer) override;
 
   BufferUsageVector buffers() override;
+  Type GetType() const override { return zLaunch; }
 
  private:
   std::string kernel_name_;
@@ -484,6 +514,7 @@ class CustomKernelLaunchCmd : public CommandBufferCmd {
                       se::CommandBuffer* command_buffer) override;
 
   BufferUsageVector buffers() override;
+  Type GetType() const override { return zCustomKernel; }
 
  private:
   std::vector<BufferAllocation::Slice> args_;
@@ -512,6 +543,7 @@ class MemcpyDeviceToDeviceCmd : public CommandBufferCmd {
                       se::CommandBuffer* command_buffer) override;
 
   BufferUsageVector buffers() override;
+  Type GetType() const override { return zMemcpyDeviceToDevice; }
 
  private:
   BufferAllocation::Slice dst_;
@@ -534,6 +566,8 @@ class MemzeroCmd : public CommandBufferCmd {
 
   BufferUsageVector buffers() override;
 
+  Type GetType() const override { return zMemzero; }
+
  private:
   BufferAllocation::Slice dst_;
 };
@@ -552,6 +586,7 @@ class Memset32Cmd : public CommandBufferCmd {
                       se::CommandBuffer* command_buffer) override;
 
   BufferUsageVector buffers() override;
+  Type GetType() const override { return zMemset32; }
 
  private:
   BufferAllocation::Slice dst_;
@@ -575,6 +610,7 @@ class IfCmd : public CommandBufferCmd {
                       se::CommandBuffer* command_buffer) override;
 
   BufferUsageVector buffers() override;
+  Type GetType() const override { return zIf; }
 
  private:
   BufferAllocation::Slice pred_;
@@ -599,6 +635,7 @@ class IfElseCmd : public CommandBufferCmd {
                       se::CommandBuffer* command_buffer) override;
 
   BufferUsageVector buffers() override;
+  Type GetType() const override { return zIfElse; }
 
  private:
   BufferAllocation::Slice pred_;
@@ -623,6 +660,7 @@ class CaseCmd : public CommandBufferCmd {
                       se::CommandBuffer* command_buffer) override;
 
   BufferUsageVector buffers() override;
+  Type GetType() const override { return zCase; }
 
  private:
   BufferAllocation::Slice index_;
@@ -647,6 +685,7 @@ class ForCmd : public CommandBufferCmd {
                       se::CommandBuffer* command_buffer) override;
 
   BufferUsageVector buffers() override;
+  Type GetType() const override { return zFor; }
 
  private:
   int32_t num_iterations_;
@@ -672,6 +711,7 @@ class WhileCmd : public CommandBufferCmd {
                       se::CommandBuffer* command_buffer) override;
 
   BufferUsageVector buffers() override;
+  Type GetType() const override { return zWhile; }
 
  private:
   BufferAllocation::Slice pred_;
@@ -695,6 +735,7 @@ class AllocateCmd : public CommandBufferCmd {
                       se::CommandBuffer* command_buffer) override;
 
   BufferUsageVector buffers() override;
+  Type GetType() const override { return zAllocate; }
 
  private:
   BufferAllocation allocation_;
@@ -715,6 +756,7 @@ class FreeCmd : public CommandBufferCmd {
                       se::CommandBuffer* command_buffer) override;
 
   BufferUsageVector buffers() override;
+  Type GetType() const override { return zFree; }
 
  private:
   BufferAllocation allocation_;
@@ -740,8 +782,8 @@ class GemmCmd : public TracedCommandBufferCmd {
                       se::CommandBuffer* command_buffer) override;
 
   BufferUsageVector buffers() override;
-
   bool IsNestedCommandBuffer() const final { return true; }
+  Type GetType() const override { return zGemm; }
 
  private:
   const GemmConfig config_;
@@ -789,6 +831,7 @@ class CustomCallCmd : public CommandBufferCmd {
 
   BufferUsageVector buffers() override;
   bool IsNestedCommandBuffer() const final { return true; }
+  Type GetType() const override { return zCustomCall; }
 
  private:
   CustomCallTarget call_target_;
@@ -837,6 +880,7 @@ class AllReduceCmd : public CollectiveCmd {
                       se::CommandBuffer* command_buffer) override;
 
   BufferUsageVector buffers() override;
+  Type GetType() const override { return zAllReduce; }
 
   AsyncStreamKind GetAsyncStreamKind() override {
     return AsyncStreamKind::kCollective;
@@ -862,6 +906,7 @@ class ReduceScatterCmd : public CollectiveCmd {
                       se::CommandBuffer* command_buffer) override;
 
   BufferUsageVector buffers() override;
+  Type GetType() const override { return zReduceScatter; }
 
   AsyncStreamKind GetAsyncStreamKind() override {
     return AsyncStreamKind::kCollective;
@@ -887,6 +932,7 @@ class AllGatherCmd : public CollectiveCmd {
                       se::CommandBuffer* command_buffer) override;
 
   BufferUsageVector buffers() override;
+  Type GetType() const override { return zAllGather; }
 
   AsyncStreamKind GetAsyncStreamKind() override {
     return AsyncStreamKind::kCollective;
@@ -907,6 +953,7 @@ class AllToAllCmd : public CollectiveCmd {
                       se::CommandBuffer* command_buffer) override;
 
   BufferUsageVector buffers() override;
+  Type GetType() const override { return zAllToAll; }
 
   AsyncStreamKind GetAsyncStreamKind() override {
     return AsyncStreamKind::kCollective;
@@ -928,6 +975,7 @@ class CollectivePermuteCmd : public CollectiveCmd {
                       se::CommandBuffer* command_buffer) override;
 
   BufferUsageVector buffers() override;
+  Type GetType() const override { return zCollectivePermute; }
 
   AsyncStreamKind GetAsyncStreamKind() override {
     return AsyncStreamKind::kCollective;
