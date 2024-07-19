@@ -106,7 +106,7 @@ TF_ASSERT_OK_AND_ASSIGN(auto module,
     TF_ASSERT_OK_AND_ASSIGN(
       bool changed,
       RunHloPass(
-          GemmRewriter(gpu_comp(), /*toolkit_version=*/12040),
+          GemmRewriter(gpu_comp()),
           module.get()));
 
     AutotuneConfig cfg{DeviceConfig{stream_exec(), nullptr}, debug_opts};
@@ -135,7 +135,7 @@ TF_ASSERT_OK_AND_ASSIGN(auto module,
     TF_ASSERT_OK_AND_ASSIGN(
       bool changed,
       RunHloPass(
-          GemmRewriter(gpu_comp(), /*toolkit_version=*/12040),
+          GemmRewriter(gpu_comp()),
           module.get()));
 
     AutotuneConfig cfg{DeviceConfig{stream_exec(), nullptr}, debug_opts};
@@ -165,7 +165,7 @@ ENTRY main {
   TF_ASSERT_OK_AND_ASSIGN(
       changed,
       RunHloPass(
-          GemmRewriter(gpu_comp(), /*toolkit_version=*/12040),
+          GemmRewriter(gpu_comp()),
           m.get()));
   changed = false;
   DebugOptions opts;
@@ -192,7 +192,7 @@ ENTRY main {
   TF_ASSERT_OK_AND_ASSIGN(
       changed,
       RunHloPass(
-          GemmRewriter(gpu_comp(), /*toolkit_version=*/12040),
+          GemmRewriter(gpu_comp()),
           m.get()));
   changed = false;
   TF_ASSERT_OK_AND_ASSIGN(changed,
@@ -226,7 +226,7 @@ ENTRY main {
   TF_ASSERT_OK_AND_ASSIGN(
       changed,
       RunHloPass(
-          GemmRewriter(gpu_comp(), /*toolkit_version=*/12040),
+          GemmRewriter(gpu_comp()),
           m.get()));
   changed = false;
 
@@ -260,8 +260,7 @@ ENTRY main {
   TF_ASSERT_OK_AND_ASSIGN(
       changed,
       RunHloPass(
-          GemmRewriter(gpu_comp(),
-              /*toolkit_version=*/12040),
+          GemmRewriter(gpu_comp()),
           m.get()));
   changed = false;
   TF_ASSERT_OK_AND_ASSIGN(
