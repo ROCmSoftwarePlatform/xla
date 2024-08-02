@@ -69,7 +69,7 @@ class ROCmPlatform : public Platform {
       const StreamExecutorConfig& config) override;
 
   absl::StatusOr<std::unique_ptr<StreamExecutor>> GetUncachedExecutor(
-      const StreamExecutorConfig& config) override;
+      const StreamExecutorConfig& config);
 
  private:
   // Determines the number of NUMA nodes and the assignment of executor to each.
