@@ -183,9 +183,8 @@ class GemmFusionAutotunerImpl {
                               const ScopedShapedBuffer& buffer,
                               AutotuneResult& res);
 
-  se::CudaComputeCapability GetComputeCapability() const {
-    return std::get<se::CudaComputeCapability>(
-        config_.GetGpuComputeCapability());
+  se::GpuComputeCapability GetComputeCapability() const {
+    return config_.GetGpuComputeCapability();
   }
 
   std::vector<TritonGemmConfig> GetDefaultTritonConfigs() const;
@@ -197,6 +196,30 @@ class GemmFusionAutotunerImpl {
   tsl::thread::ThreadPool* thread_pool_;
   std::vector<TritonGemmConfig> triton_configs_;
 };
+
+// Move to header file start
+
+struct TileSizeLimit {
+  int block_m = 0;
+  int block_n = 0;
+  int block_k = 0;
+};
+
+absl::StatusOr<TileSizeLimit> GetLimits(const HloDotInstruction& dot);
+bool IsFusionKind(const HloInstruction& hlo, absl::string_view kind);
+
+// Minimum tile size.
+constexpr int kMinTileSize = 16;
+
+using BackendConfig = GemmFusionAutotunerImpl::BackendConfig;
+
+std::vector<BackendConfig> GenerateCustomKernelFusionConfigs(
+    const HloFusionInstruction& fusion,
+    se::DeviceDescription device_description);
+
+extern const int64_t BLAS_GEMM_DEFAULT;
+
+// Move to header file end
 
 }  // namespace gpu
 }  // namespace xla

@@ -9,6 +9,10 @@ load(
     "@tsl//tsl/platform/default:cuda_build_defs.bzl",
     "if_cuda_is_configured",
 )
+load(
+    "@local_config_rocm//rocm:build_defs.bzl",
+    "if_rocm_is_configured",
+)
 load("//xla:xla.bzl", "xla_cc_test")
 load("//xla/tests:build_defs.bzl", "xla_test")
 load("//xla/tsl:tsl.bzl", "if_oss")
@@ -28,7 +32,9 @@ package_group(
 
 cc_library(
     name = "gemm_fusion_autotuner",
-    srcs = ["gemm_fusion_autotuner.cc"],
+    srcs = ["gemm_fusion_autotuner.cc"] +
+            if_cuda_is_configured(["gemm_fusion_autotuner_cuda.cc"]) +
+            if_rocm_is_configured(["gemm_fusion_autotuner_rocm.cc"]),
     hdrs = ["gemm_fusion_autotuner.h"],
     tags = [
         "cuda-only",
