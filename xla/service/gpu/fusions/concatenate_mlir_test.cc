@@ -57,17 +57,17 @@ TEST_F(MlirConcatenateFusionTest, ThreadIdIndexing) {
 
   constexpr auto kIndexing = R"(
     (th_x, th_y, th_z, bl_x, bl_y, bl_z)[chunk_id, unroll_id] ->
-      (bl_x * 128 + th_x)
+      (bl_x * 256 + th_x)
     domain:
-    th_x in [0, 127]
+    th_x in [0, 255]
     th_y in [0, 0]
     th_z in [0, 0]
-    bl_x in [0, 3]
+    bl_x in [0, 1]
     bl_y in [0, 0]
     bl_z in [0, 0]
     chunk_id in [0, 0]
     unroll_id in [0, 0]
-    bl_x * 128 + th_x in [0, 399]
+    bl_x * 256 + th_x in [0, 399]
   )";
   auto thread_id_to_output_indexing_0 = fusion.ComputeThreadIdToInputIndexing(
       /*root_index=*/0, /*hero_operand_index=*/0, &mlir_context_);
@@ -102,9 +102,9 @@ TEST_F(MlirConcatenateFusionTest, StandAloneConcatenate) {
     }
   )";
   TF_ASSERT_OK(EmitAndCheckIR(kHloString, R"(
-    // CHECK-DAG: #[[MAP_1:.*]] = affine_map<(d0, d1) -> (d1 * 128 + d0)>
-    // CHECK-DAG: #[[MAP_2:.*]] = affine_map<(d0, d1) -> (d1 * 128 + d0 + 200)>
-    // CHECK-DAG: #[[MAP_3:.*]] = affine_map<(d0, d1) -> (d1 * 128 + d0 + 600)>
+    // CHECK-DAG: #[[MAP_1:.*]] = affine_map<(d0, d1) -> (d1 * 256 + d0)>
+    // CHECK-DAG: #[[MAP_2:.*]] = affine_map<(d0, d1) -> (d1 * 256 + d0 + 200)>
+    // CHECK-DAG: #[[MAP_3:.*]] = affine_map<(d0, d1) -> (d1 * 256 + d0 + 600)>
 
     // CHECK-LABEL: fused_computation
     // CHECK-SAME:    %[[ARG_0:[a-zA-Z0-9]*]]: {{[^,]*}},
@@ -254,9 +254,9 @@ TEST_F(MlirConcatenateFusionTest, Vectorization) {
     }
   )";
   TF_ASSERT_OK(EmitAndCheckIR(kHloString, R"(
-    // CHECK-DAG: affine_map<(d0, d1) -> (d1 * 128 + d0)>
-    // CHECK-DAG: affine_map<(d0, d1)[s0] -> (d0 * 2 + d1 * 256 + s0)>
-    // CHECK-DAG: affine_map<(d0, d1)[s0] -> (d0 * 2 + d1 * 256 + s0 + 640002)>
+    // CHECK-DAG: affine_map<(d0, d1) -> (d1 * 256 + d0)>
+    // CHECK-DAG: affine_map<(d0, d1)[s0] -> (d0 * 2 + d1 * 512 + s0)>
+    // CHECK-DAG: affine_map<(d0, d1)[s0] -> (d0 * 2 + d1 * 512 + s0 + 640002)>
 
     // CHECK-LABEL: fused_computation
     // CHECK-DAG: %[[C0:.*]] = arith.constant 0 : index
