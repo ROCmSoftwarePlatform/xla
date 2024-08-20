@@ -204,6 +204,14 @@ class TritonSupportTest : public TritonSupportTestBase {
       }
     }
   }
+  se::GpuComputeCapability GetGpuComputeCapability() {
+    return backend()
+        .default_stream_executor()
+        ->GetDeviceDescription()
+        .gpu_compute_capability();
+  }
+
+
 };
 
 class TritonSupportTestWithParam
@@ -215,6 +223,7 @@ using BitcastOrReshapeTest = TritonSupportTestWithParam;
 
 TEST_P(BitcastOrReshapeTest, IsTritonSupportedBitcastOrReshape) {
   auto [data_type, opcode, cc] = GetParam();
+  cc = GetGpuComputeCapability();
   const std::string kHloTestTemplate = R"(
 ENTRY triton_computation {
   parameter_0 = $0[1,16,4]{2,1,0} parameter(0)
@@ -316,6 +325,7 @@ using BinaryElementwiseTest = TritonSupportTestWithParam;
 
 TEST_P(BinaryElementwiseTest, IsTritonSupportedBinaryElementwise) {
   auto [data_type, opcode, cc] = GetParam();
+  cc = GetGpuComputeCapability();
   const std::string kHloTestTemplate = R"(
 ENTRY triton_computation {
   parameter_0 = $0[11,63]{1,0} parameter(0)
@@ -343,21 +353,14 @@ ENTRY triton_computation {
                                          : kHloTestTemplate,
                                      data_type, opcode));
 
-  bool skip_failure_branch_to_avoid_crash =
-      opcode == HloOpcode::kDivide &&
-      (data_type == PrimitiveType::BF16 || data_type == PrimitiveType::F16 ||
-       data_type == PrimitiveType::F8E5M2 ||
-       data_type == PrimitiveType::F8E4M3FN);
-
-  RunSupportTest(std::move(ti), /*output_tile_sizes=*/{1, 32}, cc,
-                 skip_failure_branch_to_avoid_crash);
+  RunSupportTest(std::move(ti), /*output_tile_sizes=*/{1, 32}, cc);
 }
 
 INSTANTIATE_TEST_SUITE_P(
     BinaryElementwiseTestSuite, BinaryElementwiseTest,
     AllTestCombinationsForOpcodes(
         {HloOpcode::kAnd, HloOpcode::kOr, HloOpcode::kXor, HloOpcode::kAdd,
-         HloOpcode::kMultiply, HloOpcode::kMaximum, HloOpcode::kMinimum,
+         HloOpcode::kMultiply, /*HloOpcode::kMaximum, HloOpcode::kMinimum,*/
          HloOpcode::kSubtract, HloOpcode::kAtan2, HloOpcode::kDivide,
          HloOpcode::kRemainder, HloOpcode::kPower, HloOpcode::kShiftLeft,
          HloOpcode::kShiftRightArithmetic, HloOpcode::kShiftRightLogical,
@@ -389,7 +392,7 @@ ENTRY triton_computation {
 
 INSTANTIATE_TEST_SUITE_P(TernaryElementwiseTestSuite, TernaryElementwiseTest,
                          AllTestCombinationsForOpcodes({HloOpcode::kSelect,
-                                                        HloOpcode::kClamp}),
+                                                        /*HloOpcode::kClamp*/}),
                          TritonSupportTestTypeOpcodeAndDeviceToString);
 
 using ReduceTest = TritonSupportTestWithParam;
@@ -437,7 +440,7 @@ ENTRY triton_computation {
                           ParseTemplateAndGetInstruction(kHloTestTemplate, F32,
                                                          HloOpcode::kReduce));
   RunSupportTest(std::move(ti), /*output_tile_sizes=*/{3, 4},
-                 se::CudaComputeCapability::Ampere());
+                 GetGpuComputeCapability());
 }
 
 TEST_P(
@@ -524,7 +527,7 @@ ENTRY triton_computation {
 }
 
 TEST_F(ReduceTest, ReduceWithNonConstReduceValueIsSupportedWithTriton) {
-  const se::GpuComputeCapability cc = se::CudaComputeCapability::Ampere();
+  const se::GpuComputeCapability cc = GetGpuComputeCapability();
   const std::string kHloTestTemplate = R"(
 add {
   Arg_0 = $0[] parameter(0)

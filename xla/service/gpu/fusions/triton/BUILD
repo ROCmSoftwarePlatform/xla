@@ -444,6 +444,8 @@ xla_cc_test(
         "//xla:xla_proto_cc",
         "//xla/hlo/ir:hlo",
         "//xla/service/gpu:gpu_device_info_for_tests",
+        "//xla/service/gpu:amdgpu_compiler",
+        "//xla/service/gpu:gpu_transfer_manager",
         "//xla/service/gpu/model:tiled_hlo_computation",
         "//xla/stream_executor:device_description",
         "@com_google_absl//absl/algorithm:container",

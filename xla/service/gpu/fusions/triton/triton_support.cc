@@ -443,10 +443,9 @@ bool IsTritonSupportedDataType(PrimitiveType type,
     case F16:
     case F32:
     case F64:
-      return true;
     case F8E5M2:
     case F8E4M3FN:
-      return std::holds_alternative<se::CudaComputeCapability>(gpu_version);
+      return true;
     case BF16:
       return std::holds_alternative<se::CudaComputeCapability>(gpu_version) ||
              (std::holds_alternative<se::RocmComputeCapability>(gpu_version) &&
@@ -540,6 +539,10 @@ absl::flat_hash_set<HloOpcode> TritonSupportedBinaryElementwiseOps(
     ret.insert(HloOpcode::kDivide);
     ret.insert(HloOpcode::kRemainder);
     ret.insert(HloOpcode::kPower);
+  }
+  if (element_type == PrimitiveType::F16 ||
+          element_type == PrimitiveType::BF16) {
+      ret.insert(HloOpcode::kDivide);
   }
   return ret;
 }
