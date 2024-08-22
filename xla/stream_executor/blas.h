@@ -221,6 +221,8 @@ class BlasSupport {
   virtual ~BlasSupport() {}
 
   virtual gpu::BlasLt *GetBlasLt() = 0;
+  // resets the underlying blas stream to its default value
+  virtual bool ResetStream() = 0;
 
   // Performs a BLAS y <- ax+y operation.
   virtual bool DoBlasAxpy(Stream *stream, uint64_t elem_count, float alpha,
@@ -754,6 +756,7 @@ class BlasSupport {
   bool DoBlasCopy(Stream *stream, uint64_t elem_count,                         \
                   const DeviceMemory<float> &x, int incx,                      \
                   DeviceMemory<float> *y, int incy) override;                  \
+  bool ResetStream() override;                                                 \
   bool DoBlasScal(Stream *stream, uint64_t elem_count, float alpha,            \
                   DeviceMemory<float> *x, int incx) override;                  \
   bool DoBlasScal(Stream *stream, uint64_t elem_count, double alpha,           \

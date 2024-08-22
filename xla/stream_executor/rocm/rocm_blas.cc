@@ -149,27 +149,23 @@ ROCMBlas::~ROCMBlas() {
   }
 }
 
+bool ROCMBlas::ResetStream() {
+  absl::MutexLock lock{&mu_};
+  return SetStream(nullptr);
+}
+
 bool ROCMBlas::SetStream(Stream *stream) {
-  CHECK(stream != nullptr);
-  CHECK(AsGpuStreamValue(stream) != nullptr);
   CHECK(blas_ != nullptr);
   gpu::ScopedActivateExecutorContext sac{parent_};
 
-  rocblas_status ret =
-      wrap::rocblas_set_stream(blas_, AsGpuStreamValue(stream));
-  if (ret != rocblas_status_success) {
+  GpuStreamHandle handle = stream != nullptr ? AsGpuStreamValue(stream) : 0;
+  
+  if(auto ret = wrap::rocblas_set_stream(blas_, handle); 
+                                          ret != rocblas_status_success) {
     LOG(ERROR) << "failed to set stream for rocBLAS calls: " << ToString(ret);
     return false;
   }
-
   return true;
-}
-
-hipStream_t ROCMBlas::ROCMStream(Stream *stream) {
-  CHECK(stream != nullptr);
-  CHECK(AsGpuStreamValue(stream) != nullptr);
-  gpu::ScopedActivateExecutorContext sac{parent_};
-  return AsGpuStreamValue(stream);
 }
 
 namespace {
