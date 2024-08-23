@@ -3,11 +3,20 @@
 `rocm_configure` depends on the following environment variables:
 
   * `TF_NEED_ROCM`: Whether to enable building with ROCm.
-  * `GCC_HOST_COMPILER_PATH`: The GCC host compiler path
+  * `GCC_HOST_COMPILER_PATH`: The GCC host compiler path.
+  * `TF_ROCM_CLANG`: Whether to use clang for C++ and ROCm compilation.
+  * `TF_HIPCC_CLANG`: Whether to use clang for C++ and HIPCC for ROCm compilation.
   * `ROCM_PATH`: The path to the ROCm toolkit. Default is `/opt/rocm`.
+  * `TF_SYSROOT`: The sysroot to use when compiling.
+  * `CLANG_COMPILER_PATH`: The clang compiler path that will be used for
+    both host and device code compilation if TF_ROCM_CLANG is 1.
+  * `TF_DOWNLOAD_CLANG`: Whether to download a recent release of clang
+    compiler and use it to build tensorflow. When this option is set
+    CLANG_COMPILER_PATH is ignored.
   * `TF_ROCM_AMDGPU_TARGETS`: The AMDGPU targets.
 """
 
+load("//third_party/clang_toolchain:download_clang.bzl", "download_clang")
 load(
     "//third_party/remote_config:common.bzl",
     "config_repo_label",
@@ -24,6 +33,7 @@ load(
 )
 load(
     ":compiler_common_tools.bzl",
+    "get_cxx_inc_directories",
     "to_list_of_strings",
 )
 load(
@@ -39,9 +49,12 @@ load(
 
 _GCC_HOST_COMPILER_PATH = "GCC_HOST_COMPILER_PATH"
 _GCC_HOST_COMPILER_PREFIX = "GCC_HOST_COMPILER_PREFIX"
+_CLANG_COMPILER_PATH = "CLANG_COMPILER_PATH"
+_TF_SYSROOT = "TF_SYSROOT"
 _ROCM_TOOLKIT_PATH = "ROCM_PATH"
 _TF_ROCM_AMDGPU_TARGETS = "TF_ROCM_AMDGPU_TARGETS"
 _TF_ROCM_CONFIG_REPO = "TF_ROCM_CONFIG_REPO"
+_TF_DOWNLOAD_CLANG = "TF_DOWNLOAD_CLANG"
 
 _DEFAULT_ROCM_TOOLKIT_PATH = "/opt/rocm"
 
@@ -72,12 +85,17 @@ def verify_build_defines(params):
             ".",
         )
 
-def find_cc(repository_ctx):
+def find_cc(repository_ctx, use_rocm_clang):
     """Find the C++ compiler."""
 
-    # Return a dummy value for GCC detection here to avoid error
-    target_cc_name = "gcc"
-    cc_path_envvar = _GCC_HOST_COMPILER_PATH
+    if use_rocm_clang:
+        target_cc_name = "clang"
+        cc_path_envvar = _CLANG_COMPILER_PATH
+        if _flag_enabled(repository_ctx, _TF_DOWNLOAD_CLANG):
+            return "extra_tools/bin/clang"
+    else:
+        target_cc_name = "gcc"
+        cc_path_envvar = _GCC_HOST_COMPILER_PATH
     cc_name = target_cc_name
 
     cc_name_from_env = get_host_environ(repository_ctx, cc_path_envvar)
@@ -111,7 +129,6 @@ def _get_cxx_inc_directories_impl(repository_ctx, cc, lang_is_cpp):
     #       handle the case when it's disabled and no flag is passed
     result = raw_exec(repository_ctx, [
         cc,
-        "-no-canonical-prefixes",
         "-E",
         "-x" + lang,
         "-",
@@ -136,22 +153,6 @@ def _get_cxx_inc_directories_impl(repository_ctx, cc, lang_is_cpp):
     return [
         str(repository_ctx.path(_cxx_inc_convert(p)))
         for p in inc_dirs.split("\n")
-    ]
-
-def get_cxx_inc_directories(repository_ctx, cc):
-    """Compute the list of default C and C++ include directories."""
-
-    # For some reason `clang -xc` sometimes returns include paths that are
-    # different from the ones from `clang -xc++`. (Symlink and a dir)
-    # So we run the compiler with both `-xc` and `-xc++` and merge resulting lists
-    includes_cpp = _get_cxx_inc_directories_impl(repository_ctx, cc, True)
-    includes_c = _get_cxx_inc_directories_impl(repository_ctx, cc, False)
-
-    includes_cpp_set = depset(includes_cpp)
-    return includes_cpp + [
-        inc
-        for inc in includes_c
-        if inc not in includes_cpp_set.to_list()
     ]
 
 def auto_configure_fail(msg):
@@ -539,6 +540,20 @@ def _genrule(src_dir, genrule_name, command, outs):
         ")\n"
     )
 
+def _flag_enabled(repository_ctx, flag_name):
+    return get_host_environ(repository_ctx, flag_name) == "1"
+
+def _use_rocm_clang(repository_ctx):
+    # Returns the flag if we need to use clang both for C++ and ROCm.
+    return _flag_enabled(repository_ctx, "TF_ROCM_CLANG")
+
+def _use_hipcc_and_clang(repository_ctx):
+    # Returns the flag if we need to use clang for C++ and HIPCC for ROCm.
+    return _flag_enabled(repository_ctx, "TF_HIPCC_CLANG")
+
+def _tf_sysroot(repository_ctx):
+    return get_host_environ(repository_ctx, _TF_SYSROOT, "")
+
 def _compute_rocm_extra_copts(repository_ctx, amdgpu_targets):
     amdgpu_target_flags = ["--amdgpu-target=" +
                            amdgpu_target for amdgpu_target in amdgpu_targets]
@@ -674,6 +689,18 @@ def _create_local_rocm_repository(repository_ctx):
                             hiprand_include +
                             rocrand_include),
     }
+
+    is_rocm_clang = _use_rocm_clang(repository_ctx)
+    is_hipcc_and_clang = _use_hipcc_and_clang(repository_ctx)
+    tf_sysroot = _tf_sysroot(repository_ctx)
+
+    should_download_clang = is_rocm_clang and _flag_enabled(
+        repository_ctx,
+        _TF_DOWNLOAD_CLANG,
+    )
+    if should_download_clang:
+        download_clang(repository_ctx, "crosstool/extra_tools")
+
     if rocm_libs["hipblaslt"] != None:
         repository_dict["%{hipblaslt_lib}"] = rocm_libs["hipblaslt"].file_name
 
@@ -688,38 +715,99 @@ def _create_local_rocm_repository(repository_ctx):
     )
 
     # Set up crosstool/
+    cc = find_cc(repository_ctx, is_rocm_clang)
+    print(cc)
+    cc_fullpath = cc if not should_download_clang else "crosstool/" + cc
 
-    cc = find_cc(repository_ctx)
-
-    host_compiler_includes = get_cxx_inc_directories(repository_ctx, cc)
-
-    host_compiler_prefix = get_host_environ(repository_ctx, _GCC_HOST_COMPILER_PREFIX, "/usr/bin")
+    host_compiler_includes = get_cxx_inc_directories(
+        repository_ctx,
+        cc_fullpath,
+        tf_sysroot,
+    )
 
     rocm_defines = {}
-
+    rocm_defines["%{builtin_sysroot}"] = tf_sysroot
+    rocm_defines["%{compiler}"] = "unknown"
+    if is_rocm_clang:
+        rocm_defines["%{compiler}"] = "clang"
+    host_compiler_prefix = get_host_environ(repository_ctx, _GCC_HOST_COMPILER_PREFIX, "/usr/bin")
     rocm_defines["%{host_compiler_prefix}"] = host_compiler_prefix
 
-    rocm_defines["%{linker_bin_path}"] = rocm_config.rocm_toolkit_path + "/hcc/compiler/bin"
+    # Bazel sets '-B/usr/bin' flag to workaround build errors on RHEL (see
+    # https://github.com/bazelbuild/bazel/issues/760).
+    # However, this stops our custom clang toolchain from picking the provided
+    # LLD linker, so we're only adding '-B/usr/bin' when using non-downloaded
+    # toolchain.
+    # TODO: when bazel stops adding '-B/usr/bin' by default, remove this
+    #       flag from the CROSSTOOL completely (see
+    #       https://github.com/bazelbuild/bazel/issues/5634)
+    if should_download_clang:
+        rocm_defines["%{linker_bin_path}"] = ""
+    else:
+        rocm_defines["%{linker_bin_path}"] = rocm_config.rocm_toolkit_path + host_compiler_prefix
 
-    # For gcc, do not canonicalize system header paths; some versions of gcc
-    # pick the shortest possible path for system includes when creating the
-    # .d file - given that includes that are prefixed with "../" multiple
-    # time quickly grow longer than the root of the tree, this can lead to
-    # bazel's header check failing.
-    rocm_defines["%{extra_no_canonical_prefixes_flags}"] = "\"-fno-canonical-system-headers\""
+    rocm_defines["%{extra_no_canonical_prefixes_flags}"] = ""
+    rocm_defines["%{unfiltered_compile_flags}"] = ""
+    rocm_defines["%{rocm_hipcc_files}"] = "[]"
+    if is_rocm_clang and not is_hipcc_and_clang:
+        rocm_defines["%{host_compiler_path}"] = str(cc)
+        rocm_defines["%{host_compiler_warnings}"] = """
+        # Some parts of the codebase set -Werror and hit this warning, so
+        # switch it off for now.
+        "-Wno-invalid-partial-specialization"
+    """
+        rocm_defines["%{cxx_builtin_include_directories}"] = to_list_of_strings(host_compiler_includes)
+        rocm_defines["%{compiler_deps}"] = ":empty"
+        repository_ctx.file(
+            "crosstool/clang/bin/crosstool_wrapper_driver_is_not_gcc",
+            "",
+        )
+    else:
+        rocm_defines["%{host_compiler_path}"] = "clang/bin/crosstool_wrapper_driver_is_not_gcc"
+        rocm_defines["%{host_compiler_warnings}"] = ""
 
-    rocm_defines["%{unfiltered_compile_flags}"] = to_list_of_strings([
-        "-DTENSORFLOW_USE_ROCM=1",
-        "-D__HIP_PLATFORM_AMD__",
-        "-DEIGEN_USE_HIP",
-        "-DUSE_ROCM",
-    ])
+        # For gcc, do not canonicalize system header paths; some versions of gcc
+        # pick the shortest possible path for system includes when creating the
+        # .d file - given that includes that are prefixed with "../" multiple
+        # time quickly grow longer than the root of the tree, this can lead to
+        # bazel's header check failing.
+        print(is_rocm_clang)
+        if is_rocm_clang:
+            rocm_defines["%{extra_no_canonical_prefixes_flags}"] = "\"-fno-canonical-system-headers\""
+        else:
+            rocm_defines["%{extra_no_canonical_prefixes_flags}"] = "\"-no-canonical-prefixes\""
 
-    rocm_defines["%{host_compiler_path}"] = "clang/bin/crosstool_wrapper_driver_is_not_gcc"
+        hipcc_path = rocm_config.rocm_toolkit_path + "/bin/hipcc"
+        print(hipcc_path)
+        rocm_defines["%{compiler_deps}"] = ":crosstool_wrapper_driver_is_not_gcc"
 
-    rocm_defines["%{cxx_builtin_include_directories}"] = to_list_of_strings(
-        host_compiler_includes + _rocm_include_path(repository_ctx, rocm_config, bash_bin),
-    )
+        rocm_defines["%{unfiltered_compile_flags}"] = to_list_of_strings([
+            "-DTENSORFLOW_USE_ROCM=1",
+            "-D__HIP_PLATFORM_AMD__",
+            "-DEIGEN_USE_HIP",
+            "-DUSE_ROCM",
+        ])
+
+        rocm_defines["%{cxx_builtin_include_directories}"] = to_list_of_strings(
+            host_compiler_includes + _rocm_include_path(repository_ctx, rocm_config, bash_bin),
+        )
+
+        wrapper_defines = {
+            "%{cpu_compiler}": str(cc),
+            "%{hipcc_path}": hipcc_path,
+            "%{hipcc_env}": _hipcc_env(repository_ctx),
+            "%{rocr_runtime_path}": rocm_config.rocm_toolkit_path + "/lib",
+            "%{rocr_runtime_library}": "hsa-runtime64",
+            "%{hip_runtime_path}": rocm_config.rocm_toolkit_path + "/lib",
+            "%{hip_runtime_library}": "amdhip64",
+            "%{crosstool_verbose}": _crosstool_verbose(repository_ctx),
+        }
+
+        repository_ctx.template(
+            "crosstool/clang/bin/crosstool_wrapper_driver_is_not_gcc",
+            tpl_paths["crosstool:clang/bin/crosstool_wrapper_driver_rocm"],
+            wrapper_defines,
+        )
 
     verify_build_defines(rocm_defines)
 
@@ -735,22 +823,7 @@ def _create_local_rocm_repository(repository_ctx):
     repository_ctx.template(
         "crosstool/cc_toolchain_config.bzl",
         tpl_paths["crosstool:hipcc_cc_toolchain_config.bzl"],
-    )
-
-    repository_ctx.template(
-        "crosstool/clang/bin/crosstool_wrapper_driver_is_not_gcc",
-        tpl_paths["crosstool:clang/bin/crosstool_wrapper_driver_rocm"],
-        {
-            "%{cpu_compiler}": str(cc),
-            "%{hipcc_path}": rocm_config.rocm_toolkit_path + "/bin/hipcc",
-            "%{hipcc_env}": _hipcc_env(repository_ctx),
-            "%{rocr_runtime_path}": rocm_config.rocm_toolkit_path + "/lib",
-            "%{rocr_runtime_library}": "hsa-runtime64",
-            "%{hip_runtime_path}": rocm_config.rocm_toolkit_path + "/lib",
-            "%{hip_runtime_library}": "amdhip64",
-            "%{crosstool_verbose}": _crosstool_verbose(repository_ctx),
-            "%{gcc_host_compiler_path}": str(cc),
-        },
+        {},
     )
 
     # Set up rocm_config.h, which is used by
@@ -833,7 +906,11 @@ def _rocm_autoconf_impl(repository_ctx):
 _ENVIRONS = [
     _GCC_HOST_COMPILER_PATH,
     _GCC_HOST_COMPILER_PREFIX,
+    _CLANG_COMPILER_PATH,
+    _TF_DOWNLOAD_CLANG,
     "TF_NEED_ROCM",
+    "TF_ROCM_CLANG",
+    "TF_HIPCC_CLANG",
     "TF_NEED_CUDA",  # Needed by the `if_gpu_is_configured` macro
     _ROCM_TOOLKIT_PATH,
     _TF_ROCM_AMDGPU_TARGETS,

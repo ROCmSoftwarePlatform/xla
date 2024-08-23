@@ -24,8 +24,10 @@ import pipes
 
 # Template values set by rocm_configure.bzl.
 CPU_COMPILER = ('%{cpu_compiler}')
+HOST_COMPILER_PATH = ('%{host_compiler_path}')
 
 HIPCC_PATH = '%{hipcc_path}'
+PREFIX_DIR = os.path.dirname(HOST_COMPILER_PATH)
 HIPCC_ENV = '%{hipcc_env}'
 HIP_RUNTIME_PATH = '%{hip_runtime_path}'
 HIP_RUNTIME_LIBRARY = '%{hip_runtime_library}'
@@ -128,6 +130,8 @@ def InvokeHipcc(argv, log=False):
   opt_option = GetOptionValue(argv, 'O')
   m_options = GetOptionValue(argv, 'm')
   m_options = ''.join([' -m' + m for m in m_options if m in ['32', '64']])
+  m_host_options = ''.join([' -m' + m for m in m_options if m not in ['32', '64']])
+  host_compiler_options = ' '.join([host_compiler_options, m_host_options])
   include_options = GetOptionValue(argv, 'I')
   out_file = GetOptionValue(argv, 'o')
   depfiles = GetOptionValue(argv, 'MF')
