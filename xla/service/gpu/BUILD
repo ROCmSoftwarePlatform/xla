@@ -589,7 +589,6 @@ cc_library(
         "@triton//third_party/nvidia:TritonNVIDIAGPUToLLVM",
         "@triton//:TritonLLVMIR",
     ]) + if_rocm_is_configured([
-        "@triton//:TritonGPUTransforms",
         "@triton//:TritonLLVMIR",
         "@triton//third_party/amd:TritonAMDGPUToLLVM",
         "@triton//third_party/amd:TritonAMDGPUTransforms",
