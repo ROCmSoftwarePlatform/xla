@@ -824,6 +824,9 @@ message DebugOptions {
   // unsafe flag.
   bool xla_gpu_unsafe_pipelined_loop_annotator = 309;
 
+  // Relative precision for comparing different GEMM solutions 
+  float xla_gpu_autotune_gemm_rtol = 310;
+
   // Next id: 310
 
   // Extra options to pass to the compilation backend (e.g. LLVM); specific

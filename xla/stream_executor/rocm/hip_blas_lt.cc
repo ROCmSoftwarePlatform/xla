@@ -177,11 +177,9 @@ absl::Status BlasLt::Init() {
   SE_HIPBLAS_RETURN_IF_ERROR(wrap::hipblasLtMatmulDescCreate(
       &hip_desc, hip_compute_type, hip_scale_type));
 
-  int32_t bias_flag =
-      static_cast<int32_t>(epilogue) & static_cast<int32_t>(Epilogue::kBias);
   // Wrap hipblas handle immediately, so it is cleaned up if an error occurs.
   BlasLt::MatmulDesc desc(hip_desc, hip_compute_type, hip_scale_type,
-                          bias_flag != 0);
+        int32_t(epilogue) & int32_t(Epilogue::kBias));
   if (pointer_mode != PointerMode::kHost) {
     return absl::InternalError("hipblaslt does not support device pointers");
   }
@@ -219,13 +217,10 @@ auto BlasLt::MatmulPlan::GetAlgorithms(size_t max_algorithm_count,
 
     gpu::ScopedActivateExecutorContext sac{blas_lt_ref_.parent_};
 
-    // hipBlasLt requires setting the bias pointer (even a dummy one), otherwise
-    // no algorithms can be found for "bias epilogues". This is to be removed
-    // later when this limitation is gone.
     if (op_desc_.has_bias_epilogue()) {
       static int64_t dummyPointer = 0xACEBALL;
-      TF_RETURN_IF_ERROR(SetAttr(
-          op_desc_.get(), HIPBLASLT_MATMUL_DESC_BIAS_POINTER, &dummyPointer));
+      TF_RETURN_IF_ERROR(SetAttr(op_desc_.get(),
+            HIPBLASLT_MATMUL_DESC_BIAS_POINTER, &dummyPointer));
     }
 
     int found_algorithm_count = 0;
