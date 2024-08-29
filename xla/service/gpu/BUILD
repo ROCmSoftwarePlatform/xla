@@ -265,6 +265,7 @@ cc_library(
     testonly = 1,
     srcs = ["gpu_device_info_for_tests.cc"],
     hdrs = ["gpu_device_info_for_tests.h"],
+    local_defines = if_rocm_is_configured(["TENSORFLOW_USE_ROCM=1"]),
     compatible_with = get_compatible_with_portable(),
     deps = [
         "//xla/stream_executor:device_description",
@@ -5681,6 +5682,8 @@ cc_library(
 xla_test(
     name = "dot_algorithm_support_test",
     srcs = if_gpu_is_configured(["dot_algorithm_support_test.cc"]),
+    local_defines = if_cuda_is_configured(["GOOGLE_CUDA=1"]) +
+                    if_rocm_is_configured(["TENSORFLOW_USE_ROCM=1"]),
     backends = [
         "gpu_v100",
         "gpu_a100",
@@ -5699,7 +5702,9 @@ xla_test(
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_googletest//:gtest",
-    ],
+    ] + if_rocm_is_configured([
+        "@local_config_rocm//rocm:rocm_headers",
+    ]),
 )
 
 cc_library(
