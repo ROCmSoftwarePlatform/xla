@@ -456,16 +456,16 @@ absl::StatusOr<bool> RunOnInstruction(HloInstruction* gemm,
 
 absl::StatusOr<bool> RunOnComputation(HloComputation* computation,
                                       GemmAutotuner& autotuner,
-                                      size_t *num_algorithms_left) {
+                                      size_t* num_algorithms_left) {
   bool changed = false;
 
   for (HloInstruction* instr : computation->instructions()) {
     if (IsCublasGemm(*instr)) {
-      TF_ASSIGN_OR_RETURN(bool result,
-                          RunOnInstruction(instr, autotuner));
+      TF_ASSIGN_OR_RETURN(
+            bool result, RunOnInstruction(instr, autotuner));
       // Gathering statistics on the algorithms left after tuning (for testing)
-      *num_algorithms_left = std::max(*num_algorithms_left,
-                                            autotuner.num_algorithms_left());
+      *num_algorithms_left =
+                std::max(*num_algorithms_left, autotuner.num_algorithms_left());
       changed |= result;
     }
   }
@@ -490,8 +490,8 @@ absl::StatusOr<bool> GemmAlgorithmPicker::Run(
   bool changed = false;
   for (HloComputation* computation :
        module->MakeNonfusionComputations(execution_threads)) {
-    TF_ASSIGN_OR_RETURN(bool result, RunOnComputation(computation, autotuner,
-                                &num_algorithms_left_));
+    TF_ASSIGN_OR_RETURN(bool result,
+          RunOnComputation(computation, autotuner, &num_algorithms_left_));
     changed |= result;
   }
   return changed;
