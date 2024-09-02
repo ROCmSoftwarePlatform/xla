@@ -441,7 +441,7 @@ absl::StatusOr<bool> RunOnInstruction(HloInstruction* gemm,
 
     if (new_algorithm == old_algorithm &&
         backend_config.has_selected_algorithm()) {
-      // We don't need to update the backend config if the algorithm hasn't
+      // We don't need to update the backend config if the algorithm was not
       // changed unless previously the algorithm wasn't set explicitly.
       return false;
     }
@@ -461,8 +461,7 @@ absl::StatusOr<bool> RunOnComputation(HloComputation* computation,
 
   for (HloInstruction* instr : computation->instructions()) {
     if (IsCublasGemm(*instr)) {
-      TF_ASSIGN_OR_RETURN(
-            bool result, RunOnInstruction(instr, autotuner));
+      TF_ASSIGN_OR_RETURN(bool result, RunOnInstruction(instr, autotuner));
       // Gathering statistics on the algorithms left after tuning (for testing)
       *num_algorithms_left =
                 std::max(*num_algorithms_left, autotuner.num_algorithms_left());
@@ -490,7 +489,8 @@ absl::StatusOr<bool> GemmAlgorithmPicker::Run(
   bool changed = false;
   for (HloComputation* computation :
        module->MakeNonfusionComputations(execution_threads)) {
-    TF_ASSIGN_OR_RETURN(bool result,
+    TF_ASSIGN_OR_RETURN(
+          bool result,
           RunOnComputation(computation, autotuner, &num_algorithms_left_));
     changed |= result;
   }
