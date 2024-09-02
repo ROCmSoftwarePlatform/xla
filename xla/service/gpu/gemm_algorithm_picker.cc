@@ -99,8 +99,8 @@ class GemmAutotuner {
       : autotune_config_(autotune_config) {}
 
   ~GemmAutotuner() {
-    if(stream_ != nullptr) {
-      if(auto blas = stream_->parent()->AsBlas()) blas->ResetStream();
+    if (stream_ != nullptr) {
+      if (auto blas = stream_->parent()->AsBlas()) blas->ResetStream();
     }
   }
 
@@ -390,7 +390,7 @@ class GemmAutotuner {
                  << best.status();
     return AutotuneResult{};
   }  // GetBestAlgorithm
-};  // GemmAutotuner
+};  // class GemmAutotuner
 
 // Do Gemm Autotune without stream executor. Use results from autotune cache
 // only.

@@ -158,9 +158,9 @@ bool ROCMBlas::SetStream(Stream *stream) {
   CHECK(blas_ != nullptr);
   gpu::ScopedActivateExecutorContext sac{parent_};
 
-  GpuStreamHandle handle = stream != nullptr ? AsGpuStreamValue(stream) : 0;
+  GpuStreamHandle handle = (stream != nullptr) ? AsGpuStreamValue(stream) : 0;
   
-  if(auto ret = wrap::rocblas_set_stream(blas_, handle); 
+  if (auto ret = wrap::rocblas_set_stream(blas_, handle); 
                                           ret != rocblas_status_success) {
     LOG(ERROR) << "failed to set stream for rocBLAS calls: " << ToString(ret);
     return false;

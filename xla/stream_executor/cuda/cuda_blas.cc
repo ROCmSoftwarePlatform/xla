@@ -243,8 +243,8 @@ bool CUDABlas::SetStream(Stream *stream) {
   CHECK(blas_ != nullptr);
   gpu::ScopedActivateExecutorContext sac{parent_};
 
-  GpuStreamHandle handle = stream != nullptr ? AsGpuStreamValue(stream) : 0;
-  if(auto ret = cublasSetStream(blas_, handle); 
+  GpuStreamHandle handle = (stream != nullptr) ? AsGpuStreamValue(stream) : 0;
+  if (auto ret = cublasSetStream(blas_, handle); 
                                     ret != CUBLAS_STATUS_SUCCESS) {
     LOG(ERROR) << "failed to set stream for cuBLAS calls: " << ToString(ret);
     return false;
