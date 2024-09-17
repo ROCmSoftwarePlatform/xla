@@ -183,10 +183,11 @@ def InvokeHipcc(argv, log=False):
   hipccopts += std_options
   hipccopts += m_options
 
+  offload_archs = '--offload-arch=gfx900 --offload-arch=gfx906 --offload-arch=gfx908 --offload-arch=gfx90a --offload-arch=gfx940 --offload-arch=gfx941 --offload-arch=gfx942 '
   if depfiles:
     # Generate the dependency file
     depfile = depfiles[0]
-    cmd = (HIPCC_PATH + ' ' + hipccopts +
+    cmd = (HIPCC_PATH + ' ' + offload_archs + hipccopts +
            host_compiler_options +
            ' -I .' + includes + ' ' + srcs + ' -M -o ' + depfile)
     cmd = HIPCC_ENV.replace(';', ' ') + ' ' + cmd
@@ -196,7 +197,7 @@ def InvokeHipcc(argv, log=False):
     if exit_status != 0:
       return exit_status
 
-  cmd = (HIPCC_PATH + ' ' + hipccopts +
+  cmd = (HIPCC_PATH + ' ' + offload_archs + hipccopts +
          host_compiler_options + ' -fPIC' +
          ' -I .' + opt + includes + ' -c ' + srcs + out)
 
