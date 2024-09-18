@@ -52,11 +52,17 @@ struct MixTypeParams {
 class MixedTypeTest : public GpuCodegenTest,
                       public ::testing::WithParamInterface<MixTypeParams> {
  public:
-  se::CudaComputeCapability GetCudaComputeCapability() {
+   se::GpuComputeCapability GetGpuComputeCapability() {
     return backend()
         .default_stream_executor()
         ->GetDeviceDescription()
-        .cuda_compute_capability();
+        .gpu_compute_capability();
+  }
+
+  void SetUp() override {
+    if (std::holds_alternative<se::RocmComputeCapability>(GetGpuComputeCapability())) {
+      GTEST_SKIP() << "Related fusions are not performed on ROCm without Triton.";
+    }
   }
 
   DebugOptions GetDebugOptionsForTest() override {
