@@ -17,6 +17,8 @@ limitations under the License.
 #include <utility>
 #include <vector>
 
+#include "absl/strings/str_replace.h"
+#include "absl/strings/string_view.h"
 #include "xla/hlo/ir/hlo_casting_utils.h"
 #include "xla/hlo/ir/hlo_instruction.h"
 #include "xla/hlo/ir/hlo_instructions.h"
@@ -47,6 +49,24 @@ DeviceAssignment MakeDeviceAssn(int64_t num_replicas) {
 
 class CollectiveOpsTestE2E : public HloTestBase {
  public:
+  CollectiveOpsTestE2E() {
+    replacements_[kF8E4M3DatatypePlaceholder] =
+        IsCuda() ? "f8e4m3fn" : "f8e4m3fnuz";
+    replacements_[kF8E5M2DatatypePlaceholder] =
+        IsCuda() ? "f8e5m2" : "f8e5m2fnuz";
+  }
+
+  bool IsCuda() {
+    return std::holds_alternative<se::CudaComputeCapability>(Capability());
+  }
+
+  const se::GpuComputeCapability& Capability() {
+    return backend()
+        .default_stream_executor()
+        ->GetDeviceDescription()
+        .gpu_compute_capability();
+  }
+
   absl::StatusOr<std::vector<Literal>> ExecuteReplicated(Executable* executable,
                                                          int64_t num_replicas) {
     DeviceAssignment device_assignment = MakeDeviceAssn(num_replicas);
@@ -56,6 +76,13 @@ class CollectiveOpsTestE2E : public HloTestBase {
         /*argument_provider*/ [](int64_t, int64_t) { return nullptr; },
         num_replicas, /*run_hlo_passes=*/false, &device_assignment);
   }
+
+ protected:
+  absl::flat_hash_map<absl::string_view, absl::string_view> replacements_;
+
+ private:
+  static constexpr const char* kF8E4M3DatatypePlaceholder{"<<F8E4M3>>"};
+  static constexpr const char* kF8E5M2DatatypePlaceholder{"<<F8E5M2>>"};
 };
 
 // E2E tests for collective ops. These will generally verify some HLO transform
@@ -740,11 +767,11 @@ ENTRY main.12 {
 TEST_F(CollectiveOpsTestE2EWindowedNonWindowed,
        WindowedEinsumE2EAllGatherAndReduceScatterF8) {
   absl::string_view kModuleReplicatedStr = R"(
-HloModule pjit__unnamed_wrapped_function_, entry_computation_layout={(f8e4m3fn[2,16,48]{2,1,0}, f8e4m3fn[48,192]{1,0}, f8e4m3fn[192,48]{1,0}, bf16[], bf16[], bf16[], bf16[], bf16[])->bf16[2,16,48]{2,1,0}}, allow_spmd_sharding_propagation_to_parameters={false,false,false,false}, num_partitions=4
+HloModule pjit__unnamed_wrapped_function_, entry_computation_layout={(<<F8E4M3>>[2,16,48]{2,1,0}, <<F8E4M3>>[48,192]{1,0}, <<F8E4M3>>[192,48]{1,0}, bf16[], bf16[], bf16[], bf16[], bf16[])->bf16[2,16,48]{2,1,0}}, allow_spmd_sharding_propagation_to_parameters={false,false,false,false}, num_partitions=4
 
 ENTRY main.12 {
-  Arg_0.1 = f8e4m3fn[2,16,48]{2,1,0} parameter(0), sharding={devices=[1,4,1]<=[4]}
-  Arg_1.2 = f8e4m3fn[48,192]{1,0} parameter(1), sharding={devices=[1,4]<=[4]}
+  Arg_0.1 = <<F8E4M3>>[2,16,48]{2,1,0} parameter(0), sharding={devices=[1,4,1]<=[4]}
+  Arg_1.2 = <<F8E4M3>>[48,192]{1,0} parameter(1), sharding={devices=[1,4]<=[4]}
   Arg_2.3 = bf16[] parameter(3)
   Arg_3.4 = bf16[] parameter(4)
   broadcast = bf16[2,16,48]{2,1,0} broadcast(Arg_2.3), dimensions={}
@@ -763,12 +790,12 @@ ENTRY main.12 {
   constant.1 = bf16[] constant(448.)
   broadcast.4 = bf16[2,16,192]{2,1,0} broadcast(constant.1), dimensions={}
   clamp = bf16[2,16,192]{2,1,0} clamp(broadcast.3, divide, broadcast.4)
-  convert.2 = f8e4m3fn[2,16,192]{2,1,0} convert(clamp)
+  convert.2 = <<F8E4M3>>[2,16,192]{2,1,0} convert(clamp)
   Arg_5.6 = bf16[] parameter(6)
   broadcast.5 = bf16[2,16,192]{2,1,0} broadcast(Arg_5.6), dimensions={}
   convert.3 = bf16[2,16,192]{2,1,0} convert(convert.2)
   multiply.2 = bf16[2,16,192]{2,1,0} multiply(convert.3, broadcast.5)
-  Arg_6.7 = f8e4m3fn[192,48]{1,0} parameter(2), sharding={devices=[4,1]<=[4]}
+  Arg_6.7 = <<F8E4M3>>[192,48]{1,0} parameter(2), sharding={devices=[4,1]<=[4]}
   Arg_7.8 = bf16[] parameter(7)
   broadcast.6 = bf16[192,48]{1,0} broadcast(Arg_7.8), dimensions={}
   convert.4 = bf16[192,48]{1,0} convert(Arg_6.7)
