@@ -56,11 +56,11 @@ class GemmAlgorithmPickerTest : public HloTestBase,
   se::StreamExecutor *stream_exec() {
     return backend().default_stream_executor();
   }
-  const se::DeviceDescription& gpu_device_desc() {
+  const se::DeviceDescription& device_desc() {
     return stream_exec()->GetDeviceDescription();
   }
   const se::GpuComputeCapability& gpu_comp() {
-    return gpu_device_desc().gpu_compute_capability();
+    return device_desc().gpu_compute_capability();
   }
 
   void SetUp() override {
@@ -81,6 +81,15 @@ class GemmAlgorithmPickerTest : public HloTestBase,
       gpu_comp());
   }
 };
+
+TEST_P(GemmAlgorithmPickerTest, BlasGetVersion) {
+  auto* blas = backend().default_stream_executor()->AsBlas();
+  ASSERT_TRUE(blas != nullptr);
+  std::string version;
+  ASSERT_TRUE(blas->GetVersion(&version).ok());
+  VLOG(0) << "Blas version: " << version;
+  ASSERT_TRUE(!version.empty());
+}
 
 TEST_P(GemmAlgorithmPickerTest, SkipAlgorithmsWithAccuracyCheck) {
   constexpr absl::string_view kHlo = R"(
@@ -116,6 +125,15 @@ TF_ASSERT_OK_AND_ASSIGN(auto module,
     num_left1 = gpicker.num_algorithms_left();
     if(num_left1 < 2) {
       GTEST_SKIP() << "Too few algorithms left after the first step";
+    }
+
+    // Test that the function to get current stream value works fine:
+    auto* blas = stream_exec()->AsBlas();
+    ASSERT_TRUE(blas != nullptr);
+    TF_ASSERT_OK_AND_ASSIGN(bool is_main_stream, blas->IsMainStreamSet());
+    // ROCM only: CUDA blas API does not reset stream after each blas call.
+    if (std::holds_alternative<se::RocmComputeCapability>(gpu_comp())) {
+      ASSERT_TRUE(is_main_stream);
     }
   }
 
