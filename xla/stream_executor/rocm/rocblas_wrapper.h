@@ -275,7 +275,9 @@ using stream_executor::internal::CachedDsoLoader::GetRocblasDsoHandle;
   __macro(rocblas_destroy_handle)                        \
   __macro(rocblas_get_stream)                            \
   __macro(rocblas_set_stream)                            \
-  __macro(rocblas_set_atomics_mode)
+  __macro(rocblas_set_atomics_mode)                      \
+  __macro(rocblas_get_version_string_size)               \
+  __macro(rocblas_get_version_string)
 
 // clang-format on
 
