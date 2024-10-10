@@ -766,6 +766,7 @@ ENTRY main.12 {
 
 TEST_F(CollectiveOpsTestE2EWindowedNonWindowed,
        WindowedEinsumE2EAllGatherAndReduceScatterF8) {
+	GTEST_SKIP() << "F8E4M3 not supported";
   absl::string_view kModuleReplicatedStr = R"(
 HloModule pjit__unnamed_wrapped_function_, entry_computation_layout={(<<F8E4M3>>[2,16,48]{2,1,0}, <<F8E4M3>>[48,192]{1,0}, <<F8E4M3>>[192,48]{1,0}, bf16[], bf16[], bf16[], bf16[], bf16[])->bf16[2,16,48]{2,1,0}}, allow_spmd_sharding_propagation_to_parameters={false,false,false,false}, num_partitions=4
 
