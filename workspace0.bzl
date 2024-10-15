@@ -1,3 +1,7 @@
+
+
+
+
 """TensorFlow workspace initialization. Consult the WORKSPACE on how to use it."""
 
 load("@bazel_toolchains//repositories:repositories.bzl", bazel_toolchains_repositories = "repositories")
