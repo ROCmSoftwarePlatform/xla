@@ -263,6 +263,8 @@ TEST_F(FunctionalHloRunnerTest, ShardedAutotuningWorks) {
     GTEST_SKIP() << "GPU-only test.";
   }
 
+  GTEST_SKIP() << "Triton is not enabled.";
+
   tsl::SubProcess child[kNumNodes];
   for (int node_id = 0; node_id < kNumNodes; ++node_id) {
     std::vector<std::string> argv;
