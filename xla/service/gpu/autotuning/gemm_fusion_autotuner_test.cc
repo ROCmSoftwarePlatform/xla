@@ -207,6 +207,11 @@ class StatelessAutotunerTest : public HloTestBase {
         .cuda_compute_capability();
   }
 
+  const stream_executor::GpuComputeCapability& GpuComputeComp() {
+    return backend().default_stream_executor()
+                    ->GetDeviceDescription().gpu_compute_capability();
+  }
+
   // Returns the config for the current device.
   absl::StatusOr<std::vector<GemmFusionAutotunerImpl::BackendConfig>>
   GetPossibleMatmulAutotuneConfigs(const HloModule& module) {
@@ -312,7 +317,7 @@ class GemmFusionAutotunerTest : public StatelessAutotunerTest {
     pipeline.AddPass<GemmFusion>(backend()
                                      .default_stream_executor()
                                      ->GetDeviceDescription()
-                                     .cuda_compute_capability());
+                                     .gpu_compute_capability());
     tsl::thread::ThreadPool thread_pool(tsl::Env::Default(), "",
                                         tsl::port::MaxParallelism());
     DebugOptions opts;
@@ -564,6 +569,7 @@ ENTRY e {
 }
 
 // TODO(b/344770374): Make this test not fragile.
+
 TEST_F(GemmFusionAutotunerTest, DoNotRunAutotuningKernelSpillingRegisters) {
   const std::string kHloText = R"(
 HloModule m
@@ -823,6 +829,9 @@ CHECK: cublas
 }
 
 TEST_F(GemmFusionAutotunerTest, AutotuneCuDnnFusion) {
+  if (std::holds_alternative<se::RocmComputeCapability>(GpuComputeComp())) {
+    GTEST_SKIP() << "No CuDnnFusion on ROCM.";
+  }
   const std::string kHlo = R"(
 fusion1 {
   p0 = f32[3,28,32] parameter(0)
@@ -895,7 +904,7 @@ ENTRY e {
   pipeline.AddPass<GemmFusion>(backend()
                                    .default_stream_executor()
                                    ->GetDeviceDescription()
-                                   .cuda_compute_capability());
+                                   .gpu_compute_capability());
   tsl::thread::ThreadPool thread_pool(tsl::Env::Default(), "",
                                       tsl::port::MaxParallelism());
   DebugOptions opts;
