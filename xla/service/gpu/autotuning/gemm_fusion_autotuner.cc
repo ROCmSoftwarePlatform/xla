@@ -450,13 +450,16 @@ int GetCuDnnPlanCount(const HloInstruction& hlo,
   return CuDnnFusionCompiler::GetAvailablePlanCount(
       *autotune_config.GetExecutor(), *DynCast<HloFusionInstruction>(&hlo));
 }
-#endif GOOGLE_CUDA
+#endif // GOOGLE_CUDA
 
 AutotuneResult FromConfig(const BackendConfig& config) {
   AutotuneResult res;
   if (std::holds_alternative<GemmFusionAutotunerImpl::CuBlasConfig>(config)) {
 #ifdef GOOGLE_CUDA
     res.mutable_gemm()->set_algorithm(CUBLAS_GEMM_DEFAULT);
+#else
+    res.mutable_gemm()->set_algorithm(HIPBLAS_GEMM_DEFAULT);
+#endif
   } else if (std::holds_alternative<
                  GemmFusionAutotunerImpl::CustomKernelFusionConfig>(config)) {
     res.mutable_custom_kernel_fusion()->set_kernel_index(
@@ -798,6 +801,7 @@ GemmFusionAutotunerImpl::GenerateConfigs(const HloFusionInstruction& fusion) {
       configs.push_back(CuBlasConfig{});
     }
 
+#ifdef GOOGLE_CUDA
     // Add cuDNN plans, if available.
     bool is_hopper =
         !config_.IsDeviceless() && GetComputeCapability().IsAtLeastHopper();
@@ -820,6 +824,7 @@ GemmFusionAutotunerImpl::GenerateConfigs(const HloFusionInstruction& fusion) {
       }
       return configs;
     }
+#endif // GOOGLE_CUDA
   }
 
   // Add CustomKernelFusion (Cutlass) configs, if available.
