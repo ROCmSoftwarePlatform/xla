@@ -283,18 +283,6 @@ using stream_executor::internal::CachedDsoLoader::GetRocblasDsoHandle;
 
 FOREACH_ROCBLAS_API(ROCBLAS_API_WRAPPER)
 
-#if TF_ROCM_VERSION >= 60200
-
-// clang-format off
-#define FOREACH_ROCBLAS_API_62(__macro)            \
-  __macro(rocblas_get_version_string_size)         \
-  __macro(rocblas_get_version_string)
-// clang-format on
-
-FOREACH_ROCBLAS_API_62(ROCBLAS_API_WRAPPER)
-
-#endif  // TF_ROCM_VERSION >= 60200
-
 }  // namespace wrap
 }  // namespace stream_executor
 
