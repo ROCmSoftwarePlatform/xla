@@ -71,14 +71,13 @@ TEST_F(HloRunnerTest, RunSingle) {
   TF_ASSERT_OK_AND_ASSIGN(auto argument_buffers,
                       test_runner_.TransferLiteralsToDevice(arg_ptrs));
   
-  ASSERT_TRUE(backend().default_stream_executor()->SynchronizeAllActivity());
-  
   xla::ExecutionProfile profile;
-  profile.set_warmup_run_executed(true);
+  // profile.set_warmup_run_executed(true);
   uint64_t timeNs = 0;
   for(int i = 0; i < num_runs + num_warmups; i++) {
     if(i == num_warmups) {
       VLOG(0) << "Warmup finished.. running";
+      ASSERT_TRUE(backend().default_stream_executor()->SynchronizeAllActivity());
     }
     TF_ASSERT_OK_AND_ASSIGN(auto result,
                       test_runner_.ExecuteWithDeviceBuffers(

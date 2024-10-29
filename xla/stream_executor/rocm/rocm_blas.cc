@@ -113,10 +113,10 @@ bool ROCMBlas::Init() {
   }
 
 #if TF_HIPBLASLT
-  // if (!blas_lt_.Init().ok()) {
-  //   LOG(ERROR) << "Failed to initialize hipblasLt";
-  //   return false;
-  // }
+  if (!blas_lt_.Init().ok()) {
+    LOG(ERROR) << "Failed to initialize hipblasLt";
+    return false;
+  }
 #endif
 
   int dev = 0;
@@ -1216,7 +1216,7 @@ IMPL_DoBlasGemmBatched(float, wrap::rocblas_sgemm_strided_batched)
 }
 
 absl::Status ROCMBlas::GetVersion(string *version) {
-#if TF_ROCM_VERSION >= 60300  // Not yet available in ROCM-6.1
+#if 0  // Not yet available in ROCM-6.1
   absl::MutexLock lock{&mu_};
   size_t len = 0;
   if (auto res = rocblas_get_version_string_size(&len);
