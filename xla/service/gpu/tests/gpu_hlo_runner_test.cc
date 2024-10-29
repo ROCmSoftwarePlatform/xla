@@ -48,8 +48,6 @@ TEST_F(HloRunnerTest, RunSingle) {
 
   HloModuleConfig config = GetModuleConfigForTest();
 #if 1
-  //config.set_num_partitions(8); 
-
   TF_ASSERT_OK_AND_ASSIGN(auto module, ParseAndReturnVerifiedModule(buffer.str(), 
           config));
   
@@ -62,10 +60,6 @@ TEST_F(HloRunnerTest, RunSingle) {
         false /* use large range*/));
   auto arg_ptrs = MakePointerVector<xla::Literal>(fake_arguments);
 
-  auto& ref_runner = HloTestBase::reference_runner_;
-  TF_ASSERT_OK_AND_ASSIGN(
-       auto ref_exec, ref_runner.CreateExecutable(std::move(ref_module), true));
-
   // TF_ASSERT_OK_AND_ASSIGN(auto truth, 
   //       ReadLiteralFromProto("/tf/xla/expected.pb"));
   // TF_ASSERT_OK_AND_ASSIGN(auto truth, 
@@ -73,10 +67,38 @@ TEST_F(HloRunnerTest, RunSingle) {
   // WriteLiteralToTempFile(truth, "expected");
   //VLOG(0) << "Got expected literal from file.. running test";
 
+  int num_runs = 100, num_warmups = 2;
+  TF_ASSERT_OK_AND_ASSIGN(auto argument_buffers,
+                      test_runner_.TransferLiteralsToDevice(arg_ptrs));
+  
+  ASSERT_TRUE(backend().default_stream_executor()->SynchronizeAllActivity());
+  
+  xla::ExecutionProfile profile;
+  profile.set_warmup_run_executed(true);
+  uint64_t timeNs = 0;
+  for(int i = 0; i < num_runs + num_warmups; i++) {
+    if(i == num_warmups) {
+      VLOG(0) << "Warmup finished.. running";
+    }
+    TF_ASSERT_OK_AND_ASSIGN(auto result,
+                      test_runner_.ExecuteWithDeviceBuffers(
+                          /*executable=*/exec.get(),
+                          /*arguments=*/argument_buffers,
+                          /*profile=*/&profile));
+    if (i >= num_warmups) timeNs += profile.compute_time_ns();
+  }
+  double usec = (double)timeNs  / (num_runs * 1000);
+  VLOG(0) << "Time elapsed: " << usec << " usec";
+
+  VLOG(0) << "Performing correctness check.";
   TF_ASSERT_OK_AND_ASSIGN(
        auto test_res, test_runner_.ExecuteWithExecutable(exec.get(), arg_ptrs));
 
   VLOG(0) << "Running reference exec..";
+  auto& ref_runner = HloTestBase::reference_runner_;
+  TF_ASSERT_OK_AND_ASSIGN(
+       auto ref_exec, ref_runner.CreateExecutable(std::move(ref_module), true));
+
   TF_ASSERT_OK_AND_ASSIGN(
        auto truth, ref_runner.ExecuteWithExecutable(ref_exec.get(), arg_ptrs));
 
