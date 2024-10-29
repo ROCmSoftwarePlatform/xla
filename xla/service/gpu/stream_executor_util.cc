@@ -492,7 +492,6 @@ static void InitializeTypedBuffer(se::Stream* stream,
     // Nothing more to do
     return;
   }
-#ifdef GOOGLE_CUDA
   // Repeat the host_buffer_size elements at the start of `buf` to the end
   CHECK_EQ(elements_to_fill, buffer.size() / sizeof(T) - host_buffer_size);
   se::StreamExecutor* executor = stream->parent();
@@ -513,7 +512,6 @@ static void InitializeTypedBuffer(se::Stream* stream,
                                  se::BlockDim(blocks_per_grid, 1, 1), *kernel,
                                  buffer, host_buffer_bytes,
                                  static_cast<int64_t>(buffer.size())));
-#endif
 }
 
 void InitializeBuffer(se::Stream* stream, PrimitiveType buffer_type,
