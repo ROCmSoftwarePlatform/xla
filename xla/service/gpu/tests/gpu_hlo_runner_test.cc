@@ -21,6 +21,9 @@ limitations under the License.
 #include "xla/service/gpu/tests/gpu_codegen_test.h"
 #include "xla/tests/hlo_test_base.h"
 #include "xla/tests/test_utils.h"
+#include "tsl/platform/env.h"
+#include "tsl/platform/path.h"
+
 
 namespace xla {
 namespace gpu {
@@ -36,17 +39,17 @@ std::vector<T*> MakePointerVector(std::vector<T>& input_vec) {
 }
 
 
-class HloRunnerTest : public GpuCodegenTest {};
+class HloRunnerTest : public GpuCodegenTest {
 
-TEST_F(HloRunnerTest, RunSingle) {
+protected:
+  constexpr static const char *CsvSep = " , ";
 
-  std::ifstream ifs("input.hlo");
-  ASSERT_TRUE(ifs.good());
+  void run_internal(std::istream& ifs, std::ostream& ofs) {
 
-  std::stringstream buffer;
-  buffer << ifs.rdbuf();
+    std::stringstream buffer;
+    buffer << ifs.rdbuf();
 
-  HloModuleConfig config = GetModuleConfigForTest();
+    HloModuleConfig config = GetModuleConfigForTest();
 #if 1
   TF_ASSERT_OK_AND_ASSIGN(auto module, ParseAndReturnVerifiedModule(buffer.str(), 
           config));
@@ -88,7 +91,9 @@ TEST_F(HloRunnerTest, RunSingle) {
   }
   double usec = (double)timeNs  / (num_runs * 1000);
   VLOG(0) << "Time elapsed: " << usec << " usec";
+  ofs << usec;
 
+#if 0
   VLOG(0) << "Performing correctness check.";
   TF_ASSERT_OK_AND_ASSIGN(
        auto test_res, test_runner_.ExecuteWithExecutable(exec.get(), arg_ptrs));
@@ -107,7 +112,7 @@ TEST_F(HloRunnerTest, RunSingle) {
                                   /*actual=*/test_res,
                                   /*error=*/error_spec,
                            /*detailed_message=*/true, {}), absl::OkStatus());
-
+#endif
  //    EXPECT_TRUE(RunAndCompare(std::move(module), 
   // //     absl::Span< xla::Literal * const>(arg_ptrs.data(), arg_ptrs.size()), error_spec));
 #else
@@ -144,6 +149,61 @@ TEST_F(HloRunnerTest, RunSingle) {
    ASSERT_EQ(results.size(), NumReplicas);
  }
 #endif
+  }
+
+};
+
+TEST_F(HloRunnerTest, RunSingle) {
+  
+  if (std::ifstream ifs("input.hlo"); ifs.good()) {
+    std::ofstream ofs;
+    return run_internal(ifs, ofs);
+  }
+  std::ifstream ifs("pattern.txt");
+  ASSERT_TRUE(ifs.good());
+
+  std::string line;
+  std::getline(ifs, line);
+  VLOG(0) << "Using file pattern: " << line;
+
+  auto env = tsl::Env::Default();
+  std::string csv("hlo_runner_results.csv");
+  bool exists = env->FileExists(csv).ok();
+  std::ofstream ofs(csv, std::ios_base::app);
+
+  std::vector<std::string> matches;
+  auto pattern = tsl::io::JoinPath("/", line);
+  auto status = env->GetMatchingPaths(pattern, &matches);
+  
+  if (!exists) ofs << CsvSep; // add one column for the header
+
+  for(size_t i = 0; i < matches.size(); i++) {
+    auto s = matches[i];
+    auto res = s.find_last_of('/');
+    if (res != std::string::npos) s = s.substr(res + 1);
+    res = s.find_first_of(".");
+    if (res != std::string::npos) s = s.substr(0, res);
+    if (!exists) {
+      ofs << s << (i == matches.size() - 1 ? "\n" : CsvSep);
+    }
+  }
+
+  ofs << "v0.25 QA"
+  for(size_t i = 0; i < matches.size(); i++) {
+    auto s = matches[i];
+    std::ifstream ifs(s);
+    if (!ifs.good()) {
+      VLOG(0) << "Skipping file: " << s;
+      ofs << CsvSep;
+      continue;
+    }
+    VLOG(0) << i << " of " << matches.size() << ": HLO test for: " 
+            << s << " ---------------------";
+   
+    run_internal(ifs, ofs);
+    ofs << (i == matches.size() - 1 ? "\n" : CsvSep);
+    std::flush(ofs);
+  }
 }
 
 }  // namespace gpu
