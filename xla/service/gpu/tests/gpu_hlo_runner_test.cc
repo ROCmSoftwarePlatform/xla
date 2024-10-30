@@ -188,7 +188,7 @@ TEST_F(HloRunnerTest, RunSingle) {
     }
   }
 
-  ofs << "v0.25 QA"
+  ofs << "v0.25 QA";
   for(size_t i = 0; i < matches.size(); i++) {
     auto s = matches[i];
     std::ifstream ifs(s);
