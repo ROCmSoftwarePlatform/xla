@@ -15,6 +15,7 @@ limitations under the License.
 
 #include <fstream>
 #include <sstream>
+#include <regex>
 #include "xla/error_spec.h"
 #include "xla/literal_comparison.h"
 #include "xla/service/custom_call_target_registry.h"
@@ -46,12 +47,22 @@ protected:
 
   void run_internal(std::istream& ifs, std::ostream& ofs) {
 
+    const static std::pair< std::regex, const char *> replaces[] = {
+        { std::regex(R"x(\[\(0\),)x"), "[" }, // remove dynamic shapes
+        { std::regex(R"x(u32\[\] get-dimension-size\()x"), "s32[] get-dimension-size(" },
+        { std::regex(R"x(u32\[\] %get-dimension-size\.)x"), "s32[] %get-dimension-size."},
+    };
+
     std::stringstream buffer;
     buffer << ifs.rdbuf();
+    auto input = buffer.str();
+    for (const auto& rep : replaces) {
+      input = std::regex_replace(input, rep.first, rep.second);
+    }
 
     HloModuleConfig config = GetModuleConfigForTest();
 #if 1
-  TF_ASSERT_OK_AND_ASSIGN(auto module, ParseAndReturnVerifiedModule(buffer.str(), 
+  TF_ASSERT_OK_AND_ASSIGN(auto module, ParseAndReturnVerifiedModule(input, 
           config));
   
   auto ref_module = module->Clone();  
@@ -122,7 +133,7 @@ protected:
   config.set_num_partitions(NumParts);
 
   TF_ASSERT_OK_AND_ASSIGN(
-      auto module, ParseAndReturnVerifiedModule(buffer.str(), config));
+      auto module, ParseAndReturnVerifiedModule(input, config));
   DeviceAssignment assn(/*replica_count=*/NumReplicas,
                         /*computation_count=*/NumParts);
   for (int64_t i = 0, k = 0; i < NumReplicas; i++)
