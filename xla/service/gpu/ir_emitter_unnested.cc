@@ -2898,6 +2898,9 @@ absl::Status IrEmitterUnnested::EmitHloInstruction(
       if (instr->custom_call_target() == kNopCustomCallTarget) {
         return absl::OkStatus();
       }
+      if (IsCustomCallToCusolver(*instr)) {
+        return EmitCholeskyThunk(instr);
+      }
       return EmitCustomCallThunk(custom_call);
     }
     case HloOpcode::kFusion: {
