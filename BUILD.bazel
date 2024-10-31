@@ -1,3 +1,4 @@
+load("@hedron_compile_commands//:refresh_compile_commands.bzl", "refresh_compile_commands")
 load("@rules_license//rules:license.bzl", "license")
 
 package(
@@ -11,4 +12,11 @@ license(
     name = "license",
     package_name = "xla",
     license_kinds = ["@rules_license//licenses/spdx:Apache-2.0"],
+)
+
+refresh_compile_commands(
+    name = "refresh_compile_commands",
+    targets = {
+        "//xla/client/lib:math_test_gpu": "--config=rocm",
+    },
 )
