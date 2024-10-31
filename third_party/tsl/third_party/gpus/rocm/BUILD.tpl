@@ -1,4 +1,5 @@
 load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
+load("@local_config_rocm//rocm:build_defs.bzl", "rocm_version_number", "select_threshold")
 
 licenses(["restricted"])  # MPL2, portions GPL v3, LGPL v3, BSD-like
 
@@ -12,109 +13,160 @@ config_setting(
 )
 
 cc_library(
-    name = "rocm_headers",
+    name = "rocm_config",
     hdrs = [
-        "rocm/rocm_config.h",
-        %{rocm_headers}
+        "rocm_config/rocm_config.h",
     ],
+    include_prefix = "rocm",
+    strip_include_prefix = "rocm_config",
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
+    name = "rocm_headers",
+    hdrs = glob([
+        "%{rocm_root}/include/**",
+        "%{rocm_root}/lib/llvm/lib/**/*.h",
+    ]),
+    include_prefix = "rocm",
     includes = [
-        ".",
-        "rocm/include",
-        "rocm/include/rocrand",
-        "rocm/include/roctracer",
+        "%{rocm_root}/include",
+        "%{rocm_root}/include/rocrand",
+        "%{rocm_root}/include/roctracer",
     ],
+    strip_include_prefix = "%{rocm_root}",
     visibility = ["//visibility:public"],
 )
 
 cc_library(
     name = "hip",
-    srcs = ["rocm/lib/%{hip_lib}"],
-    data = ["rocm/lib/%{hip_lib}"],
+    hdrs = glob(["%{rocm_root}/include/hip/**"]),
+    data = glob(["%{rocm_root}/lib/hip/**"]),
+    include_prefix = "rocm",
     includes = [
-        ".",
-        "rocm/include",
+        "%{rocm_root}/include",
     ],
     linkstatic = 1,
+    strip_include_prefix = "%{rocm_root}",
     visibility = ["//visibility:public"],
+    deps = [":rocm_config"],
 )
 
 cc_library(
     name = "rocblas",
-    srcs = ["rocm/lib/%{rocblas_lib}"],
-    data = ["rocm/lib/%{rocblas_lib}"],
+    srcs = glob(["%{rocm_root}/lib/librocblas*.so*"]),
+    hdrs = glob(["%{rocm_root}/include/rocblas/**"]),
+    data = glob([
+        "%{rocm_root}/lib/librocblas*.so",
+        "%{rocm_root}/lib/rocblas/**",
+    ]),
+    include_prefix = "rocm",
     includes = [
-        ".",
-        "rocm/include",
+        "%{rocm_root}/include",
     ],
     linkstatic = 1,
+    strip_include_prefix = "%{rocm_root}",
     visibility = ["//visibility:public"],
+    deps = [":rocm_config"],
 )
 
 cc_library(
-    name = "%{hipfft_or_rocfft}",
-    srcs = ["rocm/lib/%{hipfft_or_rocfft_lib}"],
-    data = ["rocm/lib/%{hipfft_or_rocfft_lib}"],
+    name = "rocfft",
+    srcs = glob(["%{rocm_root}/lib/librocfft*.so*"]),
+    data = glob(["%{rocm_root}/lib/librocfft*.so*"]),
+    include_prefix = "rocm",
     includes = [
-        ".",
-        "rocm/include",
+        "%{rocm_root}/include",
     ],
     linkstatic = 1,
-    visibility = ["//visibility:public"],
+    deps = [":rocm_config"],
+)
+
+cc_library(
+    name = "hipfft",
+    srcs = glob(["%{rocm_root}/lib/libhipfft*.so*"]),
+    data = glob(["%{rocm_root}/lib/libhipfft*.so*"]),
+    include_prefix = "rocm",
+    includes = [
+        "%{rocm_root}/include",
+    ],
+    linkstatic = 1,
+    deps = [":rocm_config"],
 )
 
 cc_library(
     name = "hiprand",
-    srcs = ["rocm/lib/%{hiprand_lib}"],
-    data = ["rocm/lib/%{hiprand_lib}"],
+    srcs = glob(["%{rocm_root}/lib/libhiprand*.so*"]),
+    hdrs = glob(["%{rocm_root}/include/hiprand/**"]),
+    data = glob(["%{rocm_root}/lib/libhiprand*.so*"]),
+    include_prefix = "rocm",
     includes = [
-        ".",
-        "rocm/include",
-        "rocm/include/rocrand",
+        "%{rocm_root}/include",
+        "%{rocm_root}/include/rocrand",
     ],
     linkstatic = 1,
+    strip_include_prefix = "%{rocm_root}",
     visibility = ["//visibility:public"],
+    deps = [":rocm_config"],
 )
 
 cc_library(
     name = "miopen",
-    srcs = ["rocm/lib/%{miopen_lib}"],
-    data = ["rocm/lib/%{miopen_lib}"],
+    srcs = glob(["%{rocm_root}/lib/libMIOpen*.so*"]),
+    hdrs = glob(["%{rocm_root}/include/rccl/**"]),
+    data = glob(["%{rocm_root}/lib/libMIOpen*.so*"]),
+    include_prefix = "rocm",
     includes = [
-        ".",
-        "rocm/include",
+        "%{rocm_root}/include",
     ],
     linkstatic = 1,
+    strip_include_prefix = "%{rocm_root}",
     visibility = ["//visibility:public"],
+    deps = [":rocm_config"],
 )
 
 cc_library(
     name = "rccl",
-    srcs = ["rocm/lib/%{rccl_lib}"],
-    data = ["rocm/lib/%{rccl_lib}"],
+    srcs = glob(["%{rocm_root}/lib/librccl*.so*"]),
+    hdrs = glob(["%{rocm_root}/include/rccl/**"]),
+    data = glob(["%{rocm_root}/lib/librccl*.so*"]),
+    include_prefix = "rocm",
     includes = [
-        ".",
-        "rocm/include",
+        "%{rocm_root}/include",
     ],
     linkstatic = 1,
+    strip_include_prefix = "%{rocm_root}",
     visibility = ["//visibility:public"],
+    deps = [":rocm_config"],
 )
 
 cc_library(
     name = "rocm",
     visibility = ["//visibility:public"],
     deps = [
-        ":rocm_headers",
         ":hip",
-        ":rocblas",
         ":hipblas",
-        ":%{hipfft_or_rocfft}",
         ":hiprand",
-        ":miopen",
-        ":hipsparse",
-        ":roctracer",
-        ":rocsolver",
         ":hipsolver",
-    ],
+        ":hipsparse",
+        ":llvm",
+        ":miopen",
+        ":rocblas",
+        ":rocm_config",
+        ":rocsolver",
+        ":roctracer",
+    ] + select_threshold(
+        above_or_eq = [":hipfft"],
+        below = [":rocfft"],
+        threshold = 40100,
+        value = rocm_version_number(),
+    ),
+)
+
+filegroup(
+    name = "rocm_bin",
+    srcs = glob(["%{rocm_root}/bin/**/*"]),
+    visibility = ["//visibility:public"],
 )
 
 bzl_library(
@@ -125,58 +177,132 @@ bzl_library(
 cc_library(
     name = "rocprim",
     srcs = [
-        "rocm/include/hipcub/hipcub_version.hpp",
-        "rocm/include/rocprim/rocprim_version.hpp",
+        "%{rocm_root}/include/hipcub/hipcub_version.hpp",
+        "%{rocm_root}/include/rocprim/rocprim_version.hpp",
     ],
     hdrs = glob([
-        "rocm/include/hipcub/**",
-        "rocm/include/rocprim/**",
+        "%{rocm_root}/include/hipcub/**",
+        "%{rocm_root}/include/rocprim/**",
     ]),
+    include_prefix = "rocm",
     includes = [
-        ".",
-        "rocm/include/hipcub",
-        "rocm/include/rocprim",
+        "%{rocm_root}/include/hipcub",
+        "%{rocm_root}/include/rocprim",
     ],
+    strip_include_prefix = "%{rocm_root}",
     visibility = ["//visibility:public"],
     deps = [
-        "@local_config_rocm//rocm:rocm_headers",
+        ":rocm",
     ],
 )
 
 cc_library(
     name = "hipsparse",
-    srcs = ["rocm/lib/%{hipsparse_lib}"],
-    data = ["rocm/lib/%{hipsparse_lib}"],
+    srcs = glob(["%{rocm_root}/lib/libhipsparse*.so*"]),
+    hdrs = glob(["%{rocm_root}/include/hipsparse/**"]),
+    data = glob(["%{rocm_root}/lib/libhipsparse*.so*"]),
+    include_prefix = "rocm",
+    includes = [
+        "%{rocm_root}/include/",
+    ],
+    strip_include_prefix = "%{rocm_root}",
+    visibility = ["//visibility:public"],
+    deps = [":rocm_config"],
 )
 
 cc_library(
     name = "roctracer",
-    data = ["rocm/lib/%{roctracer_lib}"],
+    hdrs = glob(["%{rocm_root}/include/roctracer/**"]),
+    data = glob(["%{rocm_root}/lib/libroctracer*.so*"]),
+    include_prefix = "rocm",
+    includes = [
+        "%{rocm_root}/include/",
+    ],
+    strip_include_prefix = "%{rocm_root}",
+    visibility = ["//visibility:public"],
+    deps = [":rocm_config"],
 )
 
 cc_library(
     name = "rocsolver",
-    srcs = ["rocm/lib/%{rocsolver_lib}"],
-    data = ["rocm/lib/%{rocsolver_lib}"],
+    srcs = glob(["%{rocm_root}/lib/librocsolver*.so*"]),
+    hdrs = glob(["%{rocm_root}/include/rocsolver/**"]),
+    data = glob(["%{rocm_root}/lib/librocsolver*.so*"]),
+    include_prefix = "rocm",
+    includes = [
+        "%{rocm_root}/include/",
+    ],
+    strip_include_prefix = "%{rocm_root}",
+    visibility = ["//visibility:public"],
+    deps = [":rocm_config"],
 )
 
 cc_library(
     name = "hipsolver",
-    srcs = ["rocm/lib/%{hipsolver_lib}"],
-    data = ["rocm/lib/%{hipsolver_lib}"],
+    srcs = glob(["%{rocm_root}/lib/libhipsolver*.so*"]),
+    hdrs = glob(["%{rocm_root}/include/hipsolver/**"]),
+    data = glob(["%{rocm_root}/lib/libhipsolver*.so*"]),
+    include_prefix = "rocm",
+    includes = [
+        "%{rocm_root}/include/",
+    ],
+    strip_include_prefix = "%{rocm_root}",
+    visibility = ["//visibility:public"],
+    deps = [":rocm_config"],
 )
 
 cc_library(
     name = "hipblas",
-    srcs = ["rocm/lib/%{hipblas_lib}"],
-    data = ["rocm/lib/%{hipblas_lib}"],
+    srcs = glob(["%{rocm_root}/lib/libhipblas*.so*"]),
+    hdrs = glob(["%{rocm_root}/include/hipblas/**"]),
+    data = glob(["%{rocm_root}/lib/libhipblas*.so*"]),
+    include_prefix = "rocm",
+    includes = [
+        "%{rocm_root}/include/",
+    ],
+    strip_include_prefix = "%{rocm_root}",
+    visibility = ["//visibility:public"],
+    deps = [":rocm_config"],
+)
+
+cc_library(
+    name = "rocrand",
+    srcs = glob(["%{rocm_root}/lib/librocrand*.so*"]),
+    hdrs = glob(["%{rocm_root}/include/rocrand/**"]),
+    include_prefix = "rocm",
+    includes = [
+        "%{rocm_root}/include/",
+    ],
+    strip_include_prefix = "%{rocm_root}",
+    visibility = ["//visibility:public"],
+    deps = [":rocm_config"],
+)
+
+cc_library(
+    name = "llvm",
+    srcs = select({
+        "@platforms//cpu:x86_64": glob(["%{rocm_root}/lib/llvm/lib/**/*x86_64.so*"]),
+        "@platforms//cpu:x86_32": glob(["%{rocm_root}/lib/llvm/lib/**/*i386.so*"]),
+        "//conditions:default": glob(["%{rocm_root}/lib/llvm/lib/**/*x86_64.so*"]),
+    }),
+    hdrs = glob(["%{rocm_root}/lib/llvm/lib/**/*.h"]),
+    data = glob(["%{rocm_root}/lib/llvm/**"]),
+    include_prefix = "rocm",
+    strip_include_prefix = "%{rocm_root}",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":rocm_config",
+    ],
 )
 
 filegroup(
     name = "rocm_root",
     srcs = [
-        "rocm/bin/clang-offload-bundler",
+        "%{rocm_root}/bin/clang-offload-bundler",
     ],
 )
 
-%{copy_rules}
+filegroup(
+    name = "all_files",
+    srcs = glob(["%{rocm_root}/**"]),
+)

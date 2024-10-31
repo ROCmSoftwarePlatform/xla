@@ -50,3 +50,10 @@ tsl_workspace1()
 load(":workspace0.bzl", "tsl_workspace0")
 
 tsl_workspace0()
+
+load(
+    "//third_party/gpus/rocm/hermetic:rocm_repos.bzl",
+    "rocm_init_repositories",
+)
+
+rocm_init_repositories(rocm_version = "6.2.0")

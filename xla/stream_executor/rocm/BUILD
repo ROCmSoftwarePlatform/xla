@@ -206,7 +206,7 @@ cc_library(
 rocm_library(
     name = "hip_conditional_kernels",
     srcs = if_rocm_is_configured(["hip_conditional_kernels.cu.cc"]),
-    deps = if_rocm_is_configured(["@local_config_rocm//rocm:rocm_headers"]),
+    deps = if_rocm_is_configured(["@local_config_rocm//rocm:rocm"]),
 )
 
 cc_library(
