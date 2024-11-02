@@ -476,12 +476,18 @@ absl::Status ExecuteThunks(
       command_buffer_trace_stream, async_comms_streams, &collective_params,
       &collective_cliques, additional_execution_streams);
 
+  VLOG(0) << "----------------------------------------------------------------------";
   for (const std::unique_ptr<Thunk>& thunk : thunk_sequence) {
     // Annotate execution of this op if tracing was enabled when we started
     // running this module.  If tracing is enabled *while* we're running the
     // module, we won't get any data, but that's probably an OK trade-off.
     auto scoped_annotation =
         GetKernelAnnotation(&module_annotations, thunk->profile_annotation());
+
+    TF_ASSIGN_OR_RETURN(auto etm, se::gpu::GpuTimer::Create(main_stream));
+    VLOG(0) << thunk->KindToString(thunk->kind()) << ": " << thunk->ToStringExtra(0);
+
+
     VLOG(3) << "Executing the thunk for " << thunk->profile_annotation();
     if (NeedsAsyncCommsStream(*thunk)) {
       for (se::Stream* async_stream : async_comms_streams) {
@@ -491,6 +497,12 @@ absl::Status ExecuteThunks(
     }
 
     TF_RETURN_IF_ERROR(thunk->ExecuteOnStream(execute_params));
+    
+    TF_ASSIGN_OR_RETURN(absl::Duration elapsed,
+                        etm.GetElapsedDuration());
+    auto tm = absl::ToDoubleNanoseconds(elapsed);
+    VLOG(0) << "Time elapsed: " << tm / 1000 << " usec";
+
   }
   return MaybeSyncAndProfile(run_options, std::move(execution_timer),
                              block_host_until_done ? main_stream : nullptr);

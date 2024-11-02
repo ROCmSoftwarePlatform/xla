@@ -15,6 +15,7 @@ limitations under the License.
 
 #include <fstream>
 #include <sstream>
+#include <regex>
 #include "xla/error_spec.h"
 #include "xla/literal_comparison.h"
 #include "xla/service/custom_call_target_registry.h"
@@ -46,12 +47,22 @@ protected:
 
   void run_internal(std::istream& ifs, std::ostream& ofs) {
 
+    const static std::pair< std::regex, const char *> replaces[] = {
+        { std::regex(R"x(\[\(0\),)x"), "[" }, // remove dynamic shapes
+        { std::regex(R"x(u32\[\] get-dimension-size\()x"), "s32[] get-dimension-size(" },
+        { std::regex(R"x(u32\[\] %get-dimension-size\.)x"), "s32[] %get-dimension-size."},
+    };
+
     std::stringstream buffer;
     buffer << ifs.rdbuf();
+    auto input = buffer.str();
+    for (const auto& rep : replaces) {
+      input = std::regex_replace(input, rep.first, rep.second);
+    }
 
     HloModuleConfig config = GetModuleConfigForTest();
 #if 1
-  TF_ASSERT_OK_AND_ASSIGN(auto module, ParseAndReturnVerifiedModule(buffer.str(), 
+  TF_ASSERT_OK_AND_ASSIGN(auto module, ParseAndReturnVerifiedModule(input, 
           config));
   
   auto ref_module = module->Clone();  
@@ -74,20 +85,21 @@ protected:
   TF_ASSERT_OK_AND_ASSIGN(auto argument_buffers,
                       test_runner_.TransferLiteralsToDevice(arg_ptrs));
   
-  xla::ExecutionProfile profile;
-  // profile.set_warmup_run_executed(true);
   uint64_t timeNs = 0;
   for(int i = 0; i < num_runs + num_warmups; i++) {
     if(i == num_warmups) {
       VLOG(0) << "Warmup finished.. running";
       ASSERT_TRUE(backend().default_stream_executor()->SynchronizeAllActivity());
     }
+    xla::ExecutionProfile profile;
+    //profile.set_warmup_run_executed(true);
     TF_ASSERT_OK_AND_ASSIGN(auto result,
                       test_runner_.ExecuteWithDeviceBuffers(
                           /*executable=*/exec.get(),
                           /*arguments=*/argument_buffers,
                           /*profile=*/&profile));
     if (i >= num_warmups) timeNs += profile.compute_time_ns();
+    //VLOG(0) << i << " compute time: " << profile.compute_time_ns();
   }
   double usec = (double)timeNs  / (num_runs * 1000);
   VLOG(0) << "Time elapsed: " << usec << " usec";
@@ -121,7 +133,7 @@ protected:
   config.set_num_partitions(NumParts);
 
   TF_ASSERT_OK_AND_ASSIGN(
-      auto module, ParseAndReturnVerifiedModule(buffer.str(), config));
+      auto module, ParseAndReturnVerifiedModule(input, config));
   DeviceAssignment assn(/*replica_count=*/NumReplicas,
                         /*computation_count=*/NumParts);
   for (int64_t i = 0, k = 0; i < NumReplicas; i++)
@@ -173,7 +185,7 @@ TEST_F(HloRunnerTest, RunSingle) {
 
   std::vector<std::string> matches;
   auto pattern = tsl::io::JoinPath("/", line);
-  auto status = env->GetMatchingPaths(pattern, &matches);
+  ASSERT_TRUE(env->GetMatchingPaths(pattern, &matches).ok());
   
   if (!exists) ofs << CsvSep; // add one column for the header
 
@@ -188,7 +200,7 @@ TEST_F(HloRunnerTest, RunSingle) {
     }
   }
 
-  ofs << "v0.25 QA" << CsvSep;
+  ofs << "v0.25" << CsvSep;
   for(size_t i = 0; i < matches.size(); i++) {
     auto s = matches[i];
     std::ifstream ifs(s);
