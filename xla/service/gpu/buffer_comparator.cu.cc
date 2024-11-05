@@ -109,9 +109,9 @@ __global__ void xla_fp8_e4m3fnuz_comparison(__hip_fp8_storage_t* buffer_a,
                                             uint64_t buffer_length,
                                             int* mismatch_count) {
   int mcount = 0;
-  int unroll = 128 / sizeof(*buffer_a);
+  uint64_t unroll = 128 / sizeof(*buffer_a);
   uint64_t idx = (threadIdx.x + blockIdx.x * blockDim.x) * unroll;
-  for (int i = 0; i < unroll; ++i) {
+  for (unsigned i = 0; i < unroll; ++i) {
     if ((idx+i) < buffer_length) {
       __hip_fp8_e4m3_fnuz elem_a_fp8, elem_b_fp8;
       elem_a_fp8.__x = buffer_a[idx+i];
@@ -138,9 +138,9 @@ __global__ void xla_fp8_e5m2fnuz_comparison(__hip_fp8_storage_t* buffer_a,
                                             uint64_t buffer_length,
                                             int* mismatch_count) {
   int mcount = 0;
-  int unroll = 128 / sizeof(*buffer_a);
+  uint64_t unroll = 128 / sizeof(*buffer_a);
   uint64_t idx = (threadIdx.x + blockIdx.x * blockDim.x) * unroll;
-  for (int i = 0; i < unroll; ++i) {
+  for (unsigned i = 0; i < unroll; ++i) {
     if ((idx+i) < buffer_length) {
       __hip_fp8_e5m2_fnuz elem_a_fp8, elem_b_fp8;
       elem_a_fp8.__x = buffer_a[idx+i];
@@ -167,9 +167,9 @@ __global__ void xla_fp16_comparison(__half* buffer_a, __half* buffer_b,
                                     uint64_t buffer_length,
                                     int* mismatch_count) {
   int mcount = 0;
-  int unroll = 128 / sizeof(*buffer_a);
+  uint64_t unroll = 128 / sizeof(*buffer_a);
   uint64_t idx = (threadIdx.x + blockIdx.x * blockDim.x) * unroll;
-  for (int i = 0; i < unroll; ++i) {
+  for (unsigned i = 0; i < unroll; ++i) {
     if ((idx+i) < buffer_length) {
       float elem_a = __half2float(buffer_a[idx+i]);
       float elem_b = __half2float(buffer_b[idx+i]);
@@ -192,9 +192,9 @@ __global__ void xla_fp32_comparison(float* buffer_a, float* buffer_b,
                                     uint64_t buffer_length,
                                     int* mismatch_count) {
   int mcount = 0;
-  int unroll = 128 / sizeof(*buffer_a);
+  uint64_t unroll = 128 / sizeof(*buffer_a);
   uint64_t idx = (threadIdx.x + blockIdx.x * blockDim.x) * unroll;
-  for (int i = 0; i < unroll; ++i) {
+  for (unsigned i = 0; i < unroll; ++i) {
     if ((idx+i) < buffer_length) {
       float elem_a = buffer_a[idx+i];
       float elem_b = buffer_b[idx+i];
@@ -216,9 +216,9 @@ __global__ void xla_fp64_comparison(double* buffer_a, double* buffer_b,
                                     uint64_t buffer_length,
                                     int* mismatch_count) {
   int mcount = 0;
-  int unroll = 128 / sizeof(*buffer_a);
+  uint64_t unroll = 128 / sizeof(*buffer_a);
   uint64_t idx = (threadIdx.x + blockIdx.x * blockDim.x) * unroll;
-  for (int i = 0; i < unroll; ++i) {
+  for (unsigned i = 0; i < unroll; ++i) {
     if ((idx+i) < buffer_length) {
       double elem_a = buffer_a[idx+i];
       double elem_b = buffer_b[idx+i];
@@ -239,10 +239,10 @@ __global__ void xla_bf16_comparison(bfloat16* buffer_a, bfloat16* buffer_b,
                                     uint64_t buffer_length,
                                     int* mismatch_count) {
   int mcount = 0;
-  int unroll = 128 / sizeof(*buffer_a);
+  uint64_t unroll = 128 / sizeof(*buffer_a);
   uint64_t idx = (threadIdx.x + blockIdx.x * blockDim.x) * unroll;
   
-  for (int i = 0; i < unroll; ++i) {
+  for (unsigned i = 0; i < unroll; ++i) {
     if ((idx+i) < buffer_length) {
       float elem_a = BF16_TO_F32(buffer_a[idx+i]);
       float elem_b = BF16_TO_F32(buffer_b[idx+i]);
@@ -266,9 +266,9 @@ __global__ void xla_int8_comparison(int8_t* buffer_a, int8_t* buffer_b,
                                     uint64_t buffer_length,
                                     int* mismatch_count) {
   int mcount = 0;
-  int unroll = 128;
-  int idx = (threadIdx.x + blockIdx.x * blockDim.x) * unroll;
-  for (int i = 0; i < unroll; ++i) {
+  uint64_t unroll = 128;
+  uint64_t idx = (threadIdx.x + blockIdx.x * blockDim.x) * unroll;
+  for (unsigned i = 0; i < unroll; ++i) {
     if ((idx+i) < buffer_length) {
       float a = buffer_a[idx+i];
       float b = buffer_b[idx+i];
@@ -286,9 +286,9 @@ __global__ void xla_int32_comparison(int* buffer_a, int* buffer_b,
                                      uint64_t buffer_length,
                                      int* mismatch_count) {
   int mcount = 0;
-  int unroll = 128 / sizeof(*buffer_a);
-  int idx = (threadIdx.x + blockIdx.x * blockDim.x) * unroll;
-  for (int i = 0; i < unroll; ++i) {
+  uint64_t unroll = 128 / sizeof(*buffer_a);
+  uint64_t idx = (threadIdx.x + blockIdx.x * blockDim.x) * unroll;
+  for (unsigned i = 0; i < unroll; ++i) {
     if ((idx+i) < buffer_length) {
       float elem_a = static_cast<float>(buffer_a[idx+i]);
       float elem_b = static_cast<float>(buffer_b[idx+i]);
