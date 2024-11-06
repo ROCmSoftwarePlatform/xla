@@ -182,15 +182,17 @@ class StatelessAutotunerTest : public HloTestBase {
   absl::StatusOr<std::vector<GemmFusionAutotunerImpl::BackendConfig>>
   GetPossibleMatmulAutotuneConfigs(
       const HloModule& module,
-      const se::CudaComputeCapability& compute_capability,
+      const se::GpuComputeCapability& compute_capability,
       const se::SemanticVersion& toolkit_version,
       const DebugOptions& debug_options) {
     const HloFusionInstruction& fusion = *Cast<HloFusionInstruction>(
         module.entry_computation()->root_instruction());
+#ifdef GOOGLE_CUDA
     se::GpuDeviceInfoProto deviceless_proto;
     auto ccc = deviceless_proto.mutable_cuda_compute_capability();
     ccc->set_major(compute_capability.major);
     ccc->set_minor(compute_capability.minor);
+#endif // GOOGLE_CUDA
 
     DeviceConfig test_config{backend().default_stream_executor(),
                              backend().memory_allocator()};

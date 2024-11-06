@@ -156,9 +156,8 @@ class GemmFusionAutotunerImpl {
   static std::string ToString(const BackendConfig& config);
 
  private:
-  se::CudaComputeCapability GetComputeCapability() const {
-    return std::get<se::CudaComputeCapability>(
-        config_.GetGpuComputeCapability());
+  se::GpuComputeCapability GetComputeCapability() const {
+    return config_.GetGpuComputeCapability();
   }
 
   std::vector<TritonGemmConfig> GetDefaultTritonConfigs() const;

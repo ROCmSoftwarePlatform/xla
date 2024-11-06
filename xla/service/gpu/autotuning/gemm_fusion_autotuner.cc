@@ -1211,10 +1211,10 @@ absl::StatusOr<std::vector<AutotuneResult>> GemmFusionAutotunerImpl::Profile(
 std::vector<TritonGemmConfig>
 GemmFusionAutotunerImpl::GetExhaustiveTritonConfigs() const {
   std::vector<TritonGemmConfig> configs;
-  se::CudaComputeCapability cc = GetComputeCapability();
+  se::GpuComputeCapability cc = GetComputeCapability();
 #ifdef GOOGLE_CUDA
   bool tune_ctas =
-      debug_options_.xla_gpu_enable_`triton_hopper() && cc.IsAtLeastHopper();
+      debug_options_.xla_gpu_enable_triton_hopper() && cc.IsAtLeastHopper();
 #endif // GOOGLE_CUDA
 
   for (int num_stages : kNumStages) {
