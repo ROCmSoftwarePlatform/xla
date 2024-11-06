@@ -88,8 +88,14 @@ static absl::StatusOr<bool> DeviceCompare(std::string_view kernel_name,
   const se::DeviceDescription& gpu_device_info =
       executor->GetDeviceDescription();
 
+#ifdef GOOGLE_CUDA
   LaunchDimensions dim =
       CalculateLaunchDimensions(*params.shape, gpu_device_info);
+#else
+  LaunchDimensions dim =
+      CalculateLaunchDimensions(*params.shape, gpu_device_info,
+                                {128 / sizeof(ElementT)});
+#endif // GOOGLE_CUDA
 
   se::DeviceMemory<uint64_t> as_uint64(out.memory());
   TF_RETURN_IF_ERROR(params.stream->ThenLaunch(
