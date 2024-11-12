@@ -82,6 +82,7 @@ class TritonGemmTest : public TritonTest {
     debug_options.set_xla_gpu_enable_split_k_autotuning(false);
     // Always rewrite Gemms with Triton regardless of size.
     debug_options.set_xla_gpu_gemm_rewrite_size_threshold(0);
+    debug_options.set_xla_gpu_enable_triton_gemm(true);
     return debug_options;
   }
 
@@ -3313,6 +3314,9 @@ ENTRY e {
 
 TEST_F(TritonGemmTestAny,
        LowerDotWithLhsWithoutNonContractingDimThroughTriton) {
+  if (std::holds_alternative<se::RocmComputeCapability>(GpuComputeComp())) {
+    GTEST_SKIP() << "Not enough memory to allocate on ROCM.";
+  }
   const std::string hlo_text = R"(
 HloModule t
 
@@ -3335,6 +3339,9 @@ ENTRY e {
 
 TEST_F(TritonGemmTestAny,
        LowerDotWithRhsWithoutNonContractingDimThroughTriton) {
+  if (std::holds_alternative<se::RocmComputeCapability>(GpuComputeComp())) {
+    GTEST_SKIP() << "Not enough memory to allocate on ROCM.";
+  }
   const std::string hlo_text = R"(
 HloModule t
 
