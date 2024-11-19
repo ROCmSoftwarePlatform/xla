@@ -110,7 +110,7 @@ static void DumpRocmTracerEvent(const RocmTracerEvent& event,
   // oss << ",source=" << GetRocmTracerEventSourceName(event.source);
   // oss << ",domain=" << GetRocmTracerEventDomainName(event.domain);
   oss << ",name=" << event.name;
-  oss << ",annotation=" << event.annotation;
+ // oss << ",annotation=" << event.annotation;
   oss << ",start_time_us="
       << (start_walltime_ns + (start_gputime_ns - event.start_time_ns)) / 1000;
   oss << ",duration=" << (event.end_time_ns - event.start_time_ns) / 1000;
@@ -253,6 +253,8 @@ class PerDeviceCollector {
 
   bool IsHostEvent(const RocmTracerEvent& event, tsl::int64* line_id) {
     // DriverCallback(i.e. kernel launching) events are host events.
+    return false;
+    /*
     if (event.source == RocmTracerEventSource::ApiCallback) {
       *line_id = event.thread_id;
       return true;
@@ -260,7 +262,7 @@ class PerDeviceCollector {
       *line_id = event.stream_id;
       return false;
     }
-
+    */
     // TODO(rocm-profiler): do we have such a report in rocm?
     // Non-overhead activity events are device events.
     /* if (event.type != CuptiTracerEventType::Overhead) {
@@ -270,7 +272,7 @@ class PerDeviceCollector {
     // Overhead events can be associated with a thread or a stream, etc.
     // If a valid thread id is specified, we consider it as a host event.
     //
-
+    /*
     if (event.stream_id != RocmTracerEvent::kInvalidStreamId) {
       *line_id = event.stream_id;
       return false;
@@ -282,6 +284,7 @@ class PerDeviceCollector {
       *line_id = tsl::profiler::kThreadIdOverhead;
       return false;
     }
+    */
   }
 
  public:
@@ -294,8 +297,10 @@ class PerDeviceCollector {
     absl::flat_hash_map<tsl::int64, absl::flat_hash_set<RocmTracerEventType>>
         events_types_per_line;
     for (const RocmTracerEvent& event : events) {
-      int64_t line_id = RocmTracerEvent::kInvalidThreadId;
-      bool is_host_event = IsHostEvent(event, &line_id);
+      // int64_t line_id = RocmTracerEvent::kInvalidThreadId;
+      // bool is_host_event = IsHostEvent(event, &line_id);
+      bool is_host_event = false;
+      tsl::int64 line_id = event.thread_id;
 
       if (is_host_event) {
         host_ev_cnt++;
@@ -303,11 +308,13 @@ class PerDeviceCollector {
         dev_ev_cnt++;
       }
 
+      /*
       if (line_id == RocmTracerEvent::kInvalidThreadId ||
           line_id == RocmTracerEvent::kInvalidStreamId) {
         VLOG(3) << "Ignoring event, type=" << static_cast<int>(event.type);
         continue;
       }
+      */
       auto* plane = is_host_event ? host_plane : device_plane;
       VLOG(9) << "Event" << " type=" << static_cast<int>(event.type)
               << " line_id=" << line_id
@@ -405,7 +412,8 @@ class PerDeviceCollector {
 
  private:
   mutex events_mutex;
-  std::vector<RocmTracerEvent> events TF_GUARDED_BY(events_mutex);
+  // std::vector<RocmTracerEvent> 
+  RocmTracerEvent_t events TF_GUARDED_BY(events_mutex);
   absl::flat_hash_map<uint32_t, CorrelationInfo> correlation_info_
       TF_GUARDED_BY(events_mutex);
   absl::flat_hash_map<RocmDeviceOccupancyParams, OccupancyStats>
@@ -441,7 +449,8 @@ class RocmTraceCollectorImpl : public profiler::RocmTraceCollector {
   int num_gpus_;
 
   mutex event_maps_mutex_;
-  std::vector<RocmTracerEvent> events_ TF_GUARDED_BY(event_maps_mutex_);
+  // std::vector<RocmTracerEvent> 
+  RocmTracerEvent_t events_ TF_GUARDED_BY(event_maps_mutex_);
   absl::flat_hash_map<uint32_t, PerDeviceCollector> per_device_collector_;
 
 };

@@ -53,6 +53,9 @@ limitations under the License.
 #include <thread>
 #include <unordered_set>
 #include <vector>
+// #include <execution>
+using tsl::profiler::XSpace;
+XSpace* space;
 
 extern "C" rocprofiler_tool_configure_result_t* rocprofiler_configure(
   uint32_t version, const char* runtime_version, uint32_t priority,
@@ -80,14 +83,6 @@ rocprofiler_context_id_t      client_ctx       = {};
 rocprofiler_buffer_id_t       client_buffer    = {};
 buffer_name_info              client_name_info = {};
 kernel_symbol_map_t           client_kernels   = {};
-
-void
-print_call_stack(const call_stack_t& _call_stack)
-{
-    LOG(ERROR) << "print out call stack...";
-    common::print_call_stack("api_buffered_trace.log", _call_stack);
-    LOG(ERROR) << "complete print out call stack...";
-}
 
 void
 tool_code_object_callback(rocprofiler_callback_tracing_record_t record,
@@ -246,15 +241,17 @@ tool_tracing_callback(rocprofiler_context_id_t      context,
                 // throw std::runtime_error{msg.str()};
             }
 
-            static_cast<RocmTracerEvent*>(user_data)->emplace_back(
+            auto tmp_str = client_name_info[record->kind][record->operation].data();
+
+            static_cast<RocmTracerEvent_t*>(user_data)->emplace_back(
                 RocmTracerEvent{RocmTracerEventType::HIP_RUNTIME_API, 
-                        client_name_info[record->kind][record->operation],
+                        tmp_str,
                         record->start_timestamp,
                         record->end_timestamp,
                         0,  // how to access device id,
                         record->correlation_id.internal,
                         record->thread_id,
-                        record->stream_id});
+                        0});
         }
         else if(header->category == ROCPROFILER_BUFFER_CATEGORY_TRACING &&
                 header->kind == ROCPROFILER_BUFFER_TRACING_KERNEL_DISPATCH)
@@ -300,15 +297,15 @@ tool_tracing_callback(rocprofiler_context_id_t      context,
                 printf("kernel dispatch: start > end");
                 // throw std::runtime_error("kernel dispatch: start > end");
 
-            static_cast<RocmTracerEvent*>(user_data)->emplace_back(
+            static_cast<RocmTracerEvent_t*>(user_data)->emplace_back(
                 RocmTracerEvent{RocmTracerEventType::KERNEL_DISPATCH, 
-                        client_name_info[record->kind][record->operation],
+                        client_kernels.at(record->dispatch_info.kernel_id).kernel_name,
                         record->start_timestamp,
                         record->end_timestamp,
                         0,  // how to access device id,
                         record->correlation_id.internal,
                         record->thread_id,
-                        record->stream_id});
+                        0});
         }
         else if(header->category == ROCPROFILER_BUFFER_CATEGORY_TRACING &&
                 header->kind == ROCPROFILER_BUFFER_TRACING_MEMORY_COPY)
@@ -333,15 +330,15 @@ tool_tracing_callback(rocprofiler_context_id_t      context,
                 printf("memory copy: start > end \n");
                 // throw std::runtime_error("memory copy: start > end");
 
-            static_cast<RocmTracerEvent*>(user_data)->emplace_back(
+            static_cast<RocmTracerEvent_t*>(user_data)->emplace_back(
                 RocmTracerEvent{RocmTracerEventType::MEMORY_COPY,
-                        client_name_info[record->kind][record->operation],
+                        client_name_info[record->kind][record->operation].data(),
                         record->start_timestamp,
                         record->end_timestamp,
                         0,  // how to access device id,
                         record->correlation_id.internal,
                         record->thread_id,
-                        record->stream_id});
+                        0});
         }
         else
         {
@@ -424,16 +421,16 @@ int tool_init(rocprofiler_client_finalize_t fini_func, void* tool_data)
     return 0;
 }
 
-void tool_fini(void* tool_data){
-    assert(tool_data != nullptr);
-
-    print_call_stack(*_call_stack);
-
-    delete _call_stack;
+RocmTraceCollectorOptions GetRocmTraceCollectorOptions(uint32_t num_gpus) {
+  RocmTraceCollectorOptions options;
+  options.max_callback_api_events = 2 * 1024 * 1024;
+  options.max_activity_api_events = 2 * 1024 * 1024;
+  options.max_annotation_strings = 1024 * 1024;
+  options.num_gpus = num_gpus;
+  return options;
 }
-}  // end of namespace
 
-int RocmTracer::NumGpus() {
+int NumGpus() {
     static int num_gpus = []() -> int {
         if (hipInit(0) != hipSuccess) {
             return 0;
@@ -448,13 +445,7 @@ int RocmTracer::NumGpus() {
     return num_gpus;
 }
 
-void RocmTracer::Enable(const RocmTracerOptions& options, RocmTraceCollector* collector) {
-    options_ = options;
-    collector_ = collector;
-    LOG(ERROR) << "GpuTracer started";
-}
-
-/*static*/ uint64_t RocmTracer::GetTimestamp() {
+/*static*/ uint64_t GetTimestamp() {
     uint64_t ts;
     rocprofiler_status_t CHECKSTATUS = se::wrap::rocprofiler_get_timestamp(&ts);
     if (CHECKSTATUS != ROCPROFILER_STATUS_SUCCESS) {
@@ -465,6 +456,36 @@ void RocmTracer::Enable(const RocmTracerOptions& options, RocmTraceCollector* co
     }
     return ts;
 }
+
+void tool_fini(void* tool_data){
+    assert(tool_data != nullptr);
+
+    RocmTraceCollectorOptions trace_collector_options = GetRocmTraceCollectorOptions(NumGpus());
+
+    uint64_t start_gputime_ns = GetTimestamp();
+    uint64_t start_walltime_ns = tsl::EnvTime::NowNanos();
+    auto rocm_trace_collector_ = CreateRocmCollector(trace_collector_options, start_walltime_ns, start_gputime_ns);
+    LOG(ERROR) << "tool_fini interrupted ...";
+    
+    auto* tmp_events = static_cast<RocmTracerEvent_t*>(tool_data);
+
+    if (tmp_events && rocm_trace_collector_) {
+        size_t failed_additions = 0;
+        for (auto& itr : *tmp_events) {
+            rocm_trace_collector_->AddEvent(itr);
+        }
+        LOG(ERROR) << "Failed to add " << failed_additions << " events.";
+        // std::for_each(std::execution::par, tmp_events->begin(), tmp_events->end(),
+        //    [&](const auto& itr) { rocm_trace_collector_->AddEvent(itr); });
+
+    }
+    
+    rocm_trace_collector_->Flush();
+    rocm_trace_collector_->Export(space);
+}
+}  // end of namespace
+
+
 
 void RocmTracer::setup(){
     if(int status = 0;
@@ -526,7 +547,7 @@ rocprofiler_configure(uint32_t                 version,
 
     std::clog << info.str() << std::endl;
 
-    auto* client_tool_data = new std::vector<RocmTracerEvent>{};
+    auto* client_tool_data = new std::vector<xla::profiler::RocmTracerEvent_t>{};
 
     // create configure data
     static auto cfg =

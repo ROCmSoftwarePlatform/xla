@@ -125,6 +125,8 @@ struct RocmTracerEvent {
   int64_t stream_id = 0;
 };
 
+using RocmTracerEvent_t = std::vector<RocmTracerEvent>;
+
 struct RocmTraceCollectorOptions {
   // Maximum number of events to collect from callback API; if -1, no limit.
   // if 0, the callback API is enabled to build a correlation map, but no

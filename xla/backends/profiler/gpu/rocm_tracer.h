@@ -58,10 +58,10 @@ public:
 
     // Only one profile session can be live in the same time.
     bool IsAvailable() const;
-    void Enable(const RocmTracerOptions& options, RocmTraceCollector* collector);
+    // void Enable(const RocmTracerOptions& options, RocmTraceCollector* collector);
 
-    static uint64_t GetTimestamp();
-    static int NumGpus();
+    // static uint64_t GetTimestamp();
+    // static int NumGpus();
 
     void setup() CLIENT_API;
     void start() CLIENT_API;
@@ -70,7 +70,7 @@ public:
 
 private:
     // Private constructor for singleton
-    RocmTracer() : is_available_(true), num_gpus_(NumGpus()) {
+    RocmTracer() : is_available_(true) {
         LOG(INFO) << "RocmTracer initialized...";
     }
 
@@ -80,9 +80,9 @@ private:
     }
 
     bool is_available_; // availability status
-    int num_gpus_; 
-    std::optional<RocmTracerOptions> options_;
-    RocmTraceCollector* collector_ = nullptr;
+    // int num_gpus_; 
+    // std::optional<RocmTracerOptions> options_;
+    // RocmTraceCollector* collector_ = nullptr;
 
     // Disable copy constructor and assignment operator
     RocmTracer(const RocmTracer&) = delete;
