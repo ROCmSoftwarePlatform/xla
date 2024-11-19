@@ -108,6 +108,7 @@ __global__ void xla_fp8_e4m3fnuz_comparison(__hip_fp8_storage_t* buffer_a,
                                             float rel_error_threshold,
                                             uint64_t buffer_length,
                                             int* mismatch_count) {
+#if (defined(__gfx940__) || defined(__gfx941__) || defined(__gfx942__))
   int mcount = 0;
   uint64_t unroll = 128 / sizeof(*buffer_a);
   uint64_t idx = (threadIdx.x + blockIdx.x * blockDim.x) * unroll;
@@ -130,6 +131,9 @@ __global__ void xla_fp8_e4m3fnuz_comparison(__hip_fp8_storage_t* buffer_a,
   }
   if (mcount)
     atomicAdd(mismatch_count, mcount);
+#else
+  abort();
+#endif // defined(__gfx940__) || defined(__gfx941__) || defined(__gfx942__)
 }
 
 __global__ void xla_fp8_e5m2fnuz_comparison(__hip_fp8_storage_t* buffer_a,
@@ -137,6 +141,7 @@ __global__ void xla_fp8_e5m2fnuz_comparison(__hip_fp8_storage_t* buffer_a,
                                             float rel_error_threshold,
                                             uint64_t buffer_length,
                                             int* mismatch_count) {
+#if (defined(__gfx940__) || defined(__gfx941__) || defined(__gfx942__))
   int mcount = 0;
   uint64_t unroll = 128 / sizeof(*buffer_a);
   uint64_t idx = (threadIdx.x + blockIdx.x * blockDim.x) * unroll;
@@ -159,6 +164,9 @@ __global__ void xla_fp8_e5m2fnuz_comparison(__hip_fp8_storage_t* buffer_a,
   }
   if (mcount)
     atomicAdd(mismatch_count, mcount);
+#else
+  abort();
+#endif // defined(__gfx940__) || defined(__gfx941__) || defined(__gfx942__)
 }
 #endif  // TENSORFLOW_USE_ROCM && TF_ROCM_VERSION >= 60200
 
