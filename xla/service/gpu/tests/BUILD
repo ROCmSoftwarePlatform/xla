@@ -224,6 +224,7 @@ xla_test(
     name = "gpu_hlo_runner_test",
     srcs = ["gpu_hlo_runner_test.cc"],
     backends = ["gpu"],
+    tags=["no_oss"],
     deps = [
         ":gpu_codegen_test",
         "//xla:error_spec",
