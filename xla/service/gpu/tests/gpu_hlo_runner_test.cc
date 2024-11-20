@@ -41,7 +41,9 @@ class HloRunnerTest : public GpuCodegenTest {};
 TEST_F(HloRunnerTest, RunSingle) {
 
   std::ifstream ifs("input.hlo");
-  ASSERT_TRUE(ifs.good());
+  if(ifs.fail()) {
+    GTEST_SKIP() << "No input HLO file provided!";
+  }
 
   std::stringstream buffer;
   buffer << ifs.rdbuf();
