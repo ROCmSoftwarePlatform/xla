@@ -58,35 +58,31 @@ public:
 
     // Only one profile session can be live in the same time.
     bool IsAvailable() const;
-    // void Enable(const RocmTracerOptions& options, RocmTraceCollector* collector);
 
-    // static uint64_t GetTimestamp();
-    // static int NumGpus();
+    static uint64_t GetTimestamp();
+    static int NumGpus();
+    void Enable(const RocmTracerOptions& options, RocmTraceCollector* collector);
+    RocmTraceCollector* get_collector() { return collector_; }
 
     void setup() CLIENT_API;
     void start() CLIENT_API;
     void stop() CLIENT_API;
     void shutdown() CLIENT_API;
 
+protected:
+  // protected constructor for injecting mock cupti interface for testing.
+  explicit RocmTracer() : num_gpus_(NumGpus()) {}
+
 private:
-    // Private constructor for singleton
-    RocmTracer() : is_available_(true) {
-        LOG(INFO) << "RocmTracer initialized...";
-    }
-
-    // Private destructor
-    ~RocmTracer() {
-        LOG(INFO) << "RocmTracer destroyed...";
-    }
-
     bool is_available_; // availability status
-    // int num_gpus_; 
-    // std::optional<RocmTracerOptions> options_;
-    // RocmTraceCollector* collector_ = nullptr;
+    int num_gpus_; 
+    std::optional<RocmTracerOptions> options_;
+    RocmTraceCollector* collector_ = nullptr;
 
-    // Disable copy constructor and assignment operator
-    RocmTracer(const RocmTracer&) = delete;
-    RocmTracer& operator=(const RocmTracer&) = delete;
+public:
+  // Disable copy and move.
+  RocmTracer(const RocmTracer&) = delete;
+  RocmTracer& operator=(const RocmTracer&) = delete;
 };  // end of RocmTracer
 
 }  // end of namespace profiler

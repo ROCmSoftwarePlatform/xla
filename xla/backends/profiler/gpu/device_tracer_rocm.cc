@@ -80,10 +80,13 @@ class GpuTracer : public profiler::ProfilerInterface {
   absl::Status Start() override;
   absl::Status Stop() override;
   absl::Status CollectData(XSpace* space) override;
-  
+
  private:
   absl::Status DoStart();
   absl::Status DoStop();
+
+  RocmTracerOptions GetRocmTracerOptions();
+  RocmTraceCollectorOptions GetRocmTraceCollectorOptions(uint32_t num_gpus);
 
   enum State {
     kNotStarted,
@@ -95,14 +98,45 @@ class GpuTracer : public profiler::ProfilerInterface {
   State profiling_state_ = State::kNotStarted;
 
   RocmTracer* rocm_tracer_;
+  std::unique_ptr<RocmTraceCollector> rocm_trace_collector_;
 };
 
+RocmTracerOptions GpuTracer::GetRocmTracerOptions() {
+  // TODO(rocm-profiler): We need support for context similar to CUDA ?
+  RocmTracerOptions options;
+  return options;
+}
+
+RocmTraceCollectorOptions GpuTracer::GetRocmTraceCollectorOptions(
+    uint32_t num_gpus) {
+  RocmTraceCollectorOptions options;
+  options.max_callback_api_events = 2 * 1024 * 1024;
+  options.max_activity_api_events = 2 * 1024 * 1024;
+  options.max_annotation_strings = 1024 * 1024;
+  options.num_gpus = num_gpus;
+  return options;
+}
+
 absl::Status GpuTracer::DoStart() {
+  /*
   if (!rocm_tracer_->IsAvailable()) {
     return tsl::errors::Unavailable("Another profile session running.");
   }
-
+  */
   // AnnotationStack::Enable(true);
+
+  RocmTraceCollectorOptions trace_collector_options =
+      GetRocmTraceCollectorOptions(rocm_tracer_->NumGpus());
+  uint64_t start_gputime_ns = rocm_tracer_->GetTimestamp();
+  uint64_t start_walltime_ns = tsl::EnvTime::NowNanos();
+  rocm_trace_collector_ = CreateRocmCollector(
+      trace_collector_options, start_walltime_ns, start_gputime_ns);
+
+  RocmTracerOptions tracer_options = GetRocmTracerOptions();
+  rocm_tracer_->Enable(tracer_options, rocm_trace_collector_.get());
+  LOG(ERROR) << "cj rocm_tracer_collector = " << rocm_trace_collector_.get();
+  LOG(ERROR) << "cj rocm_tracer_ collector = " << rocm_tracer_->get_collector();
+  LOG(ERROR) << "DO START ...";
 
   rocm_tracer_->setup();
   rocm_tracer_->start();
@@ -134,6 +168,28 @@ absl::Status GpuTracer::Stop() {
   return absl::OkStatus();
 }
 
+absl::Status GpuTracer::CollectData(XSpace* space) {
+  switch (profiling_state_) {
+    case State::kNotStarted:
+      VLOG(3) << "No trace data collected, session wasn't started";
+      return absl::OkStatus();
+    case State::kStartedOk:
+      return tsl::errors::FailedPrecondition(
+          "Cannot collect trace before stopping");
+    case State::kStartedError:
+      LOG(ERROR) << "Cannot collect, roctracer failed to start";
+      return absl::OkStatus();
+    case State::kStoppedError:
+      VLOG(3) << "No trace data collected";
+      return absl::OkStatus();
+    case State::kStoppedOk: {
+      if (rocm_trace_collector_) rocm_trace_collector_->Export(space);
+      return absl::OkStatus();
+    }
+  }
+  return tsl::errors::Internal("Invalid profiling state: ", profiling_state_);
+}
+
 // Not in anonymous namespace for testing purposes.
 std::unique_ptr<profiler::ProfilerInterface> CreateGpuTracer(
     const ProfileOptions& options) {
@@ -144,6 +200,7 @@ std::unique_ptr<profiler::ProfilerInterface> CreateGpuTracer(
 
   profiler::RocmTracer* rocm_tracer =
       profiler::RocmTracer::GetRocmTracerSingleton();
+  LOG(ERROR) << "cj rocm_tracer is available = " << rocm_tracer->IsAvailable();
   if (!rocm_tracer->IsAvailable()) {
     return nullptr;
   }

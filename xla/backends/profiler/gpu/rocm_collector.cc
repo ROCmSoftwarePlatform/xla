@@ -452,7 +452,6 @@ class RocmTraceCollectorImpl : public profiler::RocmTraceCollector {
   // std::vector<RocmTracerEvent> 
   RocmTracerEvent_t events_ TF_GUARDED_BY(event_maps_mutex_);
   absl::flat_hash_map<uint32_t, PerDeviceCollector> per_device_collector_;
-
 };
 
 void RocmTraceCollectorImpl::AddEvent(RocmTracerEvent& event) {
@@ -466,13 +465,18 @@ void RocmTraceCollectorImpl::Flush() {
     auto device_id = event.device_id;
     per_device_collector_[device_id].AddEvent(std::move(event));
   }
+  LOG(ERROR) << "Complete RocmTraceCollectorImpl::Flush";
   events_.clear(); 
+  LOG(ERROR) << "Complete RocmTraceCollectorImpl events_.clear";
 }
 
 void RocmTraceCollectorImpl::Export(XSpace* space) {
   uint64_t end_gputime_ns = get_timestamp();
+  LOG(ERROR) << "Starting RocmTraceCollectorImpl::Export";
+  LOG(ERROR) << "test space = " << space;
   XPlaneBuilder host_plane(FindOrAddMutablePlaneWithName(
       space, tsl::profiler::kRoctracerApiPlaneName));
+  LOG(ERROR) << "Starting RocmTraceCollectorImpl, host_plane";
 
   for (int device_ordinal = 0; device_ordinal < num_gpus_; ++device_ordinal) {
     std::string name = GpuPlaneName(device_ordinal);
