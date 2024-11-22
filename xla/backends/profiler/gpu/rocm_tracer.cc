@@ -242,6 +242,8 @@ tool_tracing_callback(rocprofiler_context_id_t      context,
                 // throw std::runtime_error{msg.str()};
             }
 
+            LOG(ERROR) << info.str();
+
             /*
             auto tmp_str = client_name_info[record->kind][record->operation].data();
             auto tmp = RocmTracerEvent{RocmTracerEventType::HIP_RUNTIME_API,
@@ -299,6 +301,7 @@ tool_tracing_callback(rocprofiler_context_id_t      context,
                 printf("kernel dispatch: start > end");
                 // throw std::runtime_error("kernel dispatch: start > end");
             LOG(ERROR) << "CJ kernel dispatch: " << info.str();
+            LOG(ERROR) << info.str();
 
             auto tmp = RocmTracerEvent{RocmTracerEventType::KERNEL_DISPATCH, 
                         client_kernels.at(record->dispatch_info.kernel_id).kernel_name,
@@ -313,7 +316,7 @@ tool_tracing_callback(rocprofiler_context_id_t      context,
              LOG(ERROR) << "CJ number of GPU = " << rocmtracer_singleton->NumGpus();
              LOG(ERROR) << "cj collector = " << rocmtracer_singleton->get_collector();
 
-            rocmtracer_singleton->get_collector()->AddEvent(tmp);
+            // rocmtracer_singleton->get_collector()->AddEvent(tmp);
         }
         else if(header->category == ROCPROFILER_BUFFER_CATEGORY_TRACING &&
                 header->kind == ROCPROFILER_BUFFER_TRACING_MEMORY_COPY)
@@ -337,6 +340,8 @@ tool_tracing_callback(rocprofiler_context_id_t      context,
             if(record->start_timestamp > record->end_timestamp)
                 printf("memory copy: start > end \n");
                 // throw std::runtime_error("memory copy: start > end");
+
+            LOG(ERROR) << info.str();
             /*
             auto tmp = RocmTracerEvent{RocmTracerEventType::MEMORY_COPY,
                         client_name_info[record->kind][record->operation].data(),
@@ -362,7 +367,9 @@ tool_tracing_callback(rocprofiler_context_id_t      context,
 
 int tool_init(rocprofiler_client_finalize_t fini_func, void* tool_data)
 {
-    assert(tool_data != nullptr);
+    // assert(tool_data != nullptr);
+
+    VLOG(-1) << "cj inside tool_init";
 
     // auto* call_stack_v = static_cast<call_stack_t*>(tool_data);
     // call_stack_v->emplace_back(source_location{__FUNCTION__, __FILE__, __LINE__, ""});
@@ -445,16 +452,25 @@ void tool_fini(void* tool_data){
 
     auto rocmtracer_singleton = xla::profiler::RocmTracer::GetRocmTracerSingleton();
     rocmtracer_singleton->get_collector()->Flush();
+    XSpace xspace;
+    rocmtracer_singleton->get_collector()->Export(&xspace);
     
 }
 }  // end of namespace
 
+RocmTracer::RocmTracer() : num_gpus_(NumGpus()) {
+    ROCPROFILER_CALL(se::wrap::rocprofiler_force_configure(&rocprofiler_configure),
+                         "force configuration");
+}
+
 void RocmTracer::setup(){
+    /**
     if(int status = 0;
        se::wrap::rocprofiler_is_initialized(&status) == ROCPROFILER_STATUS_SUCCESS && status == 0){
         ROCPROFILER_CALL(se::wrap::rocprofiler_force_configure(&rocprofiler_configure),
                          "force configuration");
     }
+    */
 }
 
 void RocmTracer::shutdown(){
@@ -465,7 +481,9 @@ void RocmTracer::shutdown(){
 }
 
 void RocmTracer::start(){
-    ROCPROFILER_CALL(se::wrap::rocprofiler_start_context(client_ctx), "context start");
+    VLOG(-1) << "client_ctx handle = " << client_ctx.handle;
+    if (client_ctx.handle != 0)       
+        ROCPROFILER_CALL(se::wrap::rocprofiler_start_context(client_ctx), "context start");
 }
 
 void RocmTracer::stop(){
@@ -479,7 +497,7 @@ void RocmTracer::stop(){
 }
 
 bool RocmTracer::IsAvailable() const {
-  return is_available_;
+  return GetRocmTracerSingleton() != nullptr;
 }
 
 int RocmTracer::NumGpus() {
@@ -541,7 +559,8 @@ rocprofiler_configure(uint32_t                 version,
     info << id->name << "Configure XLA with rocprofv3... (priority=" << priority << ") is using rocprofiler-sdk v" << major << "."
          << minor << "." << patch << " (" << runtime_version << ")";
 
-    std::clog << info.str() << std::endl;
+    // std::clog << info.str() << std::endl;
+    LOG(ERROR) << info.str() << std::endl;
 
     auto* client_tool_data = new std::vector<xla::profiler::RocmTracerEvent_t>{};
 

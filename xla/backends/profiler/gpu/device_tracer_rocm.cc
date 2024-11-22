@@ -136,6 +136,7 @@ absl::Status GpuTracer::DoStart() {
   rocm_tracer_->Enable(tracer_options, rocm_trace_collector_.get());
   LOG(ERROR) << "cj rocm_tracer_collector = " << rocm_trace_collector_.get();
   LOG(ERROR) << "cj rocm_tracer_ collector = " << rocm_tracer_->get_collector();
+  // LOG(ERROR) << "cj check XSpace = " << space;
   LOG(ERROR) << "DO START ...";
 
   rocm_tracer_->setup();

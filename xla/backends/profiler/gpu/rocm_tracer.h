@@ -71,10 +71,10 @@ public:
 
 protected:
   // protected constructor for injecting mock cupti interface for testing.
-  explicit RocmTracer() : num_gpus_(NumGpus()) {}
+  explicit RocmTracer();
 
 private:
-    bool is_available_; // availability status
+    // bool is_available_; // availability status
     int num_gpus_; 
     std::optional<RocmTracerOptions> options_;
     RocmTraceCollector* collector_ = nullptr;
