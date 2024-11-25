@@ -148,7 +148,7 @@ class RocmTraceCollector {
   virtual ~RocmTraceCollector() {}
 
   // virtual void AddEvent(RocmTracerEvent&& event, bool is_auxiliary) = 0;
-  virtual void AddEvent(RocmTracerEvent& event) = 0;
+  virtual void AddEvent(RocmTracerEvent&& event) = 0;
   /*
   virtual void OnEventsDropped(const std::string& reason,
                                uint32_t num_events) = 0;

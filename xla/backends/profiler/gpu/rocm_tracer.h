@@ -27,6 +27,8 @@ limitations under the License.
 #include "tsl/platform/status.h"
 #include "tsl/platform/types.h"
 
+#include <mutex>
+
 #include "xla/stream_executor/rocm/roctracer_wrapper.h"
 #include "xla/backends/profiler/gpu/rocm_collector.h"
 
@@ -61,7 +63,7 @@ public:
 
     static uint64_t GetTimestamp();
     static int NumGpus();
-    void Enable(const RocmTracerOptions& options, RocmTraceCollector* collector);
+    void Enable(RocmTraceCollector* collector);
     RocmTraceCollector* get_collector() { return collector_; }
 
     void setup() CLIENT_API;
@@ -76,8 +78,9 @@ protected:
 private:
     // bool is_available_; // availability status
     int num_gpus_; 
-    std::optional<RocmTracerOptions> options_;
+    // std::optional<RocmTracerOptions> options_;
     RocmTraceCollector* collector_ = nullptr;
+    static tsl::mutex mtx;
 
 public:
   // Disable copy and move.

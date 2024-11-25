@@ -430,7 +430,7 @@ class RocmTraceCollectorImpl : public profiler::RocmTraceCollector {
         start_gputime_ns_(start_gputime_ns),
         num_gpus_(options.num_gpus) {}
 
-  void AddEvent(RocmTracerEvent& event) override;
+  void AddEvent(RocmTracerEvent&& event) override;
   void Flush() override;
   void Export(XSpace* space) override;
 
@@ -454,10 +454,10 @@ class RocmTraceCollectorImpl : public profiler::RocmTraceCollector {
   absl::flat_hash_map<uint32_t, PerDeviceCollector> per_device_collector_;
 };
 
-void RocmTraceCollectorImpl::AddEvent(RocmTracerEvent& event) {
+void RocmTraceCollectorImpl::AddEvent(RocmTracerEvent&& event) {
   LOG(ERROR) << "Starting RocmTraceCollectorImpl::AddEvent";
-  mutex_lock lock(event_maps_mutex_);
-  events_.push_back(std::move(event));
+  // mutex_lock lock(event_maps_mutex_);
+  // events_.push_back(std::move(event));
 }
 
 void RocmTraceCollectorImpl::Flush() {

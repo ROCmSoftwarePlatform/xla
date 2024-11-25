@@ -65,11 +65,13 @@ using tsl::profiler::XLineBuilder;
 using tsl::profiler::XPlaneBuilder;
 using tsl::profiler::XSpace;
 
+namespace se = ::stream_executor;
 
 // GpuTracer for ROCm GPU.
 class GpuTracer : public profiler::ProfilerInterface {
  public:
-  GpuTracer(RocmTracer* rocm_tracer) : rocm_tracer_(rocm_tracer) {
+  GpuTracer() {
+    // se::rocprofiler_force_configure
     LOG(ERROR) << "GpuTrace with rocprofv3...\n";
     Start();
     LOG(INFO) << "GpuTracer created...";
@@ -125,6 +127,7 @@ absl::Status GpuTracer::DoStart() {
   */
   // AnnotationStack::Enable(true);
 
+/*
   RocmTraceCollectorOptions trace_collector_options =
       GetRocmTraceCollectorOptions(rocm_tracer_->NumGpus());
   uint64_t start_gputime_ns = rocm_tracer_->GetTimestamp();
@@ -134,11 +137,20 @@ absl::Status GpuTracer::DoStart() {
 
   RocmTracerOptions tracer_options = GetRocmTracerOptions();
   rocm_tracer_->Enable(tracer_options, rocm_trace_collector_.get());
+  */
   LOG(ERROR) << "cj rocm_tracer_collector = " << rocm_trace_collector_.get();
   LOG(ERROR) << "cj rocm_tracer_ collector = " << rocm_tracer_->get_collector();
   // LOG(ERROR) << "cj check XSpace = " << space;
   LOG(ERROR) << "DO START ...";
 
+  /*
+  RocmTracer* rocm_tracer_ =
+      profiler::RocmTracer::GetRocmTracerSingleton();
+  LOG(ERROR) << "cj rocm_tracer is available = " << rocm_tracer_->IsAvailable();
+  if (!rocm_tracer_->IsAvailable()) {
+    return absel::;
+  }
+  */
   rocm_tracer_->setup();
   rocm_tracer_->start();
   return absl::OkStatus();
@@ -199,13 +211,15 @@ std::unique_ptr<profiler::ProfilerInterface> CreateGpuTracer(
     return nullptr;
   }
 
+  /*
   profiler::RocmTracer* rocm_tracer =
       profiler::RocmTracer::GetRocmTracerSingleton();
   LOG(ERROR) << "cj rocm_tracer is available = " << rocm_tracer->IsAvailable();
   if (!rocm_tracer->IsAvailable()) {
     return nullptr;
   }
-  return std::make_unique<profiler::GpuTracer>(rocm_tracer);
+  */
+  return std::make_unique<profiler::GpuTracer>();
 }
 
 auto register_rocm_gpu_tracer_factory = [] {

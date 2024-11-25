@@ -59,6 +59,8 @@ extern "C" rocprofiler_tool_configure_result_t* rocprofiler_configure(
   rocprofiler_client_id_t* id
 );
 
+auto rocmtracer_singleton = xla::profiler::RocmTracer::GetRocmTracerSingleton();
+
 template <typename Tp = std::string_view>
 using buffer_name_info_t = rocprofiler::sdk::utility::name_info<rocprofiler_buffer_tracing_kind_t, Tp>;
 
@@ -80,6 +82,16 @@ rocprofiler_context_id_t      client_ctx       = {};
 rocprofiler_buffer_id_t       client_buffer    = {};
 buffer_name_info              client_name_info = {};
 kernel_symbol_map_t           client_kernels   = {};
+
+RocmTraceCollectorOptions GetRocmTraceCollectorOptions(
+    uint32_t num_gpus) {
+  xla::profiler::RocmTraceCollectorOptions options;
+  options.max_callback_api_events = 2 * 1024 * 1024;
+  options.max_activity_api_events = 2 * 1024 * 1024;
+  options.max_annotation_strings = 1024 * 1024;
+  options.num_gpus = num_gpus;
+  return options;
+}
 
 void
 tool_code_object_callback(rocprofiler_callback_tracing_record_t record,
@@ -167,6 +179,19 @@ tool_tracing_callback(rocprofiler_context_id_t      context,
     assert(drop_count == 0 && "drop count should be zero for lossless policy");
 
     auto rocmtracer_singleton = xla::profiler::RocmTracer::GetRocmTracerSingleton();
+    LOG(ERROR) << "rocmtracer_singleton = " << rocmtracer_singleton;
+
+    static bool first_cb = true;
+
+    if (rocmtracer_singleton->IsAvailable() && first_cb) {
+        auto trace_collector_options = GetRocmTraceCollectorOptions(rocmtracer_singleton->NumGpus());
+        uint64_t start_gputime_ns = rocmtracer_singleton->GetTimestamp();
+        uint64_t start_walltime_ns = tsl::EnvTime::NowNanos();
+        auto rocm_trace_collector_ = xla::profiler::CreateRocmCollector(
+            trace_collector_options, start_walltime_ns, start_gputime_ns);
+        rocmtracer_singleton->Enable(rocm_trace_collector_.get());
+        first_cb = false;
+    }
 
    /*
     if(num_headers == 0)
@@ -316,7 +341,11 @@ tool_tracing_callback(rocprofiler_context_id_t      context,
              LOG(ERROR) << "CJ number of GPU = " << rocmtracer_singleton->NumGpus();
              LOG(ERROR) << "cj collector = " << rocmtracer_singleton->get_collector();
 
-            // rocmtracer_singleton->get_collector()->AddEvent(tmp);
+            if (rocmtracer_singleton && rocmtracer_singleton->get_collector()) {
+                rocmtracer_singleton->get_collector()->AddEvent(std::move(tmp));
+            } else {
+                LOG(ERROR) << "Collector not initialized";
+            }
         }
         else if(header->category == ROCPROFILER_BUFFER_CATEGORY_TRACING &&
                 header->kind == ROCPROFILER_BUFFER_TRACING_MEMORY_COPY)
@@ -492,9 +521,27 @@ void RocmTracer::stop(){
 
 
 /* static */ RocmTracer* RocmTracer::GetRocmTracerSingleton() {
-  static auto* singleton = new RocmTracer();
-  return singleton;
+    LOG(INFO) << "Entering GetRocmTracerSingleton...";
+
+    static std::once_flag flag;
+    static RocmTracer* instance = nullptr;
+
+    std::call_once(flag, [&]() {
+        LOG(INFO) << "Inside std::call_once lambda, creating RocmTracer...";
+        instance = new RocmTracer();
+        // RocmTracer::mtx;
+        LOG(INFO) << "RocmTracer instance successfully created.";
+    });
+
+    if (!instance) {
+        LOG(ERROR) << "Failed to initialize RocmTracer singleton.";
+        abort();  // Ensure the program stops if initialization fails.
+    }
+
+    LOG(INFO) << "Returning RocmTracer singleton instance.";
+    return instance;
 }
+
 
 bool RocmTracer::IsAvailable() const {
   return GetRocmTracerSingleton() != nullptr;
@@ -527,14 +574,21 @@ int RocmTracer::NumGpus() {
     return ts;
 }
 
-void RocmTracer::Enable(const RocmTracerOptions& options, RocmTraceCollector* collector) {
-    options_ = options;
+void RocmTracer::Enable(RocmTraceCollector* collector) {
     collector_ = collector;
 }
 
 
 }  // namespace profiler
 }  // namespace xla
+
+xla::profiler::RocmTracerOptions GetRocmTracerOptions() {
+  // TODO(rocm-profiler): We need support for context similar to CUDA ?
+  xla::profiler::RocmTracerOptions options;
+  return options;
+}
+
+
 
 extern "C" rocprofiler_tool_configure_result_t*
 rocprofiler_configure(uint32_t                 version,
@@ -548,6 +602,24 @@ rocprofiler_configure(uint32_t                 version,
     // store client info
     xla::profiler::client_id = id;
     LOG(ERROR) << "Configure rocprofiler-sdk...\n";
+    
+    // auto rocmtracer_singleton = xla::profiler::RocmTracer::GetRocmTracerSingleton();
+    // LOG(ERROR) << "cj -1 rocprofiler_configure() with rocm collector";
+    /*
+    auto trace_collector_options = GetRocmTraceCollectorOptions(rocmtracer_singleton->NumGpus());
+    LOG(ERROR) << "cj 0 rocprofiler_configure() with rocm collector";
+
+    uint64_t start_gputime_ns = rocmtracer_singleton->GetTimestamp();
+    LOG(ERROR) << "cj 1 rocprofiler_configure() with rocm collector";
+    uint64_t start_walltime_ns = tsl::EnvTime::NowNanos();
+    auto rocm_trace_collector_ = xla::profiler::CreateRocmCollector(
+        trace_collector_options, start_walltime_ns, start_gputime_ns);
+    LOG(ERROR) << "cj 2 rocprofiler_configure() with rocm collector";    
+    auto tracer_options = GetRocmTracerOptions();
+    LOG(ERROR) << "cj 3 rocprofiler_configure() with rocm collector";
+    rocmtracer_singleton->Enable(tracer_options, rocm_trace_collector_.get());
+    LOG(ERROR) << "cj 4 rocprofiler_configure() with rocm collector";
+    */
 
     // compute major/minor/patch version info
     uint32_t major = version / 10000;
@@ -560,7 +632,7 @@ rocprofiler_configure(uint32_t                 version,
          << minor << "." << patch << " (" << runtime_version << ")";
 
     // std::clog << info.str() << std::endl;
-    LOG(ERROR) << info.str() << std::endl;
+    LOG(ERROR) << info.str();
 
     auto* client_tool_data = new std::vector<xla::profiler::RocmTracerEvent_t>{};
 
@@ -574,5 +646,3 @@ rocprofiler_configure(uint32_t                 version,
     // return pointer to configure data
     return &cfg;
 }
-
-
