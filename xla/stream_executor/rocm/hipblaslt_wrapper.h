@@ -20,6 +20,9 @@ limitations under the License.
 #include "rocm/rocm_config.h"
 
 #if TF_HIPBLASLT
+#if TF_ROCM_VERSION >= 60300
+#include "rocm/include/hipblas/hipblas.h"
+#endif
 #if TF_ROCM_VERSION >= 50500
 #include "rocm/include/hipblaslt/hipblaslt.h"
 #else
