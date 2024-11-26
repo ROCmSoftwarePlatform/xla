@@ -41,6 +41,8 @@ limitations under the License.
 namespace xla {
 namespace profiler {
 
+// std::vector<RocmTracerEvent> all_rocm_events_1;
+
 struct RocmTracerOptions {
   std::set<uint32_t> api_tracking_set;  // actual api set we want to profile
 
@@ -65,6 +67,8 @@ public:
     static int NumGpus();
     void Enable(RocmTraceCollector* collector);
     RocmTraceCollector* get_collector() { return collector_; }
+    void AppendEvent(RocmTracerEvent event) { rocm_events_.push_back(event); }
+    RocmTracerEvent_t GetEvents() {return rocm_events_;}
 
     void setup() CLIENT_API;
     void start() CLIENT_API;
@@ -80,6 +84,7 @@ private:
     int num_gpus_; 
     // std::optional<RocmTracerOptions> options_;
     RocmTraceCollector* collector_ = nullptr;
+    RocmTracerEvent_t rocm_events_;
     static tsl::mutex mtx;
 
 public:

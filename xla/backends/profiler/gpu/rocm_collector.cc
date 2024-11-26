@@ -455,9 +455,9 @@ class RocmTraceCollectorImpl : public profiler::RocmTraceCollector {
 };
 
 void RocmTraceCollectorImpl::AddEvent(RocmTracerEvent&& event) {
-  LOG(ERROR) << "Starting RocmTraceCollectorImpl::AddEvent";
-  // mutex_lock lock(event_maps_mutex_);
-  // events_.push_back(std::move(event));
+  // LOG(ERROR) << "Starting RocmTraceCollectorImpl::AddEvent";
+  mutex_lock lock(event_maps_mutex_);
+  events_.push_back(std::move(event));
 }
 
 void RocmTraceCollectorImpl::Flush() {
