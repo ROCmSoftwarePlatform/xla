@@ -187,14 +187,22 @@ TEST_F(HloRunnerTest, RunSingle) {
   auto pattern = tsl::io::JoinPath("/", line);
   ASSERT_TRUE(env->GetMatchingPaths(pattern, &matches).ok());
   
+  std::sort(matches.begin(), matches.end());
   if (!exists) ofs << CsvSep; // add one column for the header
+
+  const std::regex match_no(R"x([A-Za-z_]*([0-9]+).*)x");
 
   for(size_t i = 0; i < matches.size(); i++) {
     auto s = matches[i];
     auto res = s.find_last_of('/');
     if (res != std::string::npos) s = s.substr(res + 1);
-    res = s.find_first_of(".");
+    res = s.find_last_of(".");
     if (res != std::string::npos) s = s.substr(0, res);
+
+    std::smatch base_match;
+    if (std::regex_match(s, base_match, match_no)) {
+      if (base_match.size() == 2) s = base_match[1].str();
+    } 
     if (!exists) {
       ofs << s << (i == matches.size() - 1 ? "\n" : CsvSep);
     }
