@@ -65,19 +65,6 @@ class MixedTypeTest : public GpuCodegenTest,
     }
   }
 
-  se::GpuComputeCapability GetGpuComputeCapability() {
-    return backend()
-        .default_stream_executor()
-        ->GetDeviceDescription()
-        .gpu_compute_capability();
-  }
-
-  void SetUp() override {
-    if (std::holds_alternative<se::RocmComputeCapability>(GetGpuComputeCapability())) {
-      GTEST_SKIP() << "Related fusions are not performed on ROCm without Triton.";
-    }
-  }
-
   DebugOptions GetDebugOptionsForTest() override {
     DebugOptions debug_options = GpuCodegenTest::GetDebugOptionsForTest();
     // We are testing Triton, remove cuBLAS fallback for these tests.
