@@ -437,7 +437,7 @@ ENTRY triton_computation {
                           ParseTemplateAndGetInstruction(kHloTestTemplate, F32,
                                                          HloOpcode::kReduce));
   RunSupportTest(std::move(ti), /*output_tile_sizes=*/{3, 4},
-                 se::CudaComputeCapability::Ampere());
+                 AllDevicesToTest()[0]);
 }
 
 TEST_P(
@@ -525,7 +525,7 @@ ENTRY triton_computation {
 }
 
 TEST_F(ReduceTest, ReduceWithNonConstReduceValueIsSupportedWithTriton) {
-  const se::GpuComputeCapability cc = se::CudaComputeCapability::Ampere();
+  const se::GpuComputeCapability cc = AllDevicesToTest()[0];
   const std::string kHloTestTemplate = R"(
 add {
   Arg_0 = $0[] parameter(0)
