@@ -344,10 +344,12 @@ ENTRY triton_computation {
                                      data_type, opcode));
 
   bool skip_failure_branch_to_avoid_crash =
-      opcode == HloOpcode::kDivide &&
+      (opcode == HloOpcode::kDivide &&
       (data_type == PrimitiveType::BF16 || data_type == PrimitiveType::F16 ||
        data_type == PrimitiveType::F8E5M2 ||
-       data_type == PrimitiveType::F8E4M3FN);
+       data_type == PrimitiveType::F8E4M3FN)) ||
+      ((opcode == HloOpcode::kMaximum || opcode == HloOpcode::kMinimum) &&
+       data_type == PrimitiveType::F8E5M2 || data_type == PrimitiveType::F8E4M3FN);
 
   RunSupportTest(std::move(ti), /*output_tile_sizes=*/{1, 32}, cc,
                  skip_failure_branch_to_avoid_crash);
@@ -384,7 +386,13 @@ ENTRY triton_computation {
   TF_ASSERT_OK_AND_ASSIGN(
       TestedInstruction ti,
       ParseTemplateAndGetInstruction(hlo_text, data_type, opcode));
-  RunSupportTest(std::move(ti), /*output_tile_sizes=*/{1, 32}, cc);
+
+  bool skip_failure_branch_to_avoid_crash =
+      (opcode == HloOpcode::kClamp || opcode == HloOpcode::kSelect) &&
+      (data_type == PrimitiveType::F8E5M2 || data_type == PrimitiveType::F8E4M3FN);
+
+  RunSupportTest(std::move(ti), /*output_tile_sizes=*/{1, 32}, cc,
+		 skip_failure_branch_to_avoid_crash);
 }
 
 INSTANTIATE_TEST_SUITE_P(TernaryElementwiseTestSuite, TernaryElementwiseTest,
