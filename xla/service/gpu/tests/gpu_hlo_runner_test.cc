@@ -39,20 +39,58 @@ std::vector<T*> MakePointerVector(std::vector<T>& input_vec) {
   return output_pointers;
 }
 
+void WriteLiteralToTempFile(const LiteralSlice& literal, const std::string& name) {
+  // Bazel likes for tests to write "debugging outputs" like these to
+  // TEST_UNDECLARED_OUTPUTS_DIR.  This plays well with tools that inspect test
+  // results, especially when they're run on remote machines.
+  std::string outdir;
+  const char* undeclared_outputs_dir = getenv("TEST_TMPDIR");
+  if (undeclared_outputs_dir != nullptr) {
+    outdir = undeclared_outputs_dir;
+  } else {
+    outdir = tsl::testing::TmpDir();
+  }
+
+  auto* env = tsl::Env::Default();
+  std::string filename = outdir + "/" + name;
+  TF_CHECK_OK(tsl::WriteBinaryProto(env, absl::StrCat(filename, ".pb"),
+                                           literal.ToProto()));
+  TF_CHECK_OK(tsl::WriteStringToFile(env, absl::StrCat(filename, ".txt"),
+                                           literal.ToString()));
+  LOG(ERROR) << "wrote Literal to " << name << " file: " << filename
+             << ".{pb,txt}";
+}
+
+absl::StatusOr<Literal> ReadLiteralFromFile(const std::string& name) {
+
+  std::string baseDir = "/data/tf-default/ref_files/";
+  auto* env = tsl::Env::Default();
+  auto path = baseDir + name + ".pb";
+
+  if (!env->FileExists(path).ok()) {
+    VLOG(0) << "Unable to find file: " << path;
+    return absl::InternalError("ops");
+  }
+
+  LiteralProto proto;
+  TF_RETURN_IF_ERROR(tsl::ReadBinaryProto(env, path, &proto));
+
+  return Literal::CreateFromProto(proto);
+}
+
 
 class HloRunnerTest : public GpuCodegenTest {
 
 protected:
   constexpr static const char *CsvSep = " , ";
 
-  void run_internal(std::istream& ifs, std::ostream& ofs) {
+  void run_internal(std::istream& ifs, std::ostream& ofs, const std::string& name) {
 
     const static std::pair< std::regex, const char *> replaces[] = {
         { std::regex(R"x(\[\(0\),)x"), "[" }, // remove dynamic shapes
         { std::regex(R"x(u32\[\] get-dimension-size\()x"), "s32[] get-dimension-size(" },
         { std::regex(R"x(u32\[\] %get-dimension-size\.)x"), "s32[] %get-dimension-size."},
     };
-
     std::stringstream buffer;
     buffer << ifs.rdbuf();
     auto input = buffer.str();
@@ -68,20 +106,20 @@ protected:
   auto ref_module = module->Clone();  
   TF_ASSERT_OK_AND_ASSIGN(auto exec, test_runner_.CreateExecutable(std::move(module), true));
 
-  VLOG(0) << "Creating fake args..";
+  //VLOG(0) << "Creating fake args..";
   TF_ASSERT_OK_AND_ASSIGN(auto fake_arguments, xla::MakeFakeArguments(ref_module.get(), 
         true, /*pseudo-random*/
-        false /* use large range*/));
+        true /* use large range*/));
   auto arg_ptrs = MakePointerVector<xla::Literal>(fake_arguments);
 
-  // TF_ASSERT_OK_AND_ASSIGN(auto truth, 
-  //       ReadLiteralFromProto("/tf/xla/expected.pb"));
+  //  TF_ASSERT_OK_AND_ASSIGN(auto truth, 
+  //        ReadLiteralFromProto("/tf/xla/expected.pb"));
   // TF_ASSERT_OK_AND_ASSIGN(auto truth, 
   // ref_runner.ExecuteWithExecutable(ref_exec.get(), arg_ptrs, nullptr));
   // WriteLiteralToTempFile(truth, "expected");
   //VLOG(0) << "Got expected literal from file.. running test";
 
-  int num_runs = 100, num_warmups = 2;
+  int num_runs = 10, num_warmups = 2;
   TF_ASSERT_OK_AND_ASSIGN(auto argument_buffers,
                       test_runner_.TransferLiteralsToDevice(arg_ptrs));
   
@@ -105,25 +143,29 @@ protected:
   VLOG(0) << "Time elapsed: " << usec << " usec";
   ofs << usec;
 
-#if 0
+#if 1
   VLOG(0) << "Performing correctness check.";
   TF_ASSERT_OK_AND_ASSIGN(
        auto test_res, test_runner_.ExecuteWithExecutable(exec.get(), arg_ptrs));
 
-  VLOG(0) << "Running reference exec..";
-  auto& ref_runner = HloTestBase::reference_runner_;
-  TF_ASSERT_OK_AND_ASSIGN(
-       auto ref_exec, ref_runner.CreateExecutable(std::move(ref_module), true));
+  WriteLiteralToTempFile(test_res, name);
+  
+  // TF_ASSERT_OK_AND_ASSIGN(auto truth, ReadLiteralFromFile(name));
+  
+  // VLOG(0) << "Running reference exec..";
+  // auto& ref_runner = HloTestBase::reference_runner_;
+  // TF_ASSERT_OK_AND_ASSIGN(
+  //      auto ref_exec, ref_runner.CreateExecutable(std::move(ref_module), true));
 
-  TF_ASSERT_OK_AND_ASSIGN(
-       auto truth, ref_runner.ExecuteWithExecutable(ref_exec.get(), arg_ptrs));
+  // TF_ASSERT_OK_AND_ASSIGN(
+  //      auto truth, ref_runner.ExecuteWithExecutable(ref_exec.get(), arg_ptrs));
 
-  ErrorSpec error_spec{1e-2, 1e-3};
-  //ErrorSpec error_spec(1e-5 /*abs*/, 1e-5 /*rel*/);
-  ASSERT_EQ(literal_comparison::Near(/*expected=*/truth,
-                                  /*actual=*/test_res,
-                                  /*error=*/error_spec,
-                           /*detailed_message=*/true, {}), absl::OkStatus());
+  // //ErrorSpec error_spec{1e-2, 1e-3};
+  // ErrorSpec error_spec(1e-5 /*abs*/, 1e-5 /*rel*/);
+  // ASSERT_EQ(literal_comparison::Near(/*expected=*/truth,
+  //                                 /*actual=*/test_res,
+  //                                 /*error=*/error_spec,
+  //                          /*detailed_message=*/true, {}), absl::OkStatus());
 #endif
  //    EXPECT_TRUE(RunAndCompare(std::move(module), 
   // //     absl::Span< xla::Literal * const>(arg_ptrs.data(), arg_ptrs.size()), error_spec));
@@ -169,7 +211,7 @@ TEST_F(HloRunnerTest, RunSingle) {
   
   if (std::ifstream ifs("input.hlo"); ifs.good()) {
     std::ofstream ofs;
-    return run_internal(ifs, ofs);
+    return run_internal(ifs, ofs, "input");
   }
   std::ifstream ifs("pattern.txt");
   ASSERT_TRUE(ifs.good());
@@ -183,11 +225,11 @@ TEST_F(HloRunnerTest, RunSingle) {
   bool exists = env->FileExists(csv).ok();
   std::ofstream ofs(csv, std::ios_base::app);
 
-  std::vector<std::string> matches;
-  auto pattern = tsl::io::JoinPath("/", line);
-  ASSERT_TRUE(env->GetMatchingPaths(pattern, &matches).ok());
-  
+  std::vector<std::string> matches, short_names;
+  ASSERT_TRUE(env->GetMatchingPaths(line, &matches).ok());
   std::sort(matches.begin(), matches.end());
+  short_names.resize(matches.size());
+  
   if (!exists) ofs << CsvSep; // add one column for the header
 
   const std::regex match_no(R"x([A-Za-z_]*([0-9]+).*)x");
@@ -198,10 +240,14 @@ TEST_F(HloRunnerTest, RunSingle) {
     if (res != std::string::npos) s = s.substr(res + 1);
     res = s.find_last_of(".");
     if (res != std::string::npos) s = s.substr(0, res);
-
+    
+    short_names[i] = s;
     std::smatch base_match;
     if (std::regex_match(s, base_match, match_no)) {
-      if (base_match.size() == 2) s = base_match[1].str();
+      if (base_match.size() == 2) {
+        s = base_match[1].str();
+        short_names[i] = "module_" + s;
+      }
     } 
     if (!exists) {
       ofs << s << (i == matches.size() - 1 ? "\n" : CsvSep);
@@ -220,7 +266,7 @@ TEST_F(HloRunnerTest, RunSingle) {
     VLOG(0) << i << " of " << matches.size() << ": HLO test for: " 
             << s << " ---------------------";
    
-    run_internal(ifs, ofs);
+    run_internal(ifs, ofs, short_names[i]);
     ofs << (i == matches.size() - 1 ? "\n" : CsvSep);
     std::flush(ofs);
   }
