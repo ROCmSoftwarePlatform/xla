@@ -42,7 +42,7 @@ limitations under the License.
 #include "mlir/Target/LLVMIR/Dialect/Builtin/BuiltinToLLVMIRTranslation.h"
 #include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
 #include "mlir/Target/LLVMIR/Dialect/NVVM/NVVMToLLVMIRTranslation.h"
-#include "mlir/Target/LLVMIR/Dialect/ROCDL/ROCDLToLLVMIRTranslation.h" 
+#include "mlir/Target/LLVMIR/Dialect/ROCDL/ROCDLToLLVMIRTranslation.h"
 #include "xla/hlo/ir/hlo_casting_utils.h"
 #include "xla/hlo/ir/hlo_instructions.h"
 #include "xla/mlir_hlo/mhlo/IR/hlo_ops.h"
@@ -111,7 +111,7 @@ class MlirFusionEmitterTest : public HloTestBase {
 
   mlir::MLIRContext context_;
   stream_executor::DeviceDescription device_info_ =
-      TestGpuDeviceInfo::CudaOrRocmDeviceInfo();
+      TestGpuDeviceInfo::TestCudaOrRocmDeviceInfo();
 };
 
 constexpr absl::string_view kModule = R"(

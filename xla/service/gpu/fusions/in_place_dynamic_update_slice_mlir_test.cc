@@ -269,8 +269,10 @@ TEST_F(MlirInPlaceDynamicUpdateSliceFusionTest, OperandSubgraphWithTwoRoots) {
     // CHECK-SAME:  , %[[ARG4:[^:]+]]: tensor<512x512xf32>
     // CHECK-DAG:   %[[C_384:.*]] = arith.constant 384
     // CHECK-DAG:   %[[C_0:.*]] = arith.constant 0
-    // CHECK:       %[[THREAD_ID:.*]] = gpu.thread_id  x
-    // CHECK:       %[[BLOCK_ID:.*]] = gpu.block_id  x
+    // CHECK:       %[[TID:.*]] = gpu.thread_id  x
+    // CHECK:       %[[BID:.*]] = gpu.block_id  x
+    // CHECK:       %[[BLOCK_ID:.*]] = xla_gpu.apply_indexing #map(%thread_id_x in [0, 255], %block_id_x in [0, 63])
+    // CHECK:       %[[THREAD_ID:.*]] = xla_gpu.apply_indexing #map1(%thread_id_x in [0, 255])
     // CHECK:       %[[I0:.*]] = xla_gpu.pure_call @dus_fusion_param_2_plus_one
     // CHECK:       %[[I1:.*]] = xla_gpu.pure_call @dus_fusion_param_3_plus_one
     // CHECK:       %[[IDX0:.*]] = arith.index_cast %[[I0]]

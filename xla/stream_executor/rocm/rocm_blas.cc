@@ -374,7 +374,7 @@ absl::Status ROCMBlas::DoBlasInternalImpl(FuncT rocblas_func, Stream *stream,
     auto *workspace = GetWorkspace();
     auto *wptr = workspace != nullptr ? workspace->opaque() : nullptr;
     size_t wsize = workspace != nullptr ? workspace->size() : 0;
-    ret = wrap::rocblas_set_workspace(blas_, wptr, wsize);
+    auto ret = wrap::rocblas_set_workspace(blas_, wptr, wsize);
     if (err_on_failure && ret != rocblas_status_success) {
       LOG(ERROR) << "failed to set workspace before " << FuncT::kName
                  << ": " << ToString(ret);
