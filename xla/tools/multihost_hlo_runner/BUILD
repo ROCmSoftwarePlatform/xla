@@ -173,6 +173,7 @@ xla_test(
         "data/sharded_2_devices.hlo",
         "data/single_device.hlo",
         "data/single_device_tupled.hlo",
+        "data/sharded_computation.hlo",
     ],
     tags = ["nomac"],
     deps = [
