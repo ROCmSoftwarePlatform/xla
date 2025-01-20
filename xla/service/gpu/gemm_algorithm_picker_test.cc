@@ -272,7 +272,7 @@ ENTRY main {
   changed = false;
 
   DevicelessConfig deviceless_config{
-      gpu_device_desc().model_str(), gpu_comp()};
+      device_desc().model_str(), gpu_comp()};
   AutotuneConfig deviceless_cfg{deviceless_config, opts};
   TF_ASSERT_OK_AND_ASSIGN(
       changed,
