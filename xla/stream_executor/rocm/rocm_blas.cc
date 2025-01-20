@@ -22,8 +22,10 @@ limitations under the License.
 
 #include <complex>
 
+#include "absl/status/status.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
+#include "absl/synchronization/mutex.h"
 #include "absl/types/span.h"
 #include "unsupported/Eigen/CXX11/Tensor"
 #include "rocm/rocm_config.h"
@@ -153,14 +155,10 @@ ROCMBlas::~ROCMBlas() {
 }
 
 bool ROCMBlas::SetStream(Stream *stream) {
-  CHECK(stream != nullptr);
-  CHECK(AsGpuStreamValue(stream) != nullptr);
   CHECK(blas_ != nullptr);
-  gpu::ScopedActivateExecutorContext sac{parent_};
-
-  rocblas_status ret =
-      wrap::rocblas_set_stream(blas_, AsGpuStreamValue(stream));
-  if (ret != rocblas_status_success) {
+  auto handle = (stream != nullptr) ? AsGpuStreamValue(stream) : nullptr;
+  if (auto ret = wrap::rocblas_set_stream(blas_, handle);
+      ret != rocblas_status_success) {
     LOG(ERROR) << "failed to set stream for rocBLAS calls: " << ToString(ret);
     return false;
   }
@@ -168,11 +166,15 @@ bool ROCMBlas::SetStream(Stream *stream) {
   return true;
 }
 
-hipStream_t ROCMBlas::ROCMStream(Stream *stream) {
-  CHECK(stream != nullptr);
-  CHECK(AsGpuStreamValue(stream) != nullptr);
-  gpu::ScopedActivateExecutorContext sac{parent_};
-  return AsGpuStreamValue(stream);
+absl::StatusOr<bool> ROCMBlas::IsMainStreamSet() const {
+  absl::MutexLock lock{&mu_};
+  CHECK(blas_ != nullptr);
+  GpuStreamHandle handle{};
+  if (auto ret = wrap::rocblas_get_stream(blas_, &handle);
+      ret != rocblas_status_success) {
+    return absl::InternalError("failed to get the current stream value");
+  }
+  return (handle == nullptr);
 }
 
 namespace {
@@ -350,15 +352,14 @@ absl::Status ROCMBlas::DoBlasInternalImpl(FuncT rocblas_func, Stream *stream,
   absl::MutexLock lock{&mu_};
 
   CHECK(blas_ != nullptr);
+  gpu::ScopedActivateExecutorContext sac{parent_};
   if (!SetStream(stream)) {
     return absl::InternalError("Setting stream failed");
   }
 
-  gpu::ScopedActivateExecutorContext sac{parent_};
-
+  rocblas_status ret;
   // set the atomics mode, leaving default to library
   bool allow_atomics = !OpDeterminismRequired();
-  rocblas_status ret;
   if (!allow_atomics) {
     ret = wrap::rocblas_set_atomics_mode(blas_, rocblas_atomics_not_allowed);
     if (err_on_failure && ret != rocblas_status_success) {
@@ -383,6 +384,8 @@ absl::Status ROCMBlas::DoBlasInternalImpl(FuncT rocblas_func, Stream *stream,
 #endif
 
   ret = rocblas_func(blas_, std::forward<Args>(args)...);
+  SetStream(nullptr);  // Resetting stream after the function call
+
   if (ret != rocblas_status_success) {
     auto err_str =
         absl::StrFormat("%s failed with: %s", FuncT::kName, ToString(ret));
