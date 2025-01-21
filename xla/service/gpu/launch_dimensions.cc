@@ -23,7 +23,6 @@ limitations under the License.
 #include "absl/log/check.h"
 #include "absl/log/log.h"
 #include "absl/strings/str_format.h"
-#include "xla/service/platform_util.h"
 #include "xla/shape.h"
 #include "xla/shape_util.h"
 #include "xla/stream_executor/device_description.h"
@@ -177,20 +176,9 @@ LaunchDimensions CalculateLaunchDimensions(
   BlockSizes sizes =
       GetBlockSizes(dim_config, gpu_device_info, shape, num_elements);
 
-  const int kWarpSchedulers = 4;
-  int64_t threads_per_block_x = std::min<int64_t>(
-      gpu_device_info.threads_per_warp() * kWarpSchedulers, num_elements);
-  int64_t num_blocks = CeilOfRatio(num_elements, threads_per_block_x);
-  CHECK(num_blocks < gpu_device_info.block_dim_limit().x);
-  int threads_per_block_y = 1;
-  if (xla::PlatformUtil::CanonicalPlatformName("gpu").value() == "rocm") {
-      while ((num_blocks * threads_per_block_x) > std::numeric_limits<uint32_t>::max()) {
-          threads_per_block_x /= 2;
-          threads_per_block_y *= 2;
-      }
-  }
-  return LaunchDimensions(se::BlockDim(num_blocks, 1, 1),
-                          se::ThreadDim(threads_per_block_x, threads_per_block_y, 1));
+  return LaunchDimensions(
+      se::BlockDim(sizes.block_count, 1, 1),
+      se::ThreadDim(sizes.threads_per_block_x, sizes.threads_per_block_y, 1));
 }
 
 }  // namespace gpu
