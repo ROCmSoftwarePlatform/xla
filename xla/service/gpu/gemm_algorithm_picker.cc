@@ -98,13 +98,7 @@ class GemmAutotuner {
   explicit GemmAutotuner(const AutotuneConfig& autotune_config)
       : autotune_config_(autotune_config) {}
 
-  ~GemmAutotuner() {
-    if (stream_ != nullptr) {
-      if (auto blas = stream_->parent()->AsBlas()) blas->ResetStream();
-    }
-  }
-
-  const AutotuneConfig& config() { return autotune_config_; }
+  const AutotuneConfig& config() const { return autotune_config_; }
 
   size_t num_algorithms_left() const { return num_algorithms_left_; }
 
