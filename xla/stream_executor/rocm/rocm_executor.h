@@ -128,6 +128,9 @@ class RocmExecutor : public GpuExecutor {
   CreateDeviceDescription(int device_ordinal);
 
  private:
+  // Initializes Blas interfaces 
+  absl::Status InitBlas();
+
   // Loads a module in HSACO format.
   absl::StatusOr<ModuleHandle> LoadModuleFromHsaco(const char* hsaco)
       ABSL_EXCLUSIVE_LOCKS_REQUIRED(in_memory_modules_mu_);
