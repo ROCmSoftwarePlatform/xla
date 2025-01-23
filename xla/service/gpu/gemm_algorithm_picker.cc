@@ -98,6 +98,8 @@ class GemmAutotuner {
   explicit GemmAutotuner(const AutotuneConfig& autotune_config)
       : autotune_config_(autotune_config) {}
 
+  const AutotuneConfig& config() const { return autotune_config_; }
+
   size_t num_algorithms_left() const { return num_algorithms_left_; }
 
   absl::StatusOr<AutotuneResult> operator()(const HloInstruction* gemm,
