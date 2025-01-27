@@ -66,7 +66,7 @@ fi
 export PYTHON_BIN_PATH=`which python3`
 export TF_NEED_ROCM=1
 export ROCM_PATH=$ROCM_INSTALL_DIR
-TAGS_FILTER="-requires-gpu-nvidia,-oss_excluded,-oss_serial"
+TAGS_FILTER="-requires-gpu-nvidia,-no_oss,-oss_excluded,-oss_serial"
 UNSUPPORTED_GPU_TAGS="$(echo -requires-gpu-sm{60,70,80,86,89,90}{,-only})"
 TAGS_FILTER="${TAGS_FILTER},${UNSUPPORTED_GPU_TAGS// /,}"
 
