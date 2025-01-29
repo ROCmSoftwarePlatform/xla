@@ -484,6 +484,9 @@ ENTRY e {
 }
 
 TEST_F(GemmFusionAutotunerTest, Int8FusedGemm) {
+  if (isRocm()) {
+    GTEST_SKIP() << "On ROCm kernel with split_k > 1 is selected.";
+  }
   const std::string hlo = R"(
 HloModule module
 
@@ -507,6 +510,9 @@ ENTRY e {
 }
 
 TEST_F(GemmFusionAutotunerTest, Int8FusedGemm256) {
+  if (isRocm()) {
+    GTEST_SKIP() << "On ROCm kernel with split_k > 1 is selected.";
+  }
   const std::string hlo = R"(
 HloModule module
 
