@@ -70,4 +70,4 @@ bazel \
     --action_env=XLA_FLAGS=--xla_gpu_force_compilation_parallelism=16 \
     --action_env=XLA_FLAGS=--xla_gpu_enable_llvm_module_compilation_parallelism=true \
     --run_under=//tools/ci_build/gpu_build:parallel_gpu_execute \
-    -- //xla/service/gpu/transforms:gemm_rewriter_test_gpu_amd_any
+    //xla/service/gpu/transforms:gemm_rewriter_test_gpu_amd_any --test_filter=Fp8CublasTestsBothLegacyAndLt/ParameterizedFp8GemmRewriteTest.UnscaledABUnscaledDF8/0
