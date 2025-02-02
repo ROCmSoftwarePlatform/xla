@@ -61,6 +61,7 @@ bazel \
     --test_tag_filters=${TAGS_FILTER} \
     --test_timeout=920,2400,7200,9600 \
     --test_sharding_strategy=disabled \
+    --cache_test_results=no \
     --test_output=errors \
     --flaky_test_attempts=1 \
     --keep_going \
@@ -71,4 +72,4 @@ bazel \
     --action_env=XLA_FLAGS=--xla_gpu_force_compilation_parallelism=16 \
     --action_env=XLA_FLAGS=--xla_gpu_enable_llvm_module_compilation_parallelism=true \
     --run_under=//tools/ci_build/gpu_build:parallel_gpu_execute \
-    //xla/service/gpu/transforms:gemm_rewriter_test_gpu_amd_any --test_filter=Fp8CublasTestsBothLegacyAndLt/ParameterizedFp8GemmRewriteTest.ScaledABUnscaledDColMajorLhsF8/0
+    //xla/service/gpu/transforms:gemm_rewriter_test_gpu_amd_any
